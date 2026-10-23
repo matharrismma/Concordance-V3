@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "concordance"
+version = "2.0.0a0"
+description = "A deterministic verification engine — a verdict, the worked reasoning, and a re-checkable seal."
+license = {text = "AGPL-3.0-or-later"}
+requires-python = ">=3.10"
+# Sovereign: ZERO required dependencies — the engine imports, serves, seals, and keeps the
+# corpus on the stdlib alone. Heavy deps are optional + lazy-loaded. NOTE: the derivation
+# MOAT (math/physics/stats verification) needs the `math` extra (sympy/scipy/numpy); without
+# it those verifiers return NOT_APPLICABLE/ERROR — never a false HOLDS — but also can't
+# confirm math. Install `.[math]` for the full moat. The claim is "no required deps," not
+# "the moat runs on the stdlib."
+dependencies = []
+
+[project.optional-dependencies]
+math = ["sympy", "scipy", "numpy"]
+signing = ["cryptography"]      # Ed25519 seal attestations (optional, lazy)
+pdf = ["pypdf"]                 # robust PDF text extraction for Console intake (optional, lazy — the
+                                # stdlib floor handles simple text PDFs; pypdf covers embedded/CID fonts)
+schema = ["jsonschema"]         # full packet validation; without it, the sovereign structural fallback runs
+dev = ["pytest>=8", "coverage>=7", "ruff>=0.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+concordance = ["schema/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/concordance"]
+branch = true
+
+[tool.ruff]
+# The CI lint gate (`ruff check src tools tests`, .github/workflows/ci.yml). It fails ONLY on
+# what is unambiguously broken — never on style. `select` replaces ruff's default rule set
+# wholesale, so everything not listed here is ignored.
+#   E9  syntax errors / unreadable files
+#   F63 misuse: `is` with a literal, comparing to a constant, assert on a tuple
+#   F7  misplaced statements: break/continue outside a loop, return/yield outside a function
+#   F82 undefined names
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+ignore = []

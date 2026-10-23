@@ -1,0 +1,189 @@
+"""Receipts — mint a re-checkable seal from a verification result.
+
+This is what makes the thesis real. A verdict alone is "trust me"; a SEAL is the
+receipt. Given a derivation result (verdict + worked trail), this builds the canonical
+WitnessRecord, content-addresses it in the CAS (so anyone can re-fetch and re-verify it),
+appends confirmed (PASS/HOLDS) results to the tamper-evident ledger chain, and returns the
+seal {content_hash, cite_url}.
+
+HONEST BY CONSTRUCTION: minting is best-effort for availability, but a verdict is NEVER
+presented as receipted unless a real, re-fetchable seal was actually stored — on failure the
+caller surfaces seal:null + a reason. A receipt you cannot re-check is exactly the "trust me"
+this engine exists to defeat.
+
+A receipt is minted for BROKEN verdicts too (proof a claim is false is as valuable as proof
+it holds); only PASS results enter the ledger chain (the ledger records resolved precedents).
+
+Sovereign: stdlib + the floor (cas, ledger, record) only.
+"""
+from __future__ import annotations
+
+import os
+import threading
+from typing import Any, Dict, Optional
+
+from . import cas, ledger, redact
+from .config import EngineConfig
+from .packet import GateResult
+from .record import WitnessRecord, axis_coords_for, with_permanent_ref
+from .verifiers.base import VerifierResult
+
+# verify_derivation verdicts -> the sealed record's DecisionStatus.
+# SYSTEM_ERROR maps to QUARANTINE, never REJECT: REJECT is a finding ABOUT THE CLAIM, and an
+# engine failure is a fact about US. Sealing our own bug as a rejection would put a permanent,
+# citable "this was rejected" on something we never actually checked. Held, unjudged, is honest.
+_VERDICT_TO_OVERALL = {"HOLDS": "PASS", "BROKEN": "REJECT", "INCOMPLETE": "QUARANTINE",
+                       "SYSTEM_ERROR": "QUARANTINE", "ERROR": "QUARANTINE"}
+
+# Appending to the hash chain is read-then-write; serialize it within the process so
+# concurrent /verify requests cannot fork the chain (ThreadingHTTPServer is one process).
+_LEDGER_LOCK = threading.Lock()
+
+
+def _public_base(config: EngineConfig) -> str:
+    """The re-checkable base URL for cite_url. Overridable; defaults to the WITNESS.
+
+    Matt, 2026-08-01: "We could also make the .org keep the receipts." This used to default by
+    minting surface, so the same kind of record claimed two different homes. The witness keeps
+    the testimony — every new seal names .org, whichever surface minted it."""
+    env = os.environ.get("CONCORDANCE_PUBLIC_BASE", "").strip()
+    return env.rstrip("/")   # empty -> a relative cite_url (/s/<hash>) served by this engine
+
+
+def _index_default() -> bool:
+    """Whether a freshly sealed receipt is ALSO inserted into the live corpus immediately.
+
+    Default True — the server/door path keeps the "searchable in the same breath" promise (and the
+    server has the corpus resident, so it is O(1)). A cold one-shot batch tool (tools/tick.py, the
+    Monte Carlo simulator) sets CONCORDANCE_SEAL_INDEX=0 so each seal stays bounded: the CAS object,
+    the ledger link, and the durable card copies are all still written, but the live corpus is not
+    touched — avoiding a ~6 GB/~90 s corpus build on a process that would exit immediately. The card
+    becomes searchable at the next corpus load (a deploy already reloads)."""
+    return os.environ.get("CONCORDANCE_SEAL_INDEX", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def _auto_summary(result: Dict[str, Any], domain: str) -> str:
+    claim = ""
+    for e in (result.get("trail") or []):
+        if e.get("claim"):
+            claim = str(e["claim"])
+            break
+    base = redact.redact(claim)[0] if claim else f"{domain} derivation"  # never seal PII in the summary
+    return f"{base} — {result.get('verdict')} ({result.get('confirmed_steps', 0)}/{result.get('steps', 0)} steps)"
+
+
+def record_from_derivation(result: Dict[str, Any], *, domain: str = "mathematics",
+                           packet_id: Optional[str] = None) -> WitnessRecord:
+    """Adapt a derivation result (verdict + trail) into the canonical WitnessRecord.
+
+    The trail becomes verifier_results (each step's status carries through, 1:1 with the
+    derivation's own statuses), and a single RED gate reflects the composite verdict — so the
+    sealed record is a faithful, self-describing snapshot of exactly what was checked."""
+    verdict = str(result.get("verdict", "ERROR"))
+    overall = _VERDICT_TO_OVERALL.get(verdict, "REJECT")
+    trail = result.get("trail") or []
+    vrs = tuple(
+        VerifierResult(
+            name=str(e.get("id") or f"s{i}"),
+            status=str(e.get("status") or "ERROR"),
+            detail=str(e.get("detail") or ""),
+            # redact the human claim text before it enters the permanent, public seal — the
+            # seal records the stripped form; the PII never reaches the ledger (math is untouched).
+            # spec_hash binds the sealed record to the EXACT artifact verified: the content_hash
+            # now commits to it, so a seal cannot be re-presented as proof of a different spec, and
+            # a re-fetcher can rehash the spec they hold to confirm it is the one that was checked.
+            data={"claim": redact.redact(str(e.get("claim", "")))[0], "domain": e.get("domain", ""),
+                  "uses": e.get("uses", []), "link_ok": e.get("link_ok", True),
+                  "spec_hash": str(e.get("spec_hash", ""))},
+        )
+        for i, e in enumerate(trail)
+    )
+    gate = GateResult(
+        gate="RED",
+        status="PASS" if overall == "PASS" else "REJECT",
+        reasons=[f"derivation verdict: {verdict}"],
+        details={"verdict": verdict, "steps": result.get("steps"),
+                 "confirmed_steps": result.get("confirmed_steps"),
+                 # error_at travels with the seal too: for a SYSTEM_ERROR, broken_at is correctly
+                 # null, so without this the permanent record would name no step at all and
+                 # anyone re-fetching it could not tell where our engine gave out.
+                 "broken_at": result.get("broken_at"), "gap_at": result.get("gap_at"),
+                 "error_at": result.get("error_at")},
+    )
+    return WitnessRecord(overall=overall, gate_results=(gate,), verifier_results=vrs,
+                         axis_coords=axis_coords_for(domain), packet_id=packet_id)
+
+
+def mint(result: Dict[str, Any], *, config: EngineConfig, domain: str = "mathematics",
+         summary: Optional[str] = None, sealed_at: Optional[float] = None,
+         index: bool = True, card: bool = True) -> Dict[str, Any]:
+    """Mint a re-checkable seal, assembled as an ordered sequence of BOUNDED components — each delivers
+    its portion of the receipt and none scans the whole ledger or corpus:
+
+      1. record — the canonical WitnessRecord (portion: the record);
+      2. seal   — content-address it in the CAS (portion: content_hash + cite_url);
+      3. chain  — append PASS records to the hash chain (portion: ledgered + precedent), O(1) via the
+                  ledger's head pointer and serialized so concurrent sealers cannot fork the chain.
+
+    Returns {ok: True, content_hash, cite_url, ledgered} on success (the CAS write succeeded and the
+    seal is re-fetchable), or {ok: False, error} on failure. Never raises — but never lies: ok is True
+    only if a real seal was stored. `index` carries to the CAS card step (True keeps the receipt
+    searchable immediately; False defers that to the next corpus load)."""
+    try:
+        # 1. RECORD (portion: the witness record) — bounded, pure transform.
+        record = record_from_derivation(result, domain=domain)
+        # 2. SEAL (portion: content_hash + cite_url) — content-addressed, O(1) write, idempotent.
+        content_hash = cas.store(record.to_dict(), index=index, card=card)
+        if not content_hash:
+            return {"ok": False, "error": "seal step produced no content_hash"}
+        # 3. CHAIN (portion: ledgered + precedent) — PASS only; the append is O(1) via the ledger's
+        #    head pointer and serialized by _LEDGER_LOCK so concurrent sealers cannot fork the chain.
+        ledgered = False
+        if record.overall == "PASS":
+            axis = record.axis_coords.axis if record.axis_coords else domain
+            precedent_id = f"ledger://{axis}/{content_hash[:16]}"  # unique per content
+            with _LEDGER_LOCK:
+                try:
+                    ledger.seal_to_ledger(
+                        with_permanent_ref(record, content_hash),
+                        summary=(summary or _auto_summary(result, domain))[:200],
+                        precedent_id=precedent_id, sealed_at=sealed_at, overwrite=False)
+                    ledgered = True
+                except FileExistsError:
+                    ledgered = True  # identical content already chained — idempotent
+                except Exception:  # noqa: BLE001 — ledger append failed; the CAS seal still stands
+                    ledgered = False
+        return {"ok": True, "content_hash": content_hash, "ledgered": ledgered,
+                # /s/<hash> is the human-readable, crawlable, citable receipt page (server-rendered);
+                # /seal?hash= remains the raw JSON for machines.
+                "cite_url": f"{_public_base(config)}/s/{content_hash}"}
+    except Exception as exc:  # noqa: BLE001 — never break a verdict because sealing failed
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+
+
+def attach(result: Dict[str, Any], *, config: EngineConfig, domain: str = "mathematics",
+           enabled: bool = True, index: Optional[bool] = None, card: bool = True) -> Dict[str, Any]:
+    """Return a copy of `result` with an honest seal attached.
+
+    seal = {content_hash, cite_url, ledgered} when a real seal was stored; seal = null with a
+    seal_error when minting was attempted and failed; seal omitted only when disabled.
+
+    `index` controls immediate corpus searchability of the receipt/verified cards: None (default)
+    reads CONCORDANCE_SEAL_INDEX (see `_index_default` — True unless a cold batch tool sets it off);
+    True/False force it. The seal itself (CAS object + ledger link) is identical regardless."""
+    out = dict(result)
+    if not enabled:
+        return out
+    idx = _index_default() if index is None else bool(index)
+    s = mint(result, config=config, domain=domain, index=idx, card=card)
+    if s.get("ok"):
+        out["seal"] = {"content_hash": s["content_hash"], "cite_url": s["cite_url"],
+                       "ledgered": s.get("ledgered", False)}
+        # 4. KEEP (portion: the verified card) — the sealed result joins the one keeping, so the
+        # science and math live in the same graph as Scripture. Off to the side — a mint failure
+        # never touches the seal — and idempotent (the same fact is one card). On the cold path
+        # (index=False) the card still persists; only its live-corpus insert is deferred.
+    else:
+        out["seal"] = None
+        out["seal_error"] = s.get("error", "seal could not be minted")
+    return out

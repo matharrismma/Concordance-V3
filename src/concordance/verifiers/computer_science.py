@@ -1,0 +1,597 @@
+"""Computer Science verifier.
+
+Checks performed:
+  * static_termination: AST scan for obvious non-termination (`while True`
+    with no break/return), missing loop variants, infinite recursion
+    patterns. Static analysis cannot decide the halting problem in general,
+    but it can flag the easy cases.
+  * runtime_complexity: time the supplied function at increasing input
+    sizes and compare measured slope against claimed O() class
+  * functional_correctness: run the function on supplied (input, output)
+    pairs and verify each
+
+The runtime checks execute supplied code in a restricted namespace
+(no builtins like __import__, open, eval, exec, compile). They are
+intended for snippets the user controls; do not run untrusted input.
+"""
+from __future__ import annotations
+import ast
+import math
+import os
+import time
+from typing import Any, Callable, Dict, List, Tuple
+
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+
+
+# ----- Static checks (AST-based) -------------------------------------------
+
+class _TerminationLinter(ast.NodeVisitor):
+    """Flags suspicious infinite loops and unguarded recursion."""
+
+    def __init__(self):
+        self.warnings: List[str] = []
+        self._function_stack: List[str] = []
+
+    def visit_While(self, node):
+        # Detect `while True:` or `while 1:` without a reachable break/return.
+        # ast.Constant covers True/False/None/numeric literals on Python 3.8+;
+        # ast.NameConstant was the pre-3.8 form and was removed in Python 3.14.
+        # Guard with getattr so this works on every supported Python.
+        _NameConstant = getattr(ast, "NameConstant", ())
+        is_constant_true = (
+            (isinstance(node.test, ast.Constant) and bool(node.test.value)) or
+            (_NameConstant and isinstance(node.test, _NameConstant)
+             and bool(node.test.value))
+        )
+        if is_constant_true:
+            has_exit = any(
+                isinstance(n, (ast.Break, ast.Return, ast.Raise))
+                for n in ast.walk(node)
+            )
+            if not has_exit:
+                self.warnings.append(
+                    f"line {node.lineno}: `while True:` with no break/return/raise"
+                )
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node):
+        self._function_stack.append(node.name)
+        recursive_calls = [
+            n for n in ast.walk(node)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id == node.name
+        ]
+        if recursive_calls:
+            def _contains_recursive_call(n) -> bool:
+                if n is None:
+                    return False
+                return any(
+                    isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                    and c.func.id == node.name
+                    for c in ast.walk(n)
+                )
+
+            # Collect all potential "leaf" expressions that could be a base case.
+            # A leaf is: the value of a Return, or each branch of any IfExp
+            # nested inside a Return value. If at least one such leaf does not
+            # contain a recursive call, we accept it as a base case.
+            def _leaves(expr):
+                if expr is None:
+                    yield None
+                    return
+                if isinstance(expr, ast.IfExp):
+                    yield from _leaves(expr.body)
+                    yield from _leaves(expr.orelse)
+                else:
+                    yield expr
+
+            base_case_found = False
+            for stmt in ast.walk(node):
+                if isinstance(stmt, ast.Return):
+                    for leaf in _leaves(stmt.value):
+                        if not _contains_recursive_call(leaf):
+                            base_case_found = True
+                            break
+                if base_case_found:
+                    break
+
+            if not base_case_found:
+                self.warnings.append(
+                    f"line {node.lineno}: function `{node.name}` recurses with no base case "
+                    f"(every return path contains a recursive call)"
+                )
+        self.generic_visit(node)
+        self._function_stack.pop()
+
+
+def verify_static_termination(code: str) -> VerifierResult:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return error("cs.static_termination", f"syntax error: {e}")
+    linter = _TerminationLinter()
+    linter.visit(tree)
+    if linter.warnings:
+        return mismatch("cs.static_termination",
+                        "; ".join(linter.warnings),
+                        {"warnings": linter.warnings})
+    return confirm("cs.static_termination", "no obvious non-termination patterns")
+
+
+# ----- Runtime checks ------------------------------------------------------
+
+_SAFE_BUILTINS = {
+    "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
+    "enumerate": enumerate, "filter": filter, "float": float, "int": int,
+    "len": len, "list": list, "map": map, "max": max, "min": min,
+    "range": range, "reversed": reversed, "round": round, "set": set,
+    "sorted": sorted, "str": str, "sum": sum, "tuple": tuple, "zip": zip,
+    "ValueError": ValueError, "TypeError": TypeError, "KeyError": KeyError,
+    "IndexError": IndexError, "RuntimeError": RuntimeError, "Exception": Exception,
+    "True": True, "False": False, "None": None,
+}
+
+
+# Executing caller-supplied code is OFF by default. A restricted-__builtins__ namespace is NOT a
+# sandbox: real builtins are trivially recovered via object introspection
+# (math.__loader__.__globals__, ().__class__.__bases__[0].__subclasses__()), so exec()'ing a
+# caller's `code` here was an UNAUTHENTICATED remote-code-execution reachable from public
+# POST /verify (red team, 2026-08-06, CRITICAL). No in-process restricted namespace can be made
+# safe. A local/sovereign operator on an ISOLATED box may opt in with CONCORDANCE_ALLOW_CODE_EXEC=1;
+# the hosted engine never runs caller code.
+class _CodeExecutionDisabled(RuntimeError):
+    """Raised when a verifier is asked to run caller-supplied code and exec is not permitted."""
+
+
+def _code_exec_allowed() -> bool:
+    """Read at CALL time (not import) so it is togglable and testable; default OFF."""
+    return os.environ.get("CONCORDANCE_ALLOW_CODE_EXEC") == "1"
+
+
+def _exec_function(code: str, function_name: str) -> Callable:
+    """Execute the snippet in a restricted namespace and return the named function.
+
+    Gated: refuses unless CONCORDANCE_ALLOW_CODE_EXEC=1 (see the note above — this ran an
+    unauthenticated RCE on the hosted engine). Callers turn the refusal into a non-verdict."""
+    if not _code_exec_allowed():
+        raise _CodeExecutionDisabled(
+            "executing caller-supplied code is disabled on this engine "
+            "(deterministic verification does not run arbitrary code)")
+    ns: Dict[str, Any] = {"__builtins__": _SAFE_BUILTINS}
+    # Allow math import explicitly (read-only)
+    import math as _m
+    ns["math"] = _m
+    exec(compile(code, "<verifier>", "exec"), ns)
+    fn = ns.get(function_name)
+    if not callable(fn):
+        raise NameError(f"function {function_name!r} not defined or not callable")
+    return fn
+
+
+def _resolve_call_args(case: Dict[str, Any]):
+    """Return (args_tuple, kwargs_dict) from a test case.
+
+    Accepts the canonical ``args`` / ``kwargs`` fields *and* the natural
+    alias ``input``:
+      - ``input`` as list/tuple -> splat into positional args
+      - ``input`` as dict        -> use as keyword args
+      - ``input`` as scalar      -> single positional arg
+    Explicit ``args`` / ``kwargs`` always win over ``input`` if both present.
+    """
+    args = case.get("args")
+    kwargs = case.get("kwargs")
+    if args is None and kwargs is None and "input" in case:
+        inp = case["input"]
+        if isinstance(inp, (list, tuple)):
+            args = list(inp)
+            kwargs = {}
+        elif isinstance(inp, dict):
+            args = []
+            kwargs = dict(inp)
+        else:
+            args = [inp]
+            kwargs = {}
+    if args is None:
+        args = []
+    if kwargs is None:
+        kwargs = {}
+    return tuple(args), dict(kwargs)
+
+
+def verify_functional_correctness(spec: Dict[str, Any]) -> VerifierResult:
+    code = spec.get("code")
+    fn_name = spec.get("function_name")
+    cases = spec.get("test_cases", [])
+    if not code or not fn_name or not cases:
+        return na("cs.functional_correctness")
+    try:
+        fn = _exec_function(code, fn_name)
+    except Exception as e:
+        return error("cs.functional_correctness", f"execution failure: {e}")
+    failures = []
+    for i, case in enumerate(cases):
+        args, kwargs = _resolve_call_args(case)
+        expected = case.get("expected")
+        try:
+            actual = fn(*args, **kwargs)
+        except Exception as e:
+            failures.append(f"case {i}: raised {type(e).__name__}: {e}")
+            continue
+        if actual != expected:
+            failures.append(f"case {i}: f({args},{kwargs})={actual}, expected {expected}")
+    if failures:
+        return mismatch("cs.functional_correctness", "; ".join(failures),
+                        {"failures": failures})
+    return confirm("cs.functional_correctness", f"{len(cases)} test cases pass")
+
+
+def _slope_verdict(slope: float, expected: float, tol: float, all_slopes) -> str:
+    """Classify a measured log-log slope against the claimed class's expected slope.
+
+    'confirm'      — within tolerance of the claimed class.
+    'mismatch'     — outside the claimed class BUT within tolerance of a DIFFERENT class: the data
+                     is positive evidence of another complexity, so the claim is genuinely broken.
+    'inconclusive' — fits NEITHER the claimed class nor any other (the no-man's-land between them):
+                     a noisy wall-clock measurement, not a false claim — abstain, never assert BROKEN.
+
+    Pure and deterministic (no timing), so the decision boundary is unit-tested without a clock."""
+    if abs(slope - expected) <= tol:
+        return "confirm"
+    if any(abs(slope - o) <= tol for o in all_slopes if abs(o - expected) > 1e-9):
+        return "mismatch"
+    return "inconclusive"
+
+
+def verify_runtime_complexity(spec: Dict[str, Any]) -> VerifierResult:
+    """Measure runtime at log-spaced input sizes and compare to claimed class.
+
+    Spec:
+      code: snippet defining the function
+      function_name: name to call
+      input_generator: snippet `def gen(n): return ...` returning the function's args (list)
+      claimed_class: 'O(1)' | 'O(log n)' | 'O(n)' | 'O(n log n)' | 'O(n**2)' | 'O(n**3)'
+      sizes: list of n values (default depends on claimed_class)
+      tolerance: log-slope tolerance (default 0.40)
+      target_seconds: minimum total measurement time per size (default 0.05)
+    """
+    code = spec.get("code")
+    fn_name = spec.get("function_name")
+    gen_code = spec.get("input_generator")
+    claimed = (spec.get("claimed_class") or "").replace(" ", "").lower()
+    tol = clamp_tol(spec, "tolerance", 0.40)
+    target_s = spec.get("target_seconds", 0.05)
+    if not code or not fn_name or not gen_code:
+        return na("cs.runtime_complexity")
+
+    # Default sizes adapted to claimed class — for fast classes need larger n
+    default_sizes = {
+        "o(1)": [1000, 10000, 100000, 1000000],
+        "o(logn)": [1000, 10000, 100000, 1000000],
+        "o(loglogn)": [1000, 10000, 100000, 1000000],
+        "o(n)": [1000, 10000, 100000, 1000000],
+        "o(nlogn)": [1000, 10000, 100000, 1000000],
+        "o(n*logn)": [1000, 10000, 100000, 1000000],
+        "o(n**2)": [100, 200, 400, 800, 1600],
+        "o(n^2)": [100, 200, 400, 800, 1600],
+        "o(n**3)": [20, 40, 80, 160],
+        "o(n^3)": [20, 40, 80, 160],
+    }
+    sizes = spec.get("sizes") or default_sizes.get(claimed, [10, 100, 1000, 10000])
+
+    try:
+        fn = _exec_function(code, fn_name)
+        gen = _exec_function(gen_code, "gen")
+    except Exception as e:
+        return error("cs.runtime_complexity", f"setup failure: {e}")
+
+    # Per-call wall-clock cap: if a single fn(*args) at size n exceeds this,
+    # the function is far slower than the claimed class at that n. Stop
+    # escalating to larger sizes — the data we have already differentiates
+    # the claim. Without this, an O(n^2) algorithm wrongly claimed as O(n)
+    # would pull the verifier into running n=100k or n=1M, taking hours.
+    max_per_call_s = float(spec.get("max_per_call_seconds", 1.0))
+    # Per-claim total wall-clock budget: even when no single call hits the
+    # per-call cap, a slow algorithm probed at five sizes can accumulate
+    # 5+ seconds across the size loop. Cap the per-claim total to keep the
+    # benchmark/CI runtime bounded.
+    max_total_s = float(spec.get("max_total_seconds", 3.0))
+
+    times = []
+    sizes_used: List[int] = []
+    t_claim = time.perf_counter()
+    for n in sizes:
+        try:
+            args = gen(n)
+        except Exception as e:
+            return error("cs.runtime_complexity", f"input_generator(n={n}) failure: {e}")
+        if not isinstance(args, (list, tuple)):
+            args = [args]
+        # Auto-tune iteration count: start with 1, double until total exceeds target_s
+        repeats = 1
+        while True:
+            t0 = time.perf_counter()
+            try:
+                for _ in range(repeats):
+                    fn(*args)
+            except Exception as e:
+                return error("cs.runtime_complexity",
+                             f"function call at n={n} failed: {e}")
+            elapsed = time.perf_counter() - t0
+            # Hard cap stops the repeat-doubling loop too
+            if elapsed >= max_per_call_s or elapsed >= target_s or repeats >= 1_000_000:
+                break
+            # Estimate factor needed
+            if elapsed > 0:
+                factor = max(2, int(target_s / elapsed) + 1)
+            else:
+                factor = 10
+            repeats *= factor
+        per_call = elapsed / repeats
+        times.append(max(per_call, 1e-9))
+        sizes_used.append(n)
+        # If this size already exceeded the cap, don't try larger n
+        if elapsed >= max_per_call_s:
+            break
+        # Per-claim total budget: bail out if cumulative measurement time
+        # has exceeded the budget regardless of any single call's cost.
+        if (time.perf_counter() - t_claim) >= max_total_s:
+            break
+
+    if len(sizes_used) < 2:
+        # Cap fired before we got enough data points to fit a slope. If the
+        # claimed class is "fast" (O(1)/O(log n)/O(n)/O(n log n)) and the
+        # very first (smallest) size already exceeded the per-call cap, that
+        # is strong direct evidence the actual algorithm is much slower than
+        # claimed — return MISMATCH rather than abstaining. The data we have
+        # is one slow measurement, which falsifies a fast-class claim by
+        # itself: an O(n) claim asserts that fn(n=sizes[0]) completes in
+        # sub-cap time at that scale, and we just observed it didn't.
+        fast_classes = (
+            "o(1)", "o(logn)", "o(loglogn)",
+            "o(n)", "o(nlogn)", "o(n*logn)",
+        )
+        if (claimed in fast_classes
+                and len(sizes_used) >= 1
+                and times[0] >= max_per_call_s):
+            data = {"sizes_used": sizes_used, "times_s": times,
+                    "claimed_class": claimed, "tolerance": tol,
+                    "max_per_call_s": max_per_call_s}
+            return mismatch(
+                "cs.runtime_complexity",
+                f"call at n={sizes_used[0]} took {times[0]:.2f}s "
+                f"(>= {max_per_call_s}s cap) — algorithm is far slower than "
+                f"claimed {claimed}",
+                data,
+            )
+        return na("cs.runtime_complexity",
+                  f"only {len(sizes_used)} size(s) completed within "
+                  f"{max_per_call_s}s/call cap or {max_total_s}s/claim "
+                  f"budget — cannot fit a slope")
+
+    # Fit log-log slope on the larger half of sizes (where overhead matters less)
+    sizes = sizes_used
+    log_n = [math.log(n) for n in sizes]
+    log_t = [math.log(t) for t in times]
+    # use the upper half but at least 3 points
+    cut = max(0, len(sizes) - max(3, len(sizes) // 2))
+    xs = log_n[cut:]
+    ys = log_t[cut:]
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(xs, ys))
+    den = sum((xi - mean_x) ** 2 for xi in xs) or 1e-30
+    slope = num / den
+
+    expected_slopes = {
+        "o(1)": 0.0, "o(logn)": 0.0, "o(loglogn)": 0.0,
+        "o(n)": 1.0, "o(nlogn)": 1.0, "o(n*logn)": 1.0,
+        "o(n**2)": 2.0, "o(n^2)": 2.0,
+        "o(n**3)": 3.0, "o(n^3)": 3.0,
+    }
+    expected = expected_slopes.get(claimed)
+    data = {"sizes": sizes, "times_s": times, "log_log_slope": slope,
+            "claimed_class": claimed, "tolerance": tol}
+    if expected is None:
+        return error("cs.runtime_complexity", f"unrecognized claimed_class {claimed!r}", data)
+    verdict = _slope_verdict(slope, expected, tol, sorted(set(expected_slopes.values())))
+    if verdict == "confirm":
+        return confirm(
+            "cs.runtime_complexity",
+            f"measured log-log slope {slope:.2f}, expected ~{expected:.1f} for {claimed} (tol {tol})",
+            data,
+        )
+    if verdict == "inconclusive":
+        # Runtime is measured on a wall clock, which is NOT deterministic — a loaded machine can
+        # bend a slope off the claimed class WITHOUT it landing on any OTHER class. That is a noisy
+        # measurement, not a false claim. Abstaining here (rather than MISMATCH) keeps a timing fluke
+        # from rendering a possibly-TRUE claim BROKEN — "our engine could not check this" is not "your
+        # claim is false" (the kernel's fifth clause). It can never mint a false CONFIRMED.
+        return na(
+            "cs.runtime_complexity",
+            f"measured log-log slope {slope:.2f} fits no complexity class within tol {tol} "
+            f"(expected ~{expected:.1f} for {claimed}) — timing inconclusive, cannot call")
+    return mismatch(
+        "cs.runtime_complexity",
+        f"measured log-log slope {slope:.2f} fits a DIFFERENT class, not the claimed {claimed} "
+        f"(expected ~{expected:.1f}, tol {tol})",
+        data,
+    )
+
+
+def verify_logic_gate(spec: Dict[str, Any]) -> VerifierResult:
+    """Digital logic gate-network equivalence — Shannon's bridge (circuits ARE Boolean algebra).
+
+    A combinational gate network is a Boolean function of its inputs; two networks are
+    interchangeable exactly when they compute the same function — the core correctness check
+    in logic synthesis and circuit optimization. Decided here by exact truth-table enumeration
+    over the inputs (pure standard library, so it runs on the sovereign stdlib-only box, unlike
+    the sympy SAT path). This is Claude Shannon's 1937 result — the algebra of switching circuits
+    IS propositional logic — realized as a deterministic check.
+
+    Spec:
+      variables: input names, e.g. ["a", "b", "c"]
+      gate_a, gate_b: Boolean expressions over the inputs (& AND, | OR, ~ NOT, ^ XOR, >> IMPLIES)
+      claimed_equivalent: bool — do the two gate networks realize the same circuit?
+    """
+    name = "computer_science.logic_gate"
+    a = spec.get("gate_a")
+    b = spec.get("gate_b")
+    claimed = spec.get("claimed_equivalent")
+    if a is None or b is None or claimed is None:
+        return na(name)
+    var_names = spec.get("variables") or []
+    from ._boolean import boolean_equivalent, BooleanParseError
+    try:
+        # two gate networks are the same circuit iff no input assignment tells them apart
+        is_equiv = boolean_equivalent(a, b, var_names)
+    except BooleanParseError as e:
+        return na(name, f"cannot parse gate network: {e}")
+    except Exception as e:  # noqa: BLE001
+        return error(name, f"computation failure: {type(e).__name__}: {e}")
+    claimed_b = bool(claimed)
+    if is_equiv == claimed_b:
+        return confirm(name,
+                       f"gate networks {a!r} and {b!r} equivalent={is_equiv}, matches claim",
+                       {"gate_a": a, "gate_b": b, "actual": is_equiv, "claimed": claimed_b})
+    return mismatch(name,
+                    f"gate networks {a!r} and {b!r} equivalent={is_equiv}, claimed {claimed_b}",
+                    {"gate_a": a, "gate_b": b, "actual": is_equiv, "claimed": claimed_b})
+
+
+GOLDEN_PACKET_KEY = "CS_VERIFY"
+# Boolean-algebra equivalence (Shannon) — pure truth-table, no code execution (which the engine
+# disables). a&b == b&a, so the two gate networks are equivalent.
+GOLDEN_EXAMPLE = {"variables": ["a", "b"], "gate_a": "a & b", "gate_b": "b & a",
+                  "claimed_equivalent": True}
+
+
+def run(packet: Dict[str, Any]) -> List[VerifierResult]:
+    results: List[VerifierResult] = []
+    cv = packet.get("CS_VERIFY") or {}
+
+    # digital logic (Boolean gate networks) — independent of the code-execution checks below
+    if cv.get("gate_a") is not None and cv.get("gate_b") is not None:
+        results.append(verify_logic_gate(cv))
+
+    if cv.get("code"):
+        results.append(verify_static_termination(cv["code"]))
+        if cv.get("test_cases") and cv.get("function_name"):
+            results.append(verify_functional_correctness(cv))
+        if cv.get("input_generator") and cv.get("claimed_class"):
+            results.append(verify_runtime_complexity(cv))
+        if cv.get("input_generator") and cv.get("claimed_space_class"):
+            results.append(verify_space_complexity(cv))
+        if cv.get("function_name") and cv.get("test_cases") and cv.get("trials"):
+            results.append(verify_determinism(cv))
+
+    if not results:
+        results.append(na("computer_science", "no CS_VERIFY artifacts present"))
+    return results
+
+
+# ---------------------------------------------------------------------
+# V4: space complexity, determinism
+# ---------------------------------------------------------------------
+
+def verify_space_complexity(spec):
+    """Estimate peak memory delta at log-spaced input sizes via tracemalloc.
+
+    spec: same shape as verify_runtime_complexity but with claimed_space_class.
+    """
+    import tracemalloc
+    code = spec.get("code"); fn_name = spec.get("function_name")
+    gen_code = spec.get("input_generator")
+    claimed = (spec.get("claimed_space_class") or "").replace(" ", "").lower()
+    tol = clamp_tol(spec, "tolerance", 0.40)
+    if not code or not fn_name or not gen_code or not claimed:
+        return na("cs.space_complexity")
+    default_sizes = {
+        "o(1)": [1000, 10000, 100000],
+        "o(logn)": [1000, 10000, 100000],
+        "o(n)": [1000, 10000, 100000],
+        "o(nlogn)": [1000, 10000, 100000],
+        "o(n**2)": [100, 200, 400, 800],
+        "o(n^2)": [100, 200, 400, 800],
+    }
+    sizes = spec.get("sizes") or default_sizes.get(claimed, [100, 1000, 10000])
+    try:
+        fn = _exec_function(code, fn_name)
+        gen = _exec_function(gen_code, "gen")
+    except Exception as e:
+        return error("cs.space_complexity", f"setup failure: {e}")
+    peaks = []
+    for n in sizes:
+        try:
+            args = gen(n)
+            if not isinstance(args, (list, tuple)):
+                args = [args]
+        except Exception as e:
+            return error("cs.space_complexity", f"input_generator(n={n}) failure: {e}")
+        tracemalloc.start()
+        try:
+            fn(*args)
+        except Exception as e:
+            tracemalloc.stop()
+            return error("cs.space_complexity", f"call at n={n} failed: {e}")
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        peaks.append(max(peak, 1))
+    # log-log slope of memory vs n
+    log_n = [math.log(n) for n in sizes]
+    log_p = [math.log(p) for p in peaks]
+    cut = max(0, len(sizes) - max(3, len(sizes) // 2))
+    xs = log_n[cut:]; ys = log_p[cut:]
+    mx = sum(xs) / len(xs); my = sum(ys) / len(ys)
+    num = sum((xi - mx) * (yi - my) for xi, yi in zip(xs, ys))
+    den = sum((xi - mx) ** 2 for xi in xs) or 1e-30
+    slope = num / den
+    expected_slopes = {"o(1)": 0.0, "o(logn)": 0.0, "o(n)": 1.0,
+                       "o(nlogn)": 1.0, "o(n**2)": 2.0, "o(n^2)": 2.0}
+    expected = expected_slopes.get(claimed)
+    data = {"sizes": sizes, "peak_bytes": peaks, "log_log_slope": slope,
+            "claimed_space_class": claimed, "tolerance": tol}
+    if expected is None:
+        return error("cs.space_complexity", f"unrecognized claimed_space_class {claimed!r}", data)
+    if abs(slope - expected) <= tol:
+        return confirm("cs.space_complexity",
+                       f"measured slope {slope:.2f} ~ expected {expected:.1f} for {claimed}",
+                       data)
+    return mismatch("cs.space_complexity",
+                    f"measured slope {slope:.2f} != expected {expected:.1f} for {claimed}",
+                    data)
+
+
+def verify_determinism(spec):
+    """Run the function multiple times on each test_case and confirm identical output."""
+    code = spec.get("code"); fn_name = spec.get("function_name")
+    cases = spec.get("test_cases") or []
+    trials = max(2, int(spec.get("trials", 3)))
+    if not code or not fn_name or not cases:
+        return na("cs.determinism")
+    try:
+        fn = _exec_function(code, fn_name)
+    except Exception as e:
+        return error("cs.determinism", f"setup failure: {e}")
+    nondeterministic_cases = []
+    for i, case in enumerate(cases):
+        args, kwargs = _resolve_call_args(case)
+        try:
+            outs = []
+            for _ in range(trials):
+                outs.append(fn(*args, **kwargs))
+        except Exception as e:
+            return error("cs.determinism", f"case {i} raised: {e}")
+        # Compare every output to the first
+        first = outs[0]
+        if any(o != first for o in outs[1:]):
+            nondeterministic_cases.append({"index": i, "outputs_seen": [str(o) for o in outs]})
+    data = {"trials": trials, "n_cases": len(cases),
+            "nondeterministic": nondeterministic_cases}
+    if nondeterministic_cases:
+        return mismatch("cs.determinism",
+            f"{len(nondeterministic_cases)}/{len(cases)} cases non-deterministic across {trials} trials",
+            data)
+    return confirm("cs.determinism",
+        f"all {len(cases)} cases produced identical output across {trials} trials",
+        data)

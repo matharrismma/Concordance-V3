@@ -1,0 +1,502 @@
+"""Ledger — the append-only audit chain of sealed records.
+
+Each sealed PASS record becomes a precedent file linked into a SHA-256 hash chain:
+every file's `prev_hash` is the prior file's `content_hash` (GENESIS for the first).
+Tamper with any file and `verify_chain` catches it — the chain is the integrity proof.
+
+Chain order is by `sealed_at` (not filename), so inserting a file later never changes
+an earlier file's position. Ported from 1.0 src/concordance_engine/ledger.py — the
+chain essentials. `find_closest` (precedent search) needs the grid and ports later.
+
+`seal_record` wires the floor together: validate_and_seal -> CAS (content-addressed
+store) -> ledger (the chain). Sovereign: stdlib only, a directory of JSON files.
+"""
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import threading
+import time
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional
+
+from . import cas
+from .record import ClosestCase, WitnessRecord, with_permanent_ref
+from .validate import canonical_json_bytes, sha256_bytes
+
+GENESIS_HASH = "GENESIS"
+# Chain-layer fields excluded from content_hash (the hash is over the content).
+_CHAIN_FIELDS = ("content_hash", "prev_hash")
+
+
+def _default_ledger_dir() -> Path:
+    override = os.environ.get("CONCORDANCE_LEDGER_DIR")
+    if override:
+        return Path(override)
+    data = os.environ.get("CONCORDANCE_DATA_DIR", "").strip()
+    if data:
+        return Path(data) / "ledger"
+    return Path("data") / "ledger"
+
+
+def _read_precedent_file(p: Path) -> Optional[Dict[str, Any]]:
+    try:
+        with open(p, encoding="utf-8") as fp:
+            data = json.load(fp)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _load_precedents(ledger_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Read precedents from the ledger directory, de-duped by precedent_id."""
+    d = ledger_dir or _default_ledger_dir()
+    seen: set = set()
+    out: List[Dict[str, Any]] = []
+    if not d.exists() or not d.is_dir():
+        return out
+    for f in sorted(d.glob("*.json")):
+        p = _read_precedent_file(f)
+        if isinstance(p, dict) and p.get("precedent_id") and p["precedent_id"] not in seen:
+            seen.add(p["precedent_id"])
+            out.append(p)
+    return out
+
+
+def list_precedents(ledger_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Every precedent currently in the ledger."""
+    return _load_precedents(ledger_dir)
+
+
+# ── Hash chain ─────────────────────────────────────────────────────────
+
+def compute_content_hash(precedent: Dict[str, Any]) -> str:
+    """SHA-256 of the precedent's canonical JSON, excluding the chain fields so the
+    hash is stable across re-sealing."""
+    payload = {k: v for k, v in precedent.items() if k not in _CHAIN_FIELDS}
+    return sha256_bytes(canonical_json_bytes(payload))
+
+
+def _ledger_chain_files(ledger_dir: Optional[Path] = None) -> List[Path]:
+    """Files in chain order — by `sealed_at` ascending, filename as tiebreaker."""
+    d = ledger_dir or _default_ledger_dir()
+    if not d.exists() or not d.is_dir():
+        return []
+
+    def _sort_key(f: Path):
+        data = _read_precedent_file(f)
+        if data and isinstance(data.get("sealed_at"), (int, float)):
+            return (data["sealed_at"], f.name)
+        try:
+            return (f.stat().st_mtime, f.name)
+        except OSError:
+            return (0.0, f.name)
+
+    return sorted(d.glob("*.json"), key=_sort_key)
+
+
+_HEAD_NAME = ".chain.head"  # O(1) tip pointer; NOT matched by *.json globs, so every reader ignores it
+
+
+def _chain_tip(ledger_dir: Path, *, exclude: Optional[Path] = None) -> tuple:
+    """The chain's current tip as (prev_hash, sealed_at).
+
+    O(1) via the `.chain.head` pointer; a full directory scan only if the pointer is missing, corrupt,
+    or names a file that is gone. Correctness never depends on the pointer — a lost head costs one scan,
+    and the next successful append re-establishes it. `exclude` is the file being written now (it is
+    never its own predecessor)."""
+    d = ledger_dir
+    head_path = d / _HEAD_NAME
+    head = _read_precedent_file(head_path) if head_path.exists() else None
+    if isinstance(head, dict):
+        tip_name, tip_hash = head.get("tip_file"), head.get("content_hash")
+        # The pointer is trusted ONLY if the newest ledger file is its tip. Anything written behind its
+        # back — a `sync` pull (replicate writes ledger files directly), a hand copy — is caught here by
+        # one scandir, falls to the scan, and the next successful append re-establishes the pointer.
+        # (Review 2026-10-08: a pull past the tip would otherwise fork the chain at the next seal.)
+        if (tip_name and tip_hash and (exclude is None or tip_name != exclude.name)
+                and (d / tip_name).exists() and _newest_ledger_file(d, exclude=exclude) == tip_name):
+            ts = head.get("sealed_at")
+            return (tip_hash, ts if isinstance(ts, (int, float)) else 0.0)
+    # fallback: derive the tip from the directory (the pre-pointer behavior)
+    existing = [f for f in _ledger_chain_files(d) if exclude is None or f != exclude]
+    if not existing:
+        return (GENESIS_HASH, 0.0)
+    last = _read_precedent_file(existing[-1]) or {}
+    prev_hash = last.get("content_hash") or (compute_content_hash(last) if last else GENESIS_HASH)
+    ts = last.get("sealed_at")
+    return (prev_hash, ts if isinstance(ts, (int, float)) else 0.0)
+
+
+def _newest_ledger_file(ledger_dir: Path, *, exclude: Optional[Path] = None) -> Optional[str]:
+    """The name of the most recently written ledger file (by mtime, ties by name) — a cheap check that
+    nothing has been appended behind the head pointer's back. None when the directory holds no ledger file."""
+    import os
+    best = None
+    try:
+        with os.scandir(ledger_dir) as it:
+            for e in it:
+                if not e.name.endswith(".json") or e.name.startswith(".") or (exclude is not None and e.name == exclude.name):
+                    continue
+                try:
+                    key = (e.stat().st_mtime_ns, e.name)
+                except OSError:
+                    continue
+                if best is None or key > best:
+                    best = key
+    except OSError:
+        return None
+    return best[1] if best else None
+
+
+def _write_head(ledger_dir: Path, tip_file: str, content_hash: str, sealed_at: float) -> None:
+    """Point `.chain.head` at the new tip, atomically. Best-effort: a failed write just means the next
+    append falls back to a scan. MUST be called inside the chain lock so the pointer cannot fork."""
+    try:
+        payload = {"tip_file": tip_file, "content_hash": content_hash, "sealed_at": sealed_at}
+        tmp = ledger_dir / (_HEAD_NAME + ".tmp")
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        tmp.replace(ledger_dir / _HEAD_NAME)   # atomic replace on POSIX and Windows
+    except OSError:
+        pass
+
+
+def verify_chain(ledger_dir: Optional[Path] = None, *,
+                 cas_base: Optional[Path] = None) -> Dict[str, Any]:
+    """Walk the ledger in chain order and verify integrity: recompute each
+    content_hash, confirm each prev_hash links to the prior file's hash, and (for
+    precedents bound to a CAS record) confirm that sealed record still exists and
+    re-verifies in the store. A broken link, a tampered file, or a missing/altered
+    bound record all set ok=False."""
+    files = _ledger_chain_files(ledger_dir)
+    report: Dict[str, Any] = {
+        "ok": True, "total": len(files), "verified": 0,
+        "unsigned": [], "tampered": [], "broken_links": [], "missing_records": [],
+    }
+    expected_prev = GENESIS_HASH
+    for f in files:
+        precedent = _read_precedent_file(f)
+        if precedent is None:
+            report["tampered"].append({"file": f.name, "error": "could not parse JSON"})
+            report["ok"] = False
+            continue
+        rh = precedent.get("record_hash")
+        if rh:  # the chain binds this precedent to a sealed CAS record — confirm it stands
+            try:
+                ok_cas, _ = cas.verify(rh, base_dir=cas_base)
+            except Exception:  # noqa: BLE001 — never false-alarm if the store is unreachable
+                ok_cas = True
+            if not ok_cas:
+                report["missing_records"].append({"file": f.name, "record_hash": rh[:12] + "..."})
+                report["ok"] = False
+        stored_hash = precedent.get("content_hash")
+        if stored_hash is None:
+            report["unsigned"].append(f.name)
+            expected_prev = compute_content_hash(precedent)
+            continue
+        recomputed = compute_content_hash(precedent)
+        if recomputed != stored_hash:
+            report["tampered"].append({
+                "file": f.name,
+                "error": f"content_hash mismatch: stored {stored_hash[:12]}..., "
+                         f"recomputed {recomputed[:12]}...",
+            })
+            report["ok"] = False
+            expected_prev = stored_hash
+            continue
+        stored_prev = precedent.get("prev_hash", GENESIS_HASH)
+        if stored_prev != expected_prev:
+            report["broken_links"].append({
+                "file": f.name,
+                "expected_prev": expected_prev[:12] + "..." if expected_prev != GENESIS_HASH else GENESIS_HASH,
+                "got_prev": stored_prev[:12] + "..." if stored_prev != GENESIS_HASH else GENESIS_HASH,
+            })
+            report["ok"] = False
+            expected_prev = stored_hash
+            continue
+        report["verified"] += 1
+        expected_prev = stored_hash
+    return report
+
+
+# In-process serialization: sealers in THIS process queue on a plain threading.Lock, so only
+# ONE thread ever contends the OS lock at a time. That keeps the OS lock's job to what it is FOR —
+# coordination ACROSS processes (nh-org, nh-com-2 share one ledger dir) — and avoids many threads
+# spinning on a mandatory byte-range lock (pathologically slow, and prone to stall under coverage's
+# thread tracing on Windows). The OS lock is then acquired uncontended in the common case.
+_SEAL_TLOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def _chain_lock(ledger_dir: Path) -> Iterator[None]:
+    """Serialize the chain's read-then-write critical section — within this process (threading.Lock)
+    AND across processes (an OS advisory lock). Two server processes share one ledger dir, so a
+    threading.Lock alone cannot stop them from reading the same tail and forking the chain on one
+    prev_hash; the OS lock does, and it self-releases if a holder dies (no stale lock to reap).
+    Stdlib only: fcntl.flock on POSIX (the box), msvcrt on Windows (dev/tests). Because the
+    threading.Lock already serialises this process's sealers, the OS lock is acquired uncontended
+    in the common case (it only ever waits on ANOTHER process)."""
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    with _SEAL_TLOCK:
+        fd = os.open(str(ledger_dir / ".chain.lock"), os.O_CREAT | os.O_RDWR)
+        try:
+            try:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            except ImportError:  # Windows
+                import msvcrt
+                os.lseek(fd, 0, os.SEEK_SET)
+                while True:
+                    try:
+                        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError:
+                        time.sleep(0.02)
+            yield
+        finally:
+            try:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except ImportError:  # Windows
+                try:
+                    import msvcrt
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+            finally:
+                os.close(fd)
+
+
+def _slugify(value: str) -> str:
+    """Filesystem-safe slug for precedent file names."""
+    out = []
+    for c in value.lower():
+        if c.isalnum():
+            out.append(c)
+        elif c in (" ", "-", "_", ".", "/", ":"):
+            out.append("-")
+    slug = "".join(out)
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-") or "untitled"
+
+
+def seal_to_ledger(record: WitnessRecord, *, summary: str,
+                   precedent_id: Optional[str] = None,
+                   ledger_dir: Optional[Path] = None,
+                   sealed_at: Optional[float] = None,
+                   overwrite: bool = False) -> Path:
+    """Append a sealed PASS record to the chain as a new precedent. Returns the path.
+
+    Only PASS records seal — the ledger records *resolved* decisions; rejected or
+    quarantined packets are not precedents. `summary` is a required one-line human
+    framing. Raises ValueError on a non-PASS record or empty summary."""
+    if record.overall != "PASS":
+        raise ValueError(f"only PASS records seal to the ledger; got {record.overall}")
+    if not summary or not summary.strip():
+        raise ValueError("`summary` is required (one-line human description)")
+
+    axis = record.axis_coords.axis if record.axis_coords else "unknown"
+    dimensions = sorted(record.axis_coords.dimensions) if record.axis_coords else []
+
+    if precedent_id is None:
+        slug_base = record.packet_id or _slugify(summary)[:60]
+        precedent_id = f"ledger://{axis}/{_slugify(slug_base)}"
+
+    overlay: Dict[str, str] = {}
+    step = 1
+    for gr in record.gate_results:
+        if gr.status == "PASS":
+            details_msg = ""
+            if gr.details and isinstance(gr.details, dict):
+                verified = gr.details.get("verified") or []
+                if verified:
+                    details_msg = "; ".join(str(v) for v in verified[:3])
+            overlay[f"step_{step}_{gr.gate.lower()}"] = details_msg or f"{gr.gate} gate confirmed"
+            step += 1
+
+    precedent_payload = {
+        "precedent_id": precedent_id,
+        "axis": axis,
+        "dimensions": dimensions,
+        "summary": summary.strip(),
+        "anchors": [a.to_dict() for a in record.anchors],
+        "reasoning_overlay": overlay,
+        # sealed_at is finalized INSIDE the lock below (an auto stamp must be monotonic with write
+        # order); an explicit caller value is carried through unchanged.
+        "sealed_at": sealed_at,
+    }
+    # Bind the chain to the actual sealed record in the CAS: the precedent's content_hash
+    # now commits to record_hash, so the hash-chain attests the real verdict/trail — not
+    # just the human summary. (record.permanent_ref is the CAS address, set before sealing.)
+    if record.permanent_ref:
+        precedent_payload["record_hash"] = record.permanent_ref
+
+    d = ledger_dir or _default_ledger_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    target = d / f"{_slugify(precedent_id.replace('ledger://', ''))}.json"
+
+    # ONE ACT, across processes: the tail read, the sealed_at stamp, the prev_hash computation, and
+    # the write are a single critical section. Without the lock, two sealers (even in different
+    # processes) can read the same tail and link two new files to the same prev_hash — a forked
+    # chain that verify_chain then reports as broken. The file lock serializes them; it self-
+    # releases on process death, so a crash mid-seal never wedges the ledger.
+    with _chain_lock(d):
+        if target.exists() and not overwrite:
+            raise FileExistsError(f"precedent file already exists at {target}")
+
+        # The tail — O(1) via the head pointer, never a scan of the whole ledger (a missing/corrupt
+        # pointer self-heals with a single fallback scan; see _chain_tip).
+        prev_hash, tail_sealed = _chain_tip(d, exclude=target)
+
+        # Stamp an auto seal monotonically past the tail: chain order is BY sealed_at, so a new
+        # record that precedes the tail would make chain-order and prev-linkage disagree and read
+        # as a broken link. Concurrent auto-seals sample time.time() before the lock, so their
+        # timestamps can arrive out of write order — advancing past the tail restores a valid chain.
+        # An explicit caller stamp is honored as-is (the caller then owns ordering).
+        if precedent_payload["sealed_at"] is None:
+            now = time.time()
+            precedent_payload["sealed_at"] = now if now > tail_sealed else tail_sealed + 1e-6
+
+        precedent_payload["prev_hash"] = prev_hash
+        precedent_payload["content_hash"] = compute_content_hash(precedent_payload)
+
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(precedent_payload, f, indent=2)
+            f.write("\n")
+        # Advance the O(1) tip pointer — inside the lock, so it cannot fork. Only when this write is at
+        # least as late as the prior tip; an explicit earlier timestamp leaves the pointer and the next
+        # append self-heals by scan.
+        if precedent_payload["sealed_at"] >= tail_sealed:
+            _write_head(d, target.name, precedent_payload["content_hash"], precedent_payload["sealed_at"])
+    return target
+
+
+def seal_record(record: WitnessRecord, *, summary: str,
+                ledger_dir: Optional[Path] = None,
+                cas_base: Optional[Path] = None,
+                sealed_at: Optional[float] = None,
+                sign_key: Optional[str] = None) -> Dict[str, Any]:
+    """Wire the floor: store the sealed record in the CAS (content-addressed), then
+    append it to the ledger chain. Returns {content_hash, ledger_path, precedent}.
+    If sign_key (an Ed25519 private key, base64url) is given, also returns an
+    `attestation` — a detached signature over the content_hash that binds an identity
+    to the seal."""
+    content_hash = cas.store(record.to_dict(), base_dir=cas_base)
+    record = with_permanent_ref(record, content_hash)
+    path = seal_to_ledger(record, summary=summary, ledger_dir=ledger_dir, sealed_at=sealed_at)
+    result = {"content_hash": content_hash, "ledger_path": str(path),
+              "precedent": _read_precedent_file(path)}
+    if sign_key:
+        from . import signing
+        result["attestation"] = signing.sign_seal(content_hash, sign_key)
+    return result
+
+
+# ── Precedent search (find_closest) — the overlay onto a verdict ──────────
+
+_ANCHOR_WEIGHT = 0.35
+
+
+def _anchor_to_ref(raw: Any) -> Optional[str]:
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, dict):
+        ref = raw.get("ref")
+        if isinstance(ref, str):
+            return ref
+    return None
+
+
+def _packet_anchor_refs(packet: Dict[str, Any]) -> List[str]:
+    raw: List[Any] = []
+    raw.extend(packet.get("scripture_anchors") or [])
+    dp = packet.get("DECISION_PACKET")
+    if isinstance(dp, dict):
+        raw.extend(dp.get("scripture_anchors") or [])
+    raw.extend(packet.get("refs") or [])
+    out: List[str] = []
+    for a in raw:
+        r = _anchor_to_ref(a)
+        if r:
+            out.append(r)
+    return out
+
+
+def _precedent_anchor_refs(precedent: Dict[str, Any]) -> List[str]:
+    out: List[str] = []
+    for a in precedent.get("anchors") or []:
+        r = _anchor_to_ref(a)
+        if r:
+            out.append(r)
+    return out
+
+
+def latest_in_amendment_chain(precedent_id: str, *, ledger_dir: Optional[Path] = None) -> str:
+    """The latest precedent in an amendment chain. Amendments are deferred in 2.0,
+    so this returns the id unchanged (no superseding chains yet)."""
+    return precedent_id
+
+
+def find_closest(packet: Dict[str, Any], *, ledger_dir: Optional[Path] = None) -> Optional[ClosestCase]:
+    """Find the closest sealed precedent for a packet — the precedent overlay onto a
+    verdict. Distance = (1 - Jaccard on grid dimensions), blended with anchor overlap
+    when both sides carry anchors. Returns None if the packet's domain has no resolvable
+    axis; ClosestCase(precedent_id=None) for an empty ledger or honest-novel; else the match."""
+    domain = (packet.get("domain") or "").lower()
+    # v3: the axes grid lives in the .org app. A caller that wants the precedent overlay passes the
+    # packet's dimensions explicitly as packet["dimensions"]; without them there is no resolvable axis.
+    dims = packet.get("dimensions")
+    if not domain or not dims:
+        return None
+    packet_dims = frozenset(dims)
+    packet_anchors = set(_packet_anchor_refs(packet))
+    precedents = _load_precedents(ledger_dir)
+    if not precedents:
+        return ClosestCase(precedent_id=None)
+
+    best = None
+    best_distance = float("inf")
+    best_shared_dims: frozenset = frozenset()
+    best_shared_anchors: tuple = ()
+    for p in precedents:
+        p_dims = frozenset(p.get("dimensions", []))
+        if not p_dims:
+            continue
+        shared = packet_dims & p_dims
+        union = packet_dims | p_dims
+        if not union:
+            continue
+        dim_distance = 1.0 - (len(shared) / len(union))
+        p_anchors = set(_precedent_anchor_refs(p))
+        shared_anchors = packet_anchors & p_anchors
+        if packet_anchors and p_anchors:
+            anchor_sim = len(shared_anchors) / len(packet_anchors | p_anchors)
+            distance = (1.0 - _ANCHOR_WEIGHT) * dim_distance + _ANCHOR_WEIGHT * (1.0 - anchor_sim)
+        else:
+            distance = dim_distance
+        effective = distance + (0 if p.get("axis") == domain else 0.001)
+        if effective < best_distance:
+            best_distance = effective
+            best = p
+            best_shared_dims = shared
+            best_shared_anchors = tuple(sorted(shared_anchors))
+
+    if best is None or (not best_shared_dims and not best_shared_anchors):
+        return ClosestCase(precedent_id=None)
+    matched_id = best["precedent_id"]
+    latest_id = latest_in_amendment_chain(matched_id, ledger_dir=ledger_dir)
+    if latest_id != matched_id:
+        for p in precedents:
+            if p.get("precedent_id") == latest_id:
+                best = p
+                break
+    return ClosestCase(
+        precedent_id=best["precedent_id"],
+        shared_dimensions=best_shared_dims,
+        shared_anchors=best_shared_anchors,
+        distance=round(best_distance, 4),
+        reasoning_overlay=best.get("reasoning_overlay"),
+    )
