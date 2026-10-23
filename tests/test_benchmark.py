@@ -15,7 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from benchmark import run  # noqa: E402
 
 
-def test_moat_is_green_zero_false_positives():
+def test_moat_is_green_zero_false_positives(monkeypatch):
+    import os
+    from pathlib import Path
+    monkeypatch.setenv("CONCORDANCE_DATA_DIR", str(Path(__file__).resolve().parents[1] / "data"))  # other tests move it
     n, corr, fp, fn = run(verbose=False)
     assert n >= 60, f"expected >=60 claims, got {n}"
     assert fp == 0, f"CRITICAL: {fp} false-positive(s) — a falsehood was sealed"

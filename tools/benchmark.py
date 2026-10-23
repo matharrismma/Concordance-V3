@@ -165,6 +165,9 @@ def emit_json(results, false_pos, false_neg):
 
 
 def run(verbose: bool = True, as_json: bool = False):
+    import os as _os
+    _os.environ.setdefault("CONCORDANCE_DATA_DIR",
+                           _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "data"))
     cats = {"equality": [0, 0, 0, 0], "inequality": [0, 0, 0, 0], "derivative": [0, 0, 0, 0], "domain": [0, 0, 0, 0]}
     false_pos, false_neg = [], []
     rows = []
