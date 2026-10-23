@@ -1,0 +1,12 @@
+# Paste INSIDE the `route { ... }` block of api.narrowhighway.com, ABOVE the existing
+# `reverse_proxy 127.0.0.1:8002` catch-all. Caddy matches in order; these doors go to V3 (:8020).
+# /mcp stays on the v2 MCP host (:8003) until the witness app registers its tools on top of V3;
+# V3's own MCP is reachable at /v3/mcp meanwhile.
+		@v3 path /verify /discern /audit /scribe /find /capabilities /health /schema/* /s/* /seal /seals /ledger/*
+		reverse_proxy @v3 127.0.0.1:8020 {
+			lb_try_duration 10s
+			lb_try_interval 250ms
+		}
+		handle_path /v3/* {
+			reverse_proxy 127.0.0.1:8020
+		}

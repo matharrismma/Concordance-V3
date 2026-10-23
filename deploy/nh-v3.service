@@ -1,0 +1,24 @@
+# Concordance V3 — the verification engine (verify / seals / schemas / scribe), :8020.
+# Sits BESIDE the v2 engine (nh-engine :8001/:8002) and the witness app (nh-org :8010). Caddy routes the
+# verification doors of api.narrowhighway.com here; the witness app mints its receipts here (NH_VERIFY_URL).
+# Rollback: sudo systemctl disable --now nh-v3 ; remove the Caddy route block ; the v2 engine still serves /verify.
+[Unit]
+Description=Concordance V3 — deterministic verification with re-checkable receipts (:8020)
+After=network.target
+
+[Service]
+User=nh
+WorkingDirectory=/home/nh/concordance-3
+EnvironmentFile=-/home/nh/concordance-3/.env
+Environment=PYTHONPATH=/home/nh/concordance-3/src
+Environment=CONCORDANCE_DATA_DIR=/home/nh/concordance-3/data
+# receipts cite the .org record host; the witness app proxies /s/<hash> to this engine
+Environment=CONCORDANCE_PUBLIC_BASE=https://narrowhighway.org
+Environment=CONCORDANCE_ALLOWED_ORIGINS=https://narrowhighway.com,https://narrowhighway.org,https://api.narrowhighway.com
+ExecStart=/home/nh/concordance-3/.venv/bin/python -m concordance serve --host 127.0.0.1 --port 8020
+LimitNOFILE=65536
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
