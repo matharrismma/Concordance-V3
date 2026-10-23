@@ -1782,8 +1782,8 @@
    "claimed_focuses_on_outcomes": false,
    "claimed_is_a_priori": false,
    "framework_name": "consequentialist",
-   "is_necessarily_True": true,
-   "is_possibly_True": true,
+   "is_necessarily_true": true,
+   "is_possibly_true": true,
    "object_a_properties": [
     "red",
     "round",
@@ -1803,8 +1803,8 @@
    "claimed_focuses_on_outcomes": true,
    "claimed_is_a_priori": true,
    "framework_name": "consequentialist",
-   "is_necessarily_True": true,
-   "is_possibly_True": true,
+   "is_necessarily_true": true,
+   "is_possibly_true": true,
    "object_a_properties": [
     "red",
     "round",

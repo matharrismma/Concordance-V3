@@ -36,6 +36,8 @@ def _analyse(mod_path: str) -> Dict[str, Any]:
     src = inspect.getsource(mod)
     tree = ast.parse(src)
     artifact: Optional[str] = None
+    artifacts: List[str] = []
+    root_fields: set = set()
     checks: Dict[str, List[str]] = {}
     fields: set = set()
     for node in tree.body:
@@ -47,40 +49,56 @@ def _analyse(mod_path: str) -> Dict[str, Any]:
                     if isinstance(f, ast.Attribute) and f.attr == "get" and n.args and \
                             isinstance(n.args[0], ast.Constant) and re.fullmatch(r"[A-Z][A-Z0-9_]+", str(n.args[0].value)):
                         artifact = artifact or n.args[0].value
+                        if n.args[0].value not in artifacts:
+                            artifacts.append(n.args[0].value)
                     if isinstance(f, ast.Name) and f.id == "dispatch" and len(n.args) > 1 and \
                             isinstance(n.args[1], ast.Constant):
                         artifact = artifact or n.args[1].value
+                        if n.args[1].value not in artifacts:
+                            artifacts.append(n.args[1].value)
                 if isinstance(n, ast.Compare) and isinstance(n.left, ast.Constant) and isinstance(n.left.value, str):
                     fields.add(n.left.value)
-        if isinstance(node, ast.FunctionDef) and node.name.startswith("verify_"):
-            fs = sorted({s for s in _str_consts(node)
-                         if re.fullmatch(r"[a-z][a-z0-9_]{1,60}", s) and s not in ("spec", "name")})
-            # keep only keys read from the spec: spec.get("k") / spec["k"] / "k" in spec
-            keys = set()
-            for n in ast.walk(node):
+                    if any(isinstance(c, ast.Name) and c.id == "packet" for c in n.comparators):
+                        root_fields.add(n.left.value)
                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "get" \
+                        and n.args and isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str):
+                    v = n.args[0].value
+                    if not re.fullmatch(r"[A-Z][A-Z0-9_]+", v):
+                        fields.add(v)
+                        if isinstance(n.func.value, ast.Name) and n.func.value.id == "packet":
+                            root_fields.add(v)
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("verify_"):
+            # Every identifier-like string constant the check mentions is a candidate field, except the
+            # check's own name (name = "...", or the first arg to confirm/na/error/mismatch) and strings
+            # with a dot or space. Over-inclusion only loosens SCHEMA_ERROR; under-inclusion rejects valid
+            # packets (found live 2026-10-23), so the net is cast wide on purpose.
+            not_fields = set()
+            for n in ast.walk(node):
+                if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "name" for t in n.targets) \
+                        and isinstance(n.value, ast.Constant):
+                    not_fields.add(n.value.value)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in ("confirm", "na", "error", "mismatch") \
                         and n.args and isinstance(n.args[0], ast.Constant):
-                    keys.add(str(n.args[0].value))
-                if isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant) and isinstance(n.slice.value, str):
-                    keys.add(n.slice.value)
-                if isinstance(n, ast.Compare) and isinstance(n.left, ast.Constant) and isinstance(n.left.value, str):
-                    keys.add(n.left.value)
-                # helper calls that read fields off the spec: _num(spec, "a", "b"), _get(art, "k")
-                if isinstance(n, ast.Call) and n.args and isinstance(n.args[0], ast.Name) \
-                        and n.args[0].id in ("spec", "art", "a", "rv", "pv", "mv", "packet_spec"):
-                    for arg in n.args[1:]:
-                        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                            keys.add(arg.value)
-            keys = {k for k in keys if k in fs}
+                    not_fields.add(n.args[0].value)
+            keys = {s_ for s_ in _str_consts(node)
+                    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,60}", s_) and s_ not in not_fields
+                    and s_ not in ("spec", "True", "False", "None")}
             checks[node.name[7:]] = sorted(keys)
             fields |= keys
+        # module-level tables (_RULES, _PLANCK_CHECKS, _CLASSES, …): their identifier-like strings are field
+        # names or vocabulary; both are safe to accept
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and (t.id.isupper() or t.id.startswith("_"))
+                                                for t in node.targets):
+            for c in _str_consts(node):
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,60}", c):
+                    fields.add(c)
     doc = inspect.getdoc(mod) or ""
     named = re.findall(r"^\s*\*\s+([a-z_]+\.[a-z0-9_]+)", doc, re.M)
     example = None
     m = re.search(r"packet shape[^\n]*\n(\s*\{.*?\n\s*\})", doc, re.S | re.I)
     if m:
         example = m.group(1).strip()
-    return {"module": mod_path.rsplit(".", 1)[-1], "artifact_key": artifact,
+    return {"module": mod_path.rsplit(".", 1)[-1], "artifact_key": artifact, "artifact_keys": artifacts, "root_fields": sorted(root_fields),
             "checks": checks, "named_checks": named, "fields": sorted(fields), "example": example}
 
 
@@ -128,28 +146,36 @@ def validate_steps(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                              "nearest": difflib.get_close_matches(d, list(_V.VERIFIERS), n=3)})
             continue
         a = _analyse(mod)
-        key = a["artifact_key"]
-        if key and key not in spec:
+        keys_all = a.get("artifact_keys") or ([a["artifact_key"]] if a["artifact_key"] else [])
+        present = [k for k in keys_all if k in spec]
+        if keys_all and not present:
             if "mode" in spec:
                 continue   # a math-mode packet routed under a domain name; derivation handles it
-            problems.append({"step": sid, "field": key, "problem": f"spec must carry the artifact key {key!r}",
-                             "got": sorted(spec)[:10]})
-            continue
+            if a.get("root_fields") and any(k in a["root_fields"] for k in spec):
+                pass   # a root-level packet the module reads directly (governance timing)
+            elif len(keys_all) == 1:
+                problems.append({"step": sid, "field": keys_all[0],
+                                 "problem": f"spec must carry the artifact key {keys_all[0]!r}", "got": sorted(spec)[:10]})
+                continue
+        key = present[0] if present else None
         art = spec.get(key) if key else spec
         if not isinstance(art, dict):
             problems.append({"step": sid, "field": key, "problem": "artifact must be an object"})
             continue
         known = set(a["fields"])
-        _free = ("units", "note", "label", "id", "claim", "source", "ref")
-        unknown = [k for k in art if k not in known and not str(k).startswith("tolerance") and k not in _free]
+        _free = ("units", "note", "label", "id", "claim", "source", "ref", "claimed_literal", "hedged")
+        unknown = [k for k in art if k not in known and not str(k).startswith("tolerance") and k not in _free
+                   and not str(k).endswith("_as_written")]         # engine-injected by the extractor
         recognised = [k for k in art if k in known]
         if known and unknown:
-            problems.append({"step": sid, "field": unknown[0],
-                             "problem": ("no check of this domain reads any of these fields" if not recognised
-                                         else "field name(s) not in this domain's schema"),
-                             "unknown": unknown[:8],
-                             "nearest": {u: difflib.get_close_matches(u, list(known), n=2, cutoff=0.6) for u in unknown[:8]},
-                             "known_fields": sorted(known)[:40]})
+            near = {u: difflib.get_close_matches(u, list(known), n=2, cutoff=0.75) for u in unknown[:8]}
+            typo = [u for u in unknown[:8] if near.get(u)]
+            if not recognised or typo:
+                problems.append({"step": sid, "field": (typo or unknown)[0],
+                                 "problem": ("no check of this domain reads any of these fields" if not recognised
+                                             else "field name(s) look like a misspelling of this domain's schema"),
+                                 "unknown": unknown[:8], "nearest": near, "known_fields": sorted(known)[:40]})
+            # otherwise: extra informational keys (a label, a scenario note) ride along; the verifier ignores them
     return problems
 
 

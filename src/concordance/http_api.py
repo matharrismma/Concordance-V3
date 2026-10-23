@@ -6,6 +6,7 @@
     POST /scribe        {drafts, packets, claim_ids}           -> pass report
     GET  /s/<hash>      the sealed record (JSON); GET /s/<hash>?html=1 a human page
     GET  /schema/<domain>, GET /find?q=..., GET /capabilities, GET /ledger/verify, GET /health
+    GET  /seal?hash=<hash>, GET /seals?limit=N        v2-compatible aliases used by the .org app
     POST|GET|DELETE /mcp   Streamable-HTTP MCP transport
 """
 from __future__ import annotations
@@ -108,6 +109,19 @@ def route(method: str, path: str, query: Dict[str, Any], body: Dict[str, Any], h
             return _json(200, _mcp._call_tool("capabilities", {}, _CONFIG))
         if path == "/ledger/verify":
             return _json(200, _mcp._call_tool("ledger_verify", {}, _CONFIG))
+        if path == "/seal":                                   # v2-compatible: GET /seal?hash=<h>
+            h = str(query.get("hash", [""])[0])
+            rec = _mcp._call_tool("seal_fetch", {"hash": h}, _CONFIG)
+            return _json(404 if "error" in rec else 200, rec)
+        if path == "/seals":                                  # v2-compatible: GET /seals?limit=N
+            from . import ledger as _ledger
+            lim = max(1, min(200, int(query.get("limit", ["20"])[0] or 20)))
+            entries = [e for e in _ledger.list_precedents() if len(str(e.get("record_hash") or "")) == 64][-lim:][::-1]
+            return _json(200, {"note": "most recent sealed records (newest first); record_hash is the CAS content hash",
+                               "count": len(entries),
+                               "seals": [{"content_hash": e.get("record_hash"), "summary": e.get("summary"),
+                                          "sealed_at": e.get("sealed_at"), "cite_url": f"/s/{e.get('record_hash')}"}
+                                         for e in entries]})
         if path == "/find":
             return _json(200, _mcp._call_tool("find_verifier", {"query": query.get("q", [""])[0]}, _CONFIG))
         m = re.fullmatch(r"/schema/([a-z_]+)", path)
