@@ -215,19 +215,7 @@ _BUILT = False
 _WINDEX: Dict[str, Dict[str, float]] = {}   # phrase -> {witness domain: weight}
 _WDOMAINS: set = set()
 # curated everyday vocabulary for the three witness domains (the person's words on narrowhighway.org)
-_WSYNONYMS: Dict[str, Tuple[str, ...]] = {
-    # Terms are written the way _phrases tokenizes a query (words of 3+ letters, at most 3 of them), and the
-    # build normalizes them again as a guard — a curated phrase that can never match is a silent dead entry.
-    "scripture": ("verse", "verses", "passage", "chapter", "bible", "scripture", "scriptures", "book of",
-                  "bible say", "bible says", "gospel", "psalm", "psalms", "epistle",
-                  "old testament", "new testament", "genesis", "exodus", "matthew", "mark", "luke", "john",
-                  "romans", "revelation"),
-    "theology_doctrine": ("doctrine", "doctrines", "creed", "nicene", "trinity", "justification", "atonement",
-                          "sanctification", "catechism", "orthodox", "orthodoxy", "heresy", "council",
-                          "confession faith", "systematic theology"),
-    "witness": ("testimony", "testify", "profession faith", "bear witness", "three witnesses", "witnesses",
-                "attest", "attestation", "witnessed"),
-}
+_WSYNONYMS: Dict[str, Tuple[str, ...]] = {}   # v3: plugin domains add their own phrases via entry points
 
 
 def _canon_of(modpath: str) -> str:
@@ -448,17 +436,6 @@ def resolve_domain(text: str, k: int = 3, margin: float = 0.34, floor: float = 2
             if phrase not in seen_phrase:
                 why.setdefault(dom, []).append(phrase)
         seen_phrase.add(phrase)
-    if surface == "witness":
-        # the witness face also reaches the witness verifiers — the Gate opens inward, never outward
-        for phrase in _phrases(t):
-            hit = _WINDEX.get(phrase)
-            if not hit:
-                continue
-            for dom, w in hit.items():
-                scores[dom] = scores.get(dom, 0.0) + w
-                if phrase not in seen_phrase:
-                    why.setdefault(dom, []).append(phrase)
-            seen_phrase.add(phrase)
 
     if not scores:
         dom = _structural(t)

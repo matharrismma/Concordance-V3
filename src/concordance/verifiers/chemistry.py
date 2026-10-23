@@ -636,7 +636,7 @@ def verify_atomic_energy_scale(spec: Dict[str, Any]) -> VerifierResult:
 # one-handedness; the Kagan–Soai discovery is that a small excess can be AMPLIFIED — the product's ee
 # exceeds the catalyst's (Kagan's non-linear effect), and in Soai's asymmetric autocatalysis the product
 # IS the catalyst, so the excess feeds back and the reaction runs toward a single enantiomer. The same
-# shape the keeping's own stigmergy follows: a small bias, reinforced, decides the whole. These checks
+# shape the corpus's own stigmergy follows: a small bias, reinforced, decides the whole. These checks
 # are exact arithmetic and a stated inequality — the lab discovery that amplification occurs is Kagan's
 # and Soai's, carried as a citation on the card, never asserted by the verifier.
 

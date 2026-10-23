@@ -7,7 +7,7 @@ and consistency, never the substance.
 
 De-laundered from 1.0 (hotspot #5): the 1.0 verifier carried scriptural anchors on each
 check (1 Cor 14:40, Mt 18:16, Prov 19:2, Mt 7:16-20) and a "church" domain profile.
-Those are doctrinal framing for the .org witness surface — they are NOT in the secular
+Those belong to the .org application — they are NOT in the
 core. The structural mechanisms are unchanged; scopes are neutral (local/mesh/archived).
 """
 from __future__ import annotations

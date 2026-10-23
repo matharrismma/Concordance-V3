@@ -210,9 +210,9 @@ def verify_gravitational_scale(spec: Dict[str, Any]) -> VerifierResult:
             return error(name, "escape_mass_kg / escape_radius_m must be numeric")
         if M <= 0 or r <= 0:
             return error(name, "mass and radius must be positive")
-        # The claim AS WRITTEN ("11.2 km/s"), when the front door hands it over, lets the check honour the
+        # The claim AS WRITTEN ("11.2 km/s"), when the front plain-text form hands it over, lets the check honour the
         # precision the person stated (scale_base.compare / base.stated_tolerance_abs, 2026-10-07): 11186 m/s
-        # IS 11.2 km/s to three figures. The structured door sends none and keeps the strict 1e-3.
+        # IS 11.2 km/s to three figures. The structured form sends none and keeps the strict 1e-3.
         import re as _re
         lit, factor = None, 1.0
         aw = spec.get("claimed_escape_velocity_as_written")

@@ -431,7 +431,7 @@ def _x_nutrition(text: str):
 #     as "8.314 J/K/mol" — is served just as well by declining: neither a false HOLDS nor a false
 #     BROKEN, because _normalize_unit cannot yet tell "wrong unit" from "same unit, other format"
 #     (refinement: a real unit normalizer would let formatting variants confirm and wrong units
-#     MISMATCH honestly). A claim with NO unit stated still checks the value; the structured door
+#     MISMATCH honestly). A claim with NO unit stated still checks the value; the structured form
 #     checks units deliberately. Scientific "e" notation is read; "x 10^n" is left to miss.
 _PC_SAFE_SINGLE = frozenset({"planck", "boltzmann", "avogadro", "faraday"})
 _PC_PAT: Optional[re.Pattern] = None
@@ -1438,7 +1438,7 @@ def _x_fallacy_kind(text: str):
 # What a word's letters say is arithmetic: letters, vowels, consonants, syllables and phonemes (the pronunciation
 # shelf), anagrams, palindromes, edit distance, an alphabet's size, a noun's plural, a letter's rank in English.
 # Routed to verifiers/wordcraft.py, which names its convention in every detail. Meaning stays with the lexicon's
-# doors (define, word_study); etymology is not in the keeping and is not pretended.
+# doors (define, word_study); etymology is not in the corpus and is not pretended.
 _W = r"[A-Za-z][A-Za-z'\-]*"
 _WQ = r"[\"'\u2018\u2019\u201c\u201d]?"
 _COUNT = r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|no)"
@@ -1525,7 +1525,7 @@ def _x_letter_rank(text: str):
 
 
 # ── PHONICS + ETYMOLOGY (Matt, 2026-10-08: "Etymology and phonics") ─────────────────────────────────
-# Sound, read off the keeping's pronunciation shelf (CMU, ARPABET): rhymes, homophones, the stressed syllable,
+# Sound, read off the corpus's pronunciation shelf (CMU, ARPABET): rhymes, homophones, the stressed syllable,
 # silent letters, the long/short vowel names of phonics, the first and last sounds. Origin, read off the
 # etymology shelf (Webster 1913, public domain): "X comes from Latin", "the Latin word salarium", "the Latin
 # word for little mouse", "of Greek origin". Routed to verifiers/wordcraft.py, which names its convention and
@@ -2602,7 +2602,7 @@ def looks_arithmetic(text: str) -> bool:
 
 
 def structured_hint(text: str) -> Optional[Dict[str, Any]]:
-    """The template for the structured door, built from the words — or None when they carry no number."""
+    """The template for the structured form, built from the words — or None when they carry no number."""
     t = re.sub(r"\s+", " ", (text or "")).strip()
     nums = _HINT_NUM.findall(t)
     if not nums:

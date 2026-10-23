@@ -31,7 +31,7 @@ MATCHES / TAMPERED-OR-WRONG / NO_CLAIM (nothing to verify against is not a pass)
 Seals are append-only (CAS is idempotent; the ledger chains records). A superseded or retracted
 finding is recorded by a LATER record — the old seal still verifies over its own bytes; standing
 is a ledger question, not a hash question. Ask `witnesses`/`attest_record` for who has borne
-witness to a record since.
+signature over a record since.
 
 ## Algorithm agility
 Current and only algorithm: SHA-256. A future algorithm change adds a version field to new

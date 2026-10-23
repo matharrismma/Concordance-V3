@@ -156,7 +156,7 @@ def stated_window(literal: Any, hedged: bool = False, unit_factor: float = 1.0) 
 def window_for(spec: Dict[str, Any], literal_key: str, default: float, unit_factor: float = 1.0,
                actual: Optional[float] = None) -> Tuple[float, Dict[str, Any]]:
     """The threshold a verifier compares against, and what to record about it. No literal in the spec (the
-    structured door): the verifier's own `default`, and nothing recorded. A literal (the prose door): the stated
+    structured form): the verifier's own `default`, and nothing recorded. A literal (the plain-text form): the stated
     window — or EXACT (float noise only) when a one-figure claim carries no hedge, because nothing but the
     figures and a hedge may widen a prose claim's window. `hedged` rides in the spec beside the literal
     (audit.extract sets it when a hedge word precedes the number in the quote)."""

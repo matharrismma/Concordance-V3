@@ -12,7 +12,7 @@ is actually present:
 All three compute the SAME first-order Riemann-Siegel formula. On one machine's libm the C path agrees with
 python to the last bit; where it would differ (only within ~1e-15, never near a sign change that matters) the
 caller's exact-mpmath recount decides, so the zero COUNT is identical whichever backend ran. The accelerator
-is a speed, never a verdict. The compiled .so is a per-node artifact; it never travels with the keeping.
+is a speed, never a verdict. The compiled .so is a per-node artifact; it never travels with the corpus.
 """
 from __future__ import annotations
 

@@ -2,11 +2,11 @@
 
 What a word's letters say is arithmetic, and arithmetic is what this engine seals: how many letters, vowels and
 consonants a word has; whether two words are anagrams; whether a word is a palindrome; how many edits apart two
-words are (Levenshtein); how many syllables and phonemes a word has, read off the keeping's own pronunciation shelf
+words are (Levenshtein); how many syllables and phonemes a word has, read off the corpus's own pronunciation shelf
 (the CMU Pronouncing Dictionary, ARPABET: one stress digit per vowel, one syllable per vowel); how many letters an
 alphabet has (a sourced table); what the plural of a noun is (an irregular table plus the regular rule — a noun not
 in the table whose claimed plural is not the regular one is DECLINED, never called wrong); and where a letter ranks in
-English letter frequency (a sourced order). Nothing here reads meaning; meaning is the lexicon's door (define,
+English letter frequency (a sourced order). Nothing here reads meaning; meaning is the lexicon's route (define,
 word_study). Every check names its convention in the detail, so a reader never has to guess what was counted.
 
 WORD_VERIFY packet shape (any subset of fields):
@@ -184,14 +184,14 @@ def _shelf_card_of(word: str, shelf: str, prefix: str, must_have: str) -> Option
 
 def etymology_of(word: str) -> List[str]:
     """The etymology texts Webster 1913 holds for a word (the bracketed [ … ] derivations), or [] when
-    the word is not on the keeping's etymology shelf (or no corpus is loaded). Found, never generated —
+    the word is not on the corpus's etymology shelf (or no corpus is loaded). Found, never generated —
     the peer of `define` (meaning) and `pronounce` (sound), reading the etymology shelf."""
     card = _shelf_card_of(str(word or ""), "etymology", "card_src_etym_", "etymology")
     return etymologies_from_body(str(card.get("body") or "")) if card else []
 
 
 def _pronunciation_of(word: str) -> Optional[Tuple[str, str]]:
-    """(ARPABET, source label) — the FIRST pronunciation on the keeping's pronunciation shelf, or None."""
+    """(ARPABET, source label) — the FIRST pronunciation on the corpus's pronunciation shelf, or None."""
     card = _shelf_card_of(word, "pronunciation", "card_src_pron_", "(ARPABET)")
     if not card:
         return None
@@ -282,7 +282,7 @@ def verify_syllables(spec: Dict[str, Any]) -> VerifierResult:
     if not pron:
         found = _pronunciation_of(str(w))
         if not found:
-            return na(name, f"{w!r} is not on the keeping's pronunciation shelf (or no corpus is loaded) — declined, not judged")
+            return na(name, f"{w!r} is not on the corpus's pronunciation shelf (or no corpus is loaded) — declined, not judged")
         pron, source = found
     syll, phon = arpabet_counts(pron)
     data = {"word": w, "pronunciation": pron, "actual_syllables": syll, "actual_phonemes": phon, "source": source,
@@ -517,7 +517,7 @@ def _prons_for(spec: Dict[str, Any], word_key: str, pron_key: str) -> Tuple[Opti
 
 
 def _declined_word(name: str, word: Any) -> VerifierResult:
-    return na(name, f"{word!r} is not on the keeping's pronunciation shelf (or no corpus is loaded) — declined, not judged")
+    return na(name, f"{word!r} is not on the corpus's pronunciation shelf (or no corpus is loaded) — declined, not judged")
 
 
 def verify_rhyme(spec: Dict[str, Any]) -> VerifierResult:
@@ -847,7 +847,7 @@ def verify_origin(spec: Dict[str, Any]) -> VerifierResult:
     else:
         card = _shelf_card_of(str(w), "etymology", "card_src_etym_", "etymology")
         if not card:
-            return na(name, f"{w!r} is not on the keeping's etymology shelf (or no corpus is loaded) — declined, not judged")
+            return na(name, f"{w!r} is not on the corpus's etymology shelf (or no corpus is loaded) — declined, not judged")
         etyms = etymologies_from_body(str(card.get("body") or ""))
         src = str((card.get("source") or {}).get("label") or ETYMOLOGY_SOURCE)
     if not etyms:

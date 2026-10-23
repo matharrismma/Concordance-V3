@@ -56,23 +56,12 @@ def test_every_suggestion_explains_itself_and_is_deterministic():
     assert [c["domain"] for c in r1["candidates"]] == [c["domain"] for c in r2["candidates"]]
 
 
-def test_witness_verifiers_route_only_on_the_witness_surface():
-    """Reach sprint (2026-10-16): the three witness verifiers were registered only in WITNESS_VERIFIERS, which
-    the resolver never read — a verse question on narrowhighway.org could not reach the scripture verifier.
-    They now route from a SEPARATE index on surface="witness" only; the secular face is untouched (the Gate
-    opens inward, never outward)."""
-    witness_domains = {"scripture", "theology_doctrine", "witness"}
-    checks = [
-        ("what does john 3:16 say about the world", "scripture"),
-        ("read me the passage in psalm 23", "scripture"),
-        ("is the trinity a doctrine of the nicene creed", "theology_doctrine"),
-        ("the apostles bore witness and gave their testimony of the gospel", "witness"),
-    ]
-    for q, dom in checks:
-        wit = [c["domain"] for c in resolve_domain(q, k=5, surface="witness")["candidates"]]
-        assert dom in wit, (q, wit)
-        sec = [c["domain"] for c in resolve_domain(q, k=5)["candidates"]]
-        assert not (set(sec) & witness_domains), ("a witness verifier routed on the secular face", q, sec)
+def test_plugin_domains_do_not_route_in_the_core():
+    """v3: the .org application's verifiers (scripture / theology / witness) are not in the core registry and
+    the core resolver carries no overlay for them. A verse question resolves to no core domain."""
+    from concordance import domain_resolver as dr
+    for q in ("what does john 3:16 say about the world", "is the trinity a doctrine of the nicene creed"):
+        assert dr.resolve_domain(q)["decision"] not in {"scripture", "theology_doctrine", "witness"}
 
 
 def test_the_secular_index_is_unchanged_by_the_witness_index():

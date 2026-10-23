@@ -7,7 +7,7 @@ earned one), never a false BROKEN — but the commonest phrasing of a wrong cons
 km/s", got no verdict at all. With a real normalizer a wrong unit MISMATCHes honestly, a formatting variant
 ("m s^-1", "J K^-1 mol^-1", "N m^2/kg^2") confirms, and an unknown unit still declines.
 
-Distinct from verifiers/units.py (the CONV_VERIFY door: a claimed conversion equality over compute._UNITS). This
+Distinct from verifiers/units.py (the CONV_VERIFY route: a claimed conversion equality over compute._UNITS). This
 module is the dimensional algebra the constants verifier and the auditor's constant extractor use.
 
 Pure, stdlib only. Dimensions are a vector over the SI base (m, kg, s, A, K, mol, cd); the factor converts the

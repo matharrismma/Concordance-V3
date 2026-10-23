@@ -1,4 +1,4 @@
-"""Elliptic curves over Q — the L-value door for the Birch and Swinnerton-Dyer stick (tick stick, 2026-10-05).
+"""Elliptic curves over Q — the L-value check for the Birch and Swinnerton-Dyer stick (tick stick, 2026-10-05).
 
 What the engine can honestly compute for a curve E/Q given by its a-invariants [a1, a2, a3, a4, a6] and its
 conductor N (Cremona's tables are the source for the famous curves):
@@ -141,7 +141,7 @@ def verify_l_value(spec: Dict[str, Any]) -> VerifierResult:
     if N % 2 == 0 or N % 3 == 0:
         return na(name, f"conductor {N} is divisible by 2 or 3: the reduction type at 2 and 3 (Tate's algorithm) is not held here — declined, not judged")
     if N > 200000:
-        return error(name, f"conductor {N} is beyond this door (≤ 200000)")
+        return error(name, f"conductor {N} is beyond this check's range (≤ 200000)")
     c4, c6, disc = _c4_c6(*ainv)
     if disc == 0:
         return error(name, "the discriminant is zero: not an elliptic curve")
@@ -254,7 +254,7 @@ def verify_bsd_formula(spec: Dict[str, Any]) -> VerifierResult:
     if N % 2 == 0 or N % 3 == 0:
         return na(name, f"conductor {N} is divisible by 2 or 3: the reduction type at 2 and 3 is not held here — declined")
     if N > 200000:
-        return error(name, f"conductor {N} is beyond this door (<= 200000)")
+        return error(name, f"conductor {N} is beyond this check's range (<= 200000)")
     source = str(spec.get("inputs_source") or "").strip()
     if not source:
         return error(name, "inputs_source is required: the Tamagawa product, torsion and Sha are CITED inputs, never computed here")

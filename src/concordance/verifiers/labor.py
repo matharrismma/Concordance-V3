@@ -124,7 +124,7 @@ def verify_annual_to_hourly(spec: Dict[str, Any]) -> VerifierResult:
 def verify_hourly_to_annual(spec: Dict[str, Any]) -> VerifierResult:
     """Annual equivalent = hourly_rate * 2080 (52 × 40 hours) — the mirror of annual_to_hourly (2026-10-08, the
     failure report H1: "$20 per hour is $41,600 per year" reached no verifier). The claimed literal, when the prose
-    door hands it over, sets the window at its stated precision; otherwise exact to the cent."""
+    plain-text form hands it over, sets the window at its stated precision; otherwise exact to the cent."""
     name = "labor.hourly_to_annual"
     rate = spec.get("hourly_rate")
     claimed = spec.get("claimed_annual_salary")

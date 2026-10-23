@@ -671,7 +671,7 @@ def verify_critical_line(spec):
     except ValueError:
         max_h = _MAX_HEIGHT
     if not (14 < T <= max_h):
-        return error(name, f"height {T} out of range: the first zero is at t ≈ 14.13; this door computes up to "
+        return error(name, f"height {T} out of range: the first zero is at t ≈ 14.13; this check computes up to "
                            f"T = {max_h:g} (CONCORDANCE_RIEMANN_MAX lifts it for an offline mark)")
     try:
         on_line, n_strip, S, rescans = _zeros_on_line_checked(T)
@@ -1058,7 +1058,7 @@ def verify_zero_count(spec):
         return error(name, "zero_count_height must be a number (the height T to count zeros up to)")
     if not (14.0 < T <= _MAX_COUNT_HEIGHT):
         return error(name, f"height {T:g} out of range: the first zero is at t ≈ 14.13; this count goes up to "
-                           f"T = {_MAX_COUNT_HEIGHT:g} (Turing's method stays cheap, but a finite door)")
+                           f"T = {_MAX_COUNT_HEIGHT:g} (Turing's method stays cheap, but a finite range)")
     try:
         import mpmath as mp
         with mp.workdps(30):

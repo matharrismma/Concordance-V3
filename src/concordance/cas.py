@@ -108,7 +108,7 @@ def store(record_dict: Dict[str, Any], *, base_dir: Optional[Path] = None,
 # and would have died with it, while the cards citing them travel everywhere. Growth is bounded by
 # content-addressing (repeat verifications reuse their hash — 886 distinct objects in two months
 # on the box). So the receipt
-# now ALSO lands in the keeping, which is deployed, sharded, replicated and archived — and `/s/`
+# now ALSO lands in the corpus, which is deployed, sharded, replicated and archived — and `/s/`
 # reads the card when the CAS object is not on this node. Two stores, one truth, and the hash still
 # arbitrates: the card carries the record verbatim, so re-hashing it must give back the same
 # address or it is not that record.
@@ -139,12 +139,12 @@ def _receipt_spine() -> Dict[str, Any]:
         "title": "The seals — every sealed record, kept as a card",
         "body": ("Every receipt this engine mints is stored twice: as a content-addressed object "
                  "under its SHA-256 hash, and as a card on this spine. The object is fast; the "
-                 "card is durable — it travels with the keeping, so a receipt outlives the machine "
+                 "card is durable — it travels with the corpus, so a receipt outlives the machine "
                  "that minted it. The hash arbitrates either way."),
         "source": {"label": "Narrow Highway engine", "url": "/corpus.html?shelf=seals",
                    "ref": "seals", "authority_tier": "engine_derived"},
         "connections": [{"to_card_id": "card_k_floor_of_discovery", "relationship": "part_of",
-                         "evidence": "a spine of the keeping, rooted in the Floor of Discovery"}],
+                         "evidence": "a spine of the corpus, rooted in the root spine"}],
     }
 
 

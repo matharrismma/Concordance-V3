@@ -3,7 +3,7 @@
 Checks a CLAIMED conversion equality — "1 mile is 1.609 kilometers", "500 mg is 0.5 grams",
 "100 degrees fahrenheit is 37.78 celsius" — against exact SI / US conversion factors. It VERIFIES,
 it never generates: given both sides of the claim it confirms or refutes; it does not answer an open
-"convert X to Y" (that is the compute front door). The factor table is the ONE in ``compute._UNITS``
+"convert X to Y" (that is the compute route). The factor table is the ONE in ``compute._UNITS``
 (single source of truth — a unit added there is checkable here for free), and temperature uses the
 same affine forms as ``compute`` (a factor cannot express an offset scale).
 
@@ -57,7 +57,7 @@ def verify_conversion(spec: Dict[str, Any]) -> VerifierResult:
 
     threshold = abs(actual) * rel_tol if actual != 0 else 1e-9
     # STATED PRECISION (2026-10-08): "1 mile is 1.6 km" is right to the two figures it states (1.60934). The
-    # claimed literal, when the prose door hands it over, sets the window; a structured call stays at rel_tol.
+    # claimed literal, when the plain-text form hands it over, sets the window; a structured call stays at rel_tol.
     lit = spec.get("claimed_literal")
     if lit not in (None, ""):
         from .base import window_for

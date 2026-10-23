@@ -243,7 +243,7 @@ def verify_physical_constant(spec: Dict[str, Any]) -> VerifierResult:
     # last stated place — two or more significant figures only, so a one-figure "3e8" never passes as the
     # exact value. "earth gravity is 9.81 m/s^2" was refused live by the flat 1e-4: right to every figure
     # stated, called false. Scaled by any unit conversion above (the literal is in the CLAIMED unit).
-    # Only the claim's own literal can widen the window; the structured door, which sends no literal, keeps
+    # Only the claim's own literal can widen the window; the structured form, which sends no literal, keeps
     # the strict default unchanged.
     # THE ONE RULE (2026-10-08, H6): with a literal the stated window REPLACES the flat default — doubled by a
     # hedge word, granted to a one-figure claim only by a hedge, exact otherwise (window_for).

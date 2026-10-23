@@ -3,7 +3,7 @@
 Every other verifier in this fleet checks a claim about the world. This one checks a claim about
 US: that when we say "here is what the library holds on X", the answer is true.
 
-WHY THIS IS THE LOAD-BEARING ONE. The first rule of the covenant is RETRIEVE FIRST — find what
+WHY THIS IS THE LOAD-BEARING ONE. The first rule is RETRIEVE FIRST — find what
 is held, cite it, never generate what could be looked up. That rule is only as good as the
 finding. If retrieval silently drops a document the library actually holds, then everything
 downstream stops being retrieval and becomes generation with a citation stapled on, and no
@@ -23,7 +23,7 @@ Checks:
   * retrieval.no_false_silence  — "no results" is itself a claim, and it is checkable
 
 All four are ordinary information-retrieval arithmetic with published definitions; nothing here
-is a house metric tuned to make us look good. Precision, recall, F1 and reciprocal rank are the
+is an in-house metric tuned to make us look good. Precision, recall, F1 and reciprocal rank are the
 same formulas an outside auditor would apply, which is the point — see [[gauge panel]] for why a
 score whose formula we invented is not evidence.
 

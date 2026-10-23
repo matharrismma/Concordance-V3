@@ -6,7 +6,7 @@ literally COMPUTABLE, so it is the calibration rig: a strategic claim can be che
 
 The chess rules engine already exists and is PERFT-proven (src/concordance/chess.py); it VERIFIES what is
 true of a position, it never plays. This module only adapts it to the verifier interface so a chess claim
-chains and seals through the same door as the other two witnesses (POST /verify steps, derivation, seal) —
+chains and seals through the same route as the other two game verifiers (POST /verify steps, derivation, seal) —
 no new chess logic, nothing generated, the math determines truth.
 
 CHESS_VERIFY packet:

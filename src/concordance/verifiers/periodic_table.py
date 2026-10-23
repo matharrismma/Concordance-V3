@@ -213,7 +213,7 @@ def _lookup(spec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def element(symbol=None, name=None, atomic_number=None) -> Optional[Dict[str, Any]]:
     """Look up an element by symbol / name / atomic number — the reusable lookup behind both
-    verify_element and the `lookup` tool (one source, so the two doors cannot drift)."""
+    verify_element and the `lookup` tool (one source, so the two routes cannot drift)."""
     return _lookup({"symbol": symbol, "name": name, "atomic_number": atomic_number})
 
 
@@ -333,7 +333,7 @@ def molar_mass(formula: str):
     """Molar mass (g/mol) of a SIMPLE formula (H2O, C6H12O6): M = Σ(count × atomic_mass), from the
     periodic table the engine already holds. Returns (mass, composition_dict) on success, or
     (None, reason) on a bad/unsupported formula. The reusable compute behind verify_molar_mass AND
-    the `lookup` tool — one computation, both doors (look up the value, or verify a claimed one)."""
+    the `lookup` tool — one computation, both routes (look up the value, or verify a claimed one)."""
     f = str(formula or "").strip()
     if not f or not _MOLAR_FORMULA.match(f):
         return None, f"{formula!r} is not a simple element-and-count formula (parentheses/charges unsupported)"

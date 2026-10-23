@@ -3,7 +3,7 @@
 The bridge from the atom (electron configuration -> valence -> bonding domains)
 to spatial structure: VSEPR predicts a molecule's geometry and ideal bond angle
 from its steric number (bonding domains + lone pairs). This is chemistry's
-SPATIAL face — and it co-confirms with pure GEOMETRY (the regular-tetrahedron
+SPATIAL form — and it co-confirms with pure GEOMETRY (the regular-tetrahedron
 central angle is arccos(-1/3) = 109.47°, independent of any chemistry). Two
 independent domains, one structure: the SYMMETRY axis (Matt's geometry:chemistry
 "Cat:Dog" pair, 2026-06-10).

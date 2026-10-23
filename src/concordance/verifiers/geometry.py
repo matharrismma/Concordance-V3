@@ -31,7 +31,7 @@ from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
 
 
 def _window(spec: Dict[str, Any], threshold: float, actual: float) -> float:
-    """THE ONE RULE (2026-10-08, the failure report H6, found by the recall set): when the prose door hands over the
+    """THE ONE RULE (2026-10-08, the failure report H6, found by the recall set): when the plain-text form hands over the
     claimed value as written (any `*_as_written` key), its stated figures set the window - half a unit in the last
     place, doubled by a hedge, exact for a one-figure claim without one. A structured call keeps the flat default."""
     key = next((k for k in spec if k.endswith("_as_written") and spec.get(k) not in (None, "")), None)

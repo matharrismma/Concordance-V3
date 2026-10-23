@@ -2,7 +2,7 @@
 
 A verifier is a LAW applied to a claim: inputs, a relation, a tolerance, a source. Until now every one of
 them was Python — a new domain was a deploy. This module runs a declarative SPEC through ONE generic
-evaluator so a verified law can be contributed through the gate, held in the keeping as data
+evaluator so a verified law can be contributed through the gate, held in the corpus as data
 (data/verifier_specs.jsonl), carried to every node by capability 1, and run without a restart.
 
 A spec (one JSON object per line):
@@ -30,7 +30,7 @@ Rules of the evaluator:
   * SHADOW: when a Python module already produced a result of the same name, the spec's result is not
     added — a spec extends a domain, it never contradicts code. A domain with no module is served by its
     specs alone: a new domain without a deploy.
-  * Only `status: "admitted"` specs run on the public faces; anything else is listed as held.
+  * Only `status: "admitted"` specs run on public servers; anything else is listed as held.
 
 Sovereign: stdlib only. Found, never generated: the evaluator computes what the law says and compares.
 """

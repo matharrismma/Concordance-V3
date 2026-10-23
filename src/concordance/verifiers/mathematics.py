@@ -481,7 +481,7 @@ def verify_set_algebra(spec: Dict[str, Any]) -> VerifierResult:
     set expressions holds for ALL sets exactly when the matching propositional formula is a
     tautology (Stone's representation theorem: every Boolean algebra embeds in a field of sets).
     De Morgan, distributivity and absorption for sets are decided here by exact truth-table
-    enumeration over element membership (pure standard library) — the third face of one Boolean
+    enumeration over element membership (pure standard library) — the third form of one Boolean
     algebra (logic / circuits / sets), and runnable on the sovereign stdlib-only box.
 
     Spec:

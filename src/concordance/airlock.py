@@ -15,7 +15,7 @@ reapplying context."
 
 ingest() takes the file's TEXT (transient — held only for this call), chunks it into lightweight cards
 that MAP BACK to the user's own file (their path/link is the waybill; they keep the file), and builds a
-small MAP (the outline, the salient terms, and — if the corpus is at hand — the cards in the keeping it
+small MAP (the outline, the salient terms, and — if the corpus is at hand — the cards in the corpus it
 connects to). It stores NOTHING; the minted cards belong to the USER, never merged into the shared core.
 
 through() delegates to the context loop's floor (context.decontextualize / Stripped / leaks): the strip
@@ -117,7 +117,7 @@ def ingest(text: str, source: str = "", title: str = "", link: str = "") -> Dict
 
 
 def _connect(text: str, limit: int = 6) -> List[Dict[str, str]]:
-    """If the corpus is already at hand, name a few cards in the keeping this file connects to.
+    """If the corpus is already at hand, name a few cards in the corpus this file connects to.
     Never loads the corpus just for this — leaves the map's 'connects_to' empty rather than pay that cost."""
     try:
         import sys

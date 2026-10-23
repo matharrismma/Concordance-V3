@@ -1,15 +1,11 @@
-"""Verifiers — the deterministic complications mounted on the going train.
+"""Verifiers — the deterministic checks, one module per domain.
 
-Each domain verifier exposes `run(packet) -> list[VerifierResult]` and is imported
-LAZILY on first use (never eager-imported at package load — that was a 1.0 coupling
-hotspot). Heavy deps (sympy/scipy/numpy) load only inside the modules that need them,
-only when a packet exercises that domain.
+Each domain verifier exposes `run(packet) -> list[VerifierResult]` and is imported LAZILY on first
+use. Heavy deps (sympy/scipy/numpy) load only inside the modules that need them.
 
-VERIFIERS maps every SECULAR domain (canonical name + aliases) to its module. The
-witness-surface verifiers (scripture, theology, witness) are NOT here — they register
-only when surface == "witness" (the .org overlay — see WITNESS_VERIFIERS below). `governance` IS
-registered here (aliases: business, household, education).
-Cross-cutting verifiers are intentionally empty in the secular core.
+VERIFIERS maps every domain (canonical name + aliases) to its module. Third-party packs (the .org
+application's scripture/theology checks, a customer's own policy checks) register through the
+`concordance.verifiers` entry-point group and are merged in by _load_plugins().
 """
 from __future__ import annotations
 
@@ -211,24 +207,18 @@ def _get_module(domain: str) -> Optional[ModuleType]:
 
 
 def _get_witness_module(domain: str) -> Optional[ModuleType]:
-    """Resolve a WITNESS-surface domain to its verifier module (lazy). None if unregistered."""
+    """Resolve a plugin-overlay domain to its verifier module (lazy). None if unregistered."""
     return _resolve(WITNESS_VERIFIERS.get(domain))
 
 
 def run_for_domain(domain: str, packet, surface: str = "secular") -> List[VerifierResult]:
-    """Run the verifiers for this domain. On the witness surface, the witness-surface
-    verifiers (theology/witness) are ALSO surfaced; on the secular reach they are not.
-    The foundation is shared; surface governs only what is exposed."""
+    """Run the verifiers for this domain (core registry, then entry-point plugins, then spec-defined checks)."""
     results: List[VerifierResult] = []
     d = (domain or "").lower()
     _load_plugins()
     mod = _get_module(d)
     if mod is not None:
         results.extend(mod.run(packet))
-    if surface == "witness":
-        wmod = _get_witness_module(d)
-        if wmod is not None:
-            results.extend(wmod.run(packet))
     for cross in CROSS_CUTTING_VERIFIERS:
         results.extend(cross.run(packet))
     # VERIFIERS AS DATA (Gen 3 · 2, 2026-10-04): the admitted specs of this domain, run by the generic

@@ -12,7 +12,7 @@ variables a claim carries is exact and complete — it gives the identical answe
 SAT would, with nothing to install. (sympy would only add first-order / SMT, which the
 spec does not expose.) The shared engine lives in `_boolean.py` and also backs the
 computer_science.logic_gate and mathematics.set_algebra bridge verifiers — one Boolean
-core, three faces (logic / circuits / sets).
+core, three forms (logic / circuits / sets).
 
 Checks performed:
 
