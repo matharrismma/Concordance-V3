@@ -172,6 +172,21 @@ def attach(result: Dict[str, Any], *, config: EngineConfig, domain: str = "mathe
     reads CONCORDANCE_SEAL_INDEX (see `_index_default` — True unless a cold batch tool sets it off);
     True/False force it. The seal itself (CAS object + ledger link) is identical regardless."""
     out = dict(result)
+    # the packets that were checked travel on the trail as `_spec`; file each beside the seal (by its own
+    # hash, which the trail already names as spec_hash) and drop the private key from what is returned
+    trail = []
+    for t in (result.get("trail") or []):
+        t = dict(t)
+        spec = t.pop("_spec", None)
+        if enabled and isinstance(spec, dict):
+            try:
+                cas.store_spec(spec)
+            except Exception:  # noqa: BLE001 — a sidecar failure never fails a seal
+                pass
+        trail.append(t)
+    if trail:
+        out["trail"] = trail
+        result = dict(result, trail=trail)
     if not enabled:
         return out
     idx = _index_default() if index is None else bool(index)

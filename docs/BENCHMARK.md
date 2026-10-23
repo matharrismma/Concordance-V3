@@ -1,29 +1,21 @@
-# The Benchmark, Published — the bound behind "0 false positives" (v1.0.0)
+# The benchmark — the bound behind "0 false positives" (v2.2.0)
 
-Task #126 (assessment F-11): a universal zero-false-positive claim is stronger than a finite
-benchmark can establish. So the claim is BOUNDED, and the bound is this package.
+A universal zero-false-positive claim is stronger than a finite benchmark can establish, so the claim is
+bounded and the bound is this package. **Reproduce:** `PYTHONPATH=src python tools/benchmark.py --json`.
 
-**The claim, correctly worded:** 0 false positives on the published 60-case derivation-moat
-benchmark, v1.0.0, re-run on every gate.
+Four tiers, all labelled, FP and FN reported separately (a missed truth is never hidden in an accuracy figure):
 
-**Reproduce it:**
-```
-PYTHONPATH=src python tools/benchmark.py --json
-```
-Machine-readable output: every case with its mode, ground-truth label, verdict, and correctness;
-false positives and false negatives reported SEPARATELY (a missed truth is never hidden inside
-an accuracy figure); totals; the benchmark version.
+| tier | cases | source |
+|---|---|---|
+| derivation | 60 | equality / inequality / derivative, ported from 1.0's public benchmark (v1.0.0, unchanged) |
+| domain | 2 per registered domain | `data/domain_goldens.json` — one true and one false packet per verifier module; `--check` fails the build if a domain lacks a pair |
+| lighthouse | 798 (+126 skipped by policy) | the v1 engine's template-generated, perturbation-labelled datasets (`data/benchmark_lighthouse_v1/v2.jsonl`), run unchanged against these verifiers; rows needing execution of caller-supplied code are skipped and counted; one labelled policy disagreement is listed in `tools/benchmark.py` |
+| check | one true (and usually one derived false) per **named check** | `data/check_goldens.jsonl`, harvested from the test suite by `tools/harvest_goldens.py`; the false golden is the true packet with its claimed value perturbed ×1.37 and is kept only if the engine actually rejects it |
 
-**What it measures:** 60 ground-truth-labelled claims (30 true, 30 deliberately false) across
-equality, inequality, and derivative modes — ported verbatim from 1.0's public benchmark. The
-metric that matters is the false-positive count: did the engine ever seal a falsehood. The gate
-(`tools/check.py`) runs this before the suite and fails the build on any FP.
+**Mutation evidence.** `tools/mutate.py --sample N` flips one operator token in N random verifier modules
+and reports whether the benchmark or the per-domain tests go red. Equivalent mutants exist (an error-message
+string, a symmetric balance both sides of which are negated); the score is published in `MEASURED.md`
+rather than rounded up.
 
-**What it does NOT establish:** anything beyond these 60 cases and these three modes. The other
-~70 verifier domains are covered by the test suite (170 files, per-domain), not by this
-benchmark. Growing the benchmark bumps its version; claims cite the version they were measured
-against.
-
-**Mutation evidence:** the gate fails when a verifier breaks (the benchmark exits non-zero on
-any FP and the suite's per-domain tests catch behavioral drift) — a green run is load-bearing,
-not decorative.
+**What it does not establish:** anything outside these packets. A verifier with a check no case reaches is
+unmeasured; `tools/harvest_goldens.py` and the mutation score are how that gap is found.

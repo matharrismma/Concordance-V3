@@ -309,6 +309,7 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
             # to its artifact, not the free-text label. For a bound step this is the SUBSTITUTED spec, so
             # the seal binds to what was actually verified.
             "spec_hash": _spec_hash(spec),
+            "_spec": spec,          # the exact packet checked; receipts.attach files it beside the seal, then drops it
         }
         # Kind B — surface a verifier's framing (explanation + the question that would let us
         # calculate) so a decline is actionable, not a dead end. Only the curated framing fields

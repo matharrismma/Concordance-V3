@@ -30,14 +30,71 @@ def _json(status: int, obj: Any) -> Tuple[int, Dict[str, str], bytes]:
 
 
 def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
-    def esc(s: Any) -> str:
-        return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
-    rows = "".join(f"<tr><th>{esc(k)}</th><td><pre>{esc(json.dumps(v, indent=1, default=str) if isinstance(v, (dict, list)) else v)}</pre></td></tr>"
-                   for k, v in rec.items())
-    return f"""<!doctype html><meta charset="utf-8"><title>Receipt {esc(h[:12])}</title>
-<style>body{{font:15px/1.5 system-ui;margin:2rem auto;max-width:56rem;padding:0 1rem}}th{{text-align:left;vertical-align:top;padding:.3rem .8rem .3rem 0;white-space:nowrap}}pre{{margin:0;white-space:pre-wrap}}code{{word-break:break-all}}</style>
-<h1>Sealed record</h1><p>Content hash <code>{esc(h)}</code>. Re-hash the JSON at <a href="/s/{esc(h)}">/s/{esc(h)}</a> (SHA-256 of the canonical record) to confirm it reproduces this hash.</p>
-<table>{rows}</table>""".encode()
+    """The receipt as a page a person can read — and re-check. Each step's packet (filed beside the seal
+    under its spec_hash) is shown as editable inputs; "Re-check" posts the edited packet to /verify with
+    seal=0 and shows the fresh verdict. The sealed record itself is never changed by this page."""
+    from . import cas as _cas
+
+    def esc(x: Any) -> str:
+        return str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    overall = esc(rec.get("overall", ""))
+    steps = []
+    for vr in rec.get("verifier_results") or []:
+        d = vr.get("data") or {}
+        spec = _cas.fetch_spec(str(d.get("spec_hash") or "")) or {}
+        steps.append({"id": vr.get("name"), "status": vr.get("status"), "detail": vr.get("detail", ""),
+                      "domain": d.get("domain"), "spec": spec})
+    blocks = []
+    for n, st in enumerate(steps):
+        art_key = next((k for k, v in st["spec"].items() if isinstance(v, dict)), None)
+        art = st["spec"].get(art_key) if art_key else st["spec"]
+        fields = "".join(
+            f'<label>{esc(k)} <input name="{esc(k)}" value="{esc(json.dumps(v) if isinstance(v, (list, dict)) else v)}"></label>'
+            for k, v in (art or {}).items())
+        blocks.append(f"""
+<section class="step" data-domain="{esc(st['domain'] or '')}" data-key="{esc(art_key or '')}" data-wrap="{esc(json.dumps({k: v for k, v in st['spec'].items() if k != art_key}))}">
+  <h2>Step {esc(st['id'])} <span class="v {esc(st['status'])}">{esc(st['status'])}</span></h2>
+  <p class="detail">{esc(st['detail'])}</p>
+  {('<form class="recheck">' + fields + '<button type="submit">Re-check with these inputs</button><output></output></form>') if art else '<p class="muted">The packet for this step was not kept beside the seal.</p>'}
+</section>""")
+    return f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Receipt {esc(h[:12])}</title>
+<style>
+:root{{--bg:#fff;--fg:#1a1a1a;--mut:#666;--ok:#1f7a3a;--bad:#a12626;--line:#ddd}}
+@media(prefers-color-scheme:dark){{:root{{--bg:#111;--fg:#eee;--mut:#aaa;--line:#333}}}}
+body{{font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0 auto;max-width:52rem;padding:1.5rem 1rem}}
+h1{{font-size:1.4rem;margin:.2rem 0}} h2{{font-size:1.05rem;margin:1.2rem 0 .3rem}}
+code{{word-break:break-all;font-size:.9em}} .muted{{color:var(--mut)}}
+.v{{font-weight:600;padding:.05rem .45rem;border-radius:.3rem;border:1px solid var(--line);font-size:.85rem;vertical-align:middle}}
+.v.CONFIRMED,.v.PASS{{color:var(--ok)}} .v.MISMATCH,.v.BROKEN{{color:var(--bad)}}
+.step{{border-top:1px solid var(--line);padding-top:.4rem}}
+form{{display:grid;grid-template-columns:1fr 1fr;gap:.5rem .9rem;margin:.5rem 0}}
+label{{display:flex;flex-direction:column;font-size:.85rem;color:var(--mut)}}
+input{{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:.3rem;padding:.3rem .4rem}}
+button{{grid-column:1/-1;justify-self:start;font:inherit;padding:.4rem .8rem;border-radius:.4rem;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer}}
+output{{grid-column:1/-1;white-space:pre-wrap;font-size:.9rem}}
+@media(max-width:520px){{form{{grid-template-columns:1fr}}}}
+</style>
+<h1>Sealed record <span class="v {overall}">{overall}</span></h1>
+<p>Content hash <code>{esc(h)}</code>. The JSON at <a href="/s/{esc(h)}">/s/{esc(h)}</a>, hashed canonically with SHA-256, reproduces this hash — that is the whole claim of the seal. Changing inputs below recomputes a fresh verdict; it does not alter this record.</p>
+{''.join(blocks)}
+<p class="muted">Checks arithmetic and formula application only — never whether a correct result is safe, lawful, or suitable.</p>
+<script>
+document.querySelectorAll('form.recheck').forEach(f=>{{
+  f.addEventListener('submit',async e=>{{
+    e.preventDefault(); const sec=f.closest('.step'); const out=f.querySelector('output'); out.textContent='checking…';
+    const art={{}}; for(const inp of f.querySelectorAll('input')){{ let v=inp.value.trim(); try{{ v=JSON.parse(v);}}catch(_e){{}} art[inp.name]=v; }}
+    const key=sec.dataset.key; let spec; try{{ spec=JSON.parse(sec.dataset.wrap||'{{}}'); }}catch(_e){{ spec={{}}; }}
+    if(key) spec[key]=art; else spec=art;
+    try{{
+      const r=await fetch('/verify?seal=0',{{method:'POST',headers:{{'content-type':'application/json'}},body:JSON.stringify({{steps:[{{id:'r',domain:sec.dataset.domain,spec}}]}})}});
+      const j=await r.json(); const t=(j.trail&&j.trail[0])||{{}};
+      out.textContent=(j.verdict||'?')+' — '+(t.detail||JSON.stringify(j.problems||j).slice(0,300));
+    }}catch(err){{ out.textContent='could not reach /verify: '+err; }}
+  }});
+}});
+</script></html>""".encode()
 
 
 def route(method: str, path: str, query: Dict[str, Any], body: Dict[str, Any], headers: Any, raw: bytes):

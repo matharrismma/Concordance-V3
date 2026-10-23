@@ -275,3 +275,31 @@ def stats(*, base_dir: Optional[Path] = None) -> Dict[str, Any]:
 
 __all__ = ["content_hash_of", "store", "fetch", "exists", "verify",
            "list_hashes", "delete", "stats"]
+
+
+# ── spec sidecars (v3) ───────────────────────────────────────────────────────────────────────────
+# The sealed record binds a step to its spec_hash but does not carry the packet. For the receipt page
+# (inputs shown, re-check offered) the packet is kept BESIDE the seal, keyed by its own hash, so the
+# record and its content_hash are unchanged. Packets reach here de-identified (the airlock runs first).
+def store_spec(spec: Dict[str, Any], *, base_dir: Optional[Path] = None) -> str:
+    from .validate import canonical_json_bytes, sha256_bytes
+    b = canonical_json_bytes(spec)
+    h = sha256_bytes(b)
+    d = (base_dir or _cas_dir()) / "specs"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / (h + ".json")
+    if not p.exists():
+        p.write_bytes(b)
+    return h
+
+
+def fetch_spec(spec_hash: str, *, base_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    if not _valid_hash(spec_hash):
+        return None
+    p = (base_dir or _cas_dir()) / "specs" / (spec_hash + ".json")
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
