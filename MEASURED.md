@@ -10,8 +10,8 @@
 | server instructions | house metaphor | 98 words, no org vocabulary | < 120 words |
 | docs files | 44 | 3 + README | ≤ 6 |
 | suite | 2,914 passed / 97 s | 773 passed, 25 skipped / 73 s | green, ≤ 60 s |
-| benchmark | v1.0.0: 60 cases, 3 modes | v2.0.0: 216 cases, 216 correct, 0 FP, 0 FN (every domain has a true/false pair) | ≥ 200, 0 FP |
-| mutation score (operator flips, seed 3) | not measured | 12/20 detected by benchmark + per-domain tests | 20/20 — NOT MET |
+| benchmark | v1.0.0: 60 cases, 3 modes | v2.1.0: **1,014 cases**, 0 FP, 0 FN — 60 derivation + 156 per-domain goldens + 798 from the Lighthouse (v1) 722/202 template datasets, run unchanged against v3 verifiers (126 rows skipped by policy: they require executing caller code; 1 labelled policy disagreement, listed in tools/benchmark.py) | ≥ 200, 0 FP |
+| mutation score (operator flips, seed 3) | not measured | 12/20 (unchanged after adding Lighthouse: its 6 domains were already covered; the misses are biology/agriculture/thermo/soil/probability/… checks with no case) | 20/20 — NOT MET |
 | coverage lie (compound sentence) | present | regression-tested gone (13 cases) | gone |
 | misnamed packet field | silent NOT_APPLICABLE | SCHEMA_ERROR naming field + nearest valid name | named |
 | packet schemas | none | generated for 78/78 domains (tools/schema_gen.py) | all |

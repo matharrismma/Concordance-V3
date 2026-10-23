@@ -107,7 +107,7 @@ CLAIMS = [
 ]
 
 
-BENCHMARK_VERSION = "2.0.0"   # the bound every public "0 false positives" claim cites
+BENCHMARK_VERSION = "2.1.0"   # the bound every public "0 false positives" claim cites
 # v2.0.0 (2026-10-23): the 60 derivation-moat cases (v1.0.0, unchanged) PLUS one labelled true/false pair per
 # verifier domain from data/domain_goldens.json, run through the same derivation path a packet takes. FP and FN
 # are still reported separately; a new domain without a golden pair fails the --check gate.
@@ -136,6 +136,61 @@ def _domain_cases():
                 continue
             steps = [{"id": "g", "domain": dom, "spec": {key: art}}]
             out.append((label == "true", steps, f"golden:{dom}:{label}"))
+    return out
+
+
+# ── the Lighthouse (v1) datasets: 722 + 202 template-generated, perturbation-labelled claims ──────────
+_LH_KEY = {"statistics": "STAT_VERIFY", "chemistry": "CHEM_VERIFY", "physics": "PHYS_VERIFY",
+           "physics_conservation": "PHYS_VERIFY", "physics_dimensional": "PHYS_VERIFY",
+           "mathematics": "MATH_VERIFY", "computer_science": "CS_VERIFY", "formal_logic": "LOGIC_VERIFY"}
+_LH_DOMAIN = {"physics_conservation": "physics", "physics_dimensional": "physics"}
+_LH_SCOPE = {"adapter": "local", "mesh": "mesh", "canon": "archived"}   # v1 scope names -> v2+ (same wait windows: 1h/24h/7d)
+
+
+# Rows whose v1 label the v2+ engine disagrees with ON PURPOSE. Listed, not hidden: each carries the reason.
+_LH_POLICY = {
+    "BM-00387": (False, "(x**2-1)/(x-1) = x+1 holds only off x=1; since 2.0 a removable singularity is NOT an "
+                        "unconditional identity (the v1 label said 'correct')"),
+}
+
+
+def _lighthouse_cases():
+    """(label, steps, desc). Two shims, both policy not bugs: (1) v1 governance scope 'adapter' is 'local'
+    since 2.0; (2) rows whose check requires EXECUTING caller-supplied code (cs.functional_correctness) are
+    skipped — this engine does not run arbitrary code by design, and the skip is counted and printed."""
+    import json as _j, os as _os
+    here = _os.path.dirname(_os.path.abspath(__file__))
+    out, skipped = [], 0
+    for fname in ("benchmark_lighthouse_v1.jsonl", "benchmark_lighthouse_v2.jsonl"):
+        path = _os.path.join(here, "..", "data", fname)
+        if not _os.path.exists(path):
+            continue
+        for line in open(path, encoding="utf-8"):
+            r = _j.loads(line)
+            d = r["domain"]
+            md = dict(r.get("metadata") or r.get("spec_snapshot") or {})
+            if d == "computer_science" and "code" in md:
+                skipped += 1
+                continue
+            if d == "governance":
+                if "scope" in md:
+                    md["scope"] = _LH_SCOPE.get(md["scope"], md["scope"])
+                dp = md.get("DECISION_PACKET")
+                if isinstance(dp, dict) and "scope" in dp:
+                    md["DECISION_PACKET"] = dict(dp, scope=_LH_SCOPE.get(dp["scope"], dp["scope"]))
+                spec = md
+            elif d == "mathematics" and "mode" in md:
+                mode = md.pop("mode")
+                spec = {"mode": mode, "params": md}
+            else:
+                spec = {_LH_KEY.get(d, d.upper() + "_VERIFY"): md}
+            dom = _LH_DOMAIN.get(d, d)
+            steps = [{"id": "l", "domain": dom, "spec": spec}]
+            label = r["ground_truth"] == "correct"
+            if r["id"] in _LH_POLICY:
+                label = _LH_POLICY[r["id"]][0]
+            out.append((label, steps, f"lighthouse:{r['id']}:{d}:{r['ground_truth']}"))
+    _lighthouse_cases.skipped = skipped
     return out
 
 
@@ -168,14 +223,16 @@ def run(verbose: bool = True, as_json: bool = False):
     import os as _os
     _os.environ.setdefault("CONCORDANCE_DATA_DIR",
                            _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "data"))
-    cats = {"equality": [0, 0, 0, 0], "inequality": [0, 0, 0, 0], "derivative": [0, 0, 0, 0], "domain": [0, 0, 0, 0]}
+    cats = {"equality": [0, 0, 0, 0], "inequality": [0, 0, 0, 0], "derivative": [0, 0, 0, 0], "domain": [0, 0, 0, 0],
+            "lighthouse": [0, 0, 0, 0]}
     false_pos, false_neg = [], []
     rows = []
     from concordance.derivation import verify_derivation as _vd
-    all_cases = [(l, s_, d, s_["mode"]) for l, s_, d in CLAIMS] + [(l, s_, d, "domain") for l, s_, d in _domain_cases()]
+    all_cases = ([(l, s_, d, s_["mode"]) for l, s_, d in CLAIMS] + [(l, s_, d, "domain") for l, s_, d in _domain_cases()]
+                 + [(l, s_, d, "lighthouse") for l, s_, d in _lighthouse_cases()])
     for label, spec, desc, mode in all_cases:
         try:
-            verdict = (_vd(spec) if mode == "domain" else verify(spec)).get("verdict")
+            verdict = (_vd(spec) if mode in ("domain", "lighthouse") else verify(spec)).get("verdict")
         except Exception as e:  # noqa: BLE001
             verdict = "ERROR:" + str(e)[:40]
         holds = (verdict == "HOLDS")
@@ -206,6 +263,7 @@ def run(verbose: bool = True, as_json: bool = False):
             acc = 100.0 * c[1] / c[0] if c[0] else 0
             print(f"{m:12s} {c[0]:3d} {c[1]:8d} {acc:6.1f}% {c[2]:10d} {c[3]:10d}")
         print(f"{'OVERALL':12s} {n:3d} {corr:8d} {100.0 * corr / n:6.1f}% {fp:10d} {fn:10d}")
+        print(f"(lighthouse rows skipped by policy — require executing caller code: {getattr(_lighthouse_cases, 'skipped', 0)})")
         print(f"\nFALSE-POSITIVES (sealed a falsehood -- CRITICAL): {len(false_pos)}")
         for d in false_pos:
             print("  !!", d)

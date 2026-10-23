@@ -757,8 +757,12 @@ def run(packet: Dict[str, Any]) -> List[VerifierResult]:
     if inf.get("p_value") is not None:
         results.append(verify_effect_size_present(inf))
 
-    if sv.get("raw_p_values"):
-        results.append(verify_multiple_comparisons(sv))
+    if sv.get("raw_p_values") or (sv.get("p_values") and sv.get("method")):
+        mc = dict(sv)
+        mc.setdefault("raw_p_values", sv.get("p_values"))                    # v1 field name
+        if "claimed_rejected" in mc and "claimed_rejected_indices" not in mc:
+            mc["claimed_rejected_indices"] = mc["claimed_rejected"]
+        results.append(verify_multiple_comparisons(mc))
 
     if all(k in sv for k in ("estimate", "ci_low", "ci_high")):
         results.append(verify_confidence_interval(sv))

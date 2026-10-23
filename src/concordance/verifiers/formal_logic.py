@@ -67,13 +67,28 @@ from .base import VerifierResult, na, confirm, mismatch, error
 from ._boolean import boolean_equivalent, satisfiable, truth_rows, BooleanParseError
 
 
+def _vars_of(spec: Dict[str, Any], *formulas) -> list:
+    """Declared `variables`, else the identifiers that appear in the formula(s) — deterministic, and still
+    bounded by the enumeration cap. (v1 packets never declared variables; v2 required them.)"""
+    declared = spec.get("variables")
+    if declared:
+        return list(declared)
+    import re as _re
+    names = set()
+    for f in formulas:
+        if isinstance(f, str):
+            names |= {t for t in _re.findall(r"[A-Za-z_][A-Za-z_0-9]*", f)
+                      if t.lower() not in ("and", "or", "not", "true", "false", "xor", "iff", "implies")}
+    return sorted(names)
+
+
 def verify_satisfiability(spec: Dict[str, Any]) -> VerifierResult:
     name = "formal_logic.satisfiability"
     formula = spec.get("formula")
     claimed = spec.get("claimed_satisfiable")
     if formula is None or claimed is None:
         return na(name)
-    var_names = spec.get("variables") or []
+    var_names = _vars_of(spec, formula)
     try:
         actual = satisfiable(formula, var_names)
     except BooleanParseError as e:
@@ -96,7 +111,7 @@ def verify_tautology(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_tautology")
     if formula is None or claimed is None:
         return na(name)
-    var_names = spec.get("variables") or []
+    var_names = _vars_of(spec, spec.get("formula"), spec.get("formula_a"), spec.get("formula_b"), *(spec.get("premises") or []), spec.get("conclusion"))
     try:
         # tautology iff every assignment makes the formula true
         is_taut = all(row[0] for row in truth_rows([formula], var_names))
@@ -120,7 +135,7 @@ def verify_contradiction(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_contradiction")
     if formula is None or claimed is None:
         return na(name)
-    var_names = spec.get("variables") or []
+    var_names = _vars_of(spec, spec.get("formula"), spec.get("formula_a"), spec.get("formula_b"), *(spec.get("premises") or []), spec.get("conclusion"))
     try:
         # contradiction iff no assignment satisfies it
         is_contradiction = not satisfiable(formula, var_names)
@@ -145,7 +160,7 @@ def verify_entailment(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_entailment")
     if not premises or conclusion is None or claimed is None:
         return na(name)
-    var_names = spec.get("variables") or []
+    var_names = _vars_of(spec, spec.get("formula"), spec.get("formula_a"), spec.get("formula_b"), *(spec.get("premises") or []), spec.get("conclusion"))
     try:
         # premises |= conclusion iff no row has every premise true but the conclusion false
         exprs = [str(p) for p in premises] + [str(conclusion)]
@@ -173,7 +188,7 @@ def verify_equivalence(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_equivalent")
     if a is None or b is None or claimed is None:
         return na(name)
-    var_names = spec.get("variables") or []
+    var_names = _vars_of(spec, spec.get("formula"), spec.get("formula_a"), spec.get("formula_b"), *(spec.get("premises") or []), spec.get("conclusion"))
     try:
         is_equiv = boolean_equivalent(a, b, var_names)
     except BooleanParseError as e:

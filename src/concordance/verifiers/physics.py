@@ -439,8 +439,8 @@ def run(packet: Dict[str, Any]) -> List[VerifierResult]:
     if any(k in pv for k, _fn, _f, _u in _PLANCK_CHECKS):
         results.append(verify_planck_units(pv))
 
-    if "equation" in pv and "symbols" in pv:
-        results.append(verify_dimensional_consistency(pv["equation"], pv["symbols"]))
+    if "equation" in pv and ("symbols" in pv or "dimensions" in pv):
+        results.append(verify_dimensional_consistency(pv["equation"], pv.get("symbols") or pv["dimensions"]))
 
     if "before" in pv and "after" in pv:
         # Clamp caller tolerances at the boundary: a caller may TIGHTEN but never LOOSEN past the

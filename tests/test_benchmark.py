@@ -20,7 +20,7 @@ def test_moat_is_green_zero_false_positives(monkeypatch):
     from pathlib import Path
     monkeypatch.setenv("CONCORDANCE_DATA_DIR", str(Path(__file__).resolve().parents[1] / "data"))  # other tests move it
     n, corr, fp, fn = run(verbose=False)
-    assert n >= 60, f"expected >=60 claims, got {n}"
+    assert n >= 1000, f"expected the three tiers (>=1000 claims incl. the Lighthouse datasets), got {n}"
     assert fp == 0, f"CRITICAL: {fp} false-positive(s) — a falsehood was sealed"
     assert corr == n, f"benchmark not green: {corr}/{n} correct ({fn} false-negatives)"
 
