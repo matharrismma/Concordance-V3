@@ -26,7 +26,39 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 _N = r"(\d[\d,]*(?:\.\d+)?(?:[eE][-+]?\d+)?)"
-_SENT = re.compile(r"[.;\n]+")
+# CLAUSES, not sentences (P2, 2026-10-23): a compound sentence ("Water boils at 90 °C, and the kinetic energy
+# of a 2 kg object at 3 m/s is 12 J") used to be quoted WHOLE as one claim, so the unchecked first clause was
+# reported as covered. Fillers now work per clause and quote only the span their slots actually touched.
+_SENT = re.compile(r"[.;\n]+|,\s+(?:and|but|while|whereas|so)\b")
+_BARE_CONJ = re.compile(r"\s+(?:and|but|while|whereas)\s+")
+_CLAUSE_VERB = re.compile(r"\b(?:is|are|was|were|has|have|had|equals?|draws|feels|weighs|measures|comes\s+to|"
+                          r"totals?|=)\b|=", re.I)
+
+
+def _clauses(text: str) -> List[str]:
+    """Split on sentence ends and comma-conjunctions always; on a bare conjunction only when the left side is
+    already a complete claim (has a verb) — so "a 10 ohm and a 20 ohm resistor" stays one clause."""
+    out: List[str] = []
+    for sent in _SENT.split(text or ""):
+        parts = _BARE_CONJ.split(sent)
+        cur = parts[0]
+        for nxt in parts[1:]:
+            if _CLAUSE_VERB.search(cur):
+                out.append(cur); cur = nxt
+            else:
+                cur = cur + " and " + nxt
+        out.append(cur)
+    return out
+
+
+def _tight(sent: str, *matches: Optional[re.Match]) -> str:
+    """The quote for a filled claim: the span from the first matched slot to the last, extended left to the
+    start of the clause's key phrase when that phrase precedes the slots. Never the whole sentence."""
+    ms = [m for m in matches if m is not None]
+    if not ms:
+        return _quote(sent)
+    a = min(m.start() for m in ms); b = max(m.end() for m in ms)
+    return _quote(sent[a:b])
 
 
 def _f(s: str) -> float:
@@ -79,15 +111,16 @@ def x_ohms_law(text: str) -> List[Tuple[str, str, Dict[str, Any]]]:
     (V = I R). The spelled unit "ohm(s)"/Ω is required, which marks the sentence electrical, so the bare
     V/A after a number is unambiguous there. Two of a kind (a divider: 10 ohm and 20 ohm) -> nothing."""
     out = []
-    for sent in _SENT.split(text or ""):
+    for sent in _clauses(text):
         if not re.search(r"\bohms?\b|Ω", sent, re.I):
             continue
         v = _one(_N + r"\s*(?:volts?|V)\b", sent)
         i = _one(_N + r"\s*(?:amps?|amperes?|A)\b", sent)
         r = _one(_N + r"\s*(?:ohms?|Ω)\b", sent)
+        _kw = re.search(r"\b(?:ohm'?s?\s+law|resistance|current|voltage)\b", sent, re.I)
         if not (v and i and r):
             continue
-        out.append((_quote(sent), "electrical",
+        out.append((_tight(sent, _kw, v, i, r), "electrical",
                     {"ELEC_VERIFY": {"voltage_V": _f(v.group(1)), "current_A": _f(i.group(1)),
                                      "resistance_ohm": _f(r.group(1))}}))
     return out
@@ -96,15 +129,16 @@ def x_ohms_law(text: str) -> List[Tuple[str, str, Dict[str, Any]]]:
 def x_kinetic_energy_units(text: str) -> List[Tuple[str, str, Dict[str, Any]]]:
     """kg, m/s and J/joules in ONE sentence that says "kinetic energy", any order -> physics ½mv²."""
     out = []
-    for sent in _SENT.split(text or ""):
-        if not re.search(r"\bkinetic\s+energy\b", sent, re.I):
+    for sent in _clauses(text):
+        _kw = re.search(r"\bkinetic\s+energy\b", sent, re.I)
+        if not _kw:
             continue
         m = _one(_N + r"\s*(?:kg|kilograms?)\b", sent)
         v = _one(_N + r"\s*(?:m/s|meters?\s+per\s+second|metres?\s+per\s+second)\b", sent)
         e = _one(_N + r"\s*(?:J|joules?)\b", sent)
         if not (m and v and e):
             continue
-        out.append((_quote(sent), "physics",
+        out.append((_tight(sent, _kw, m, v, e), "physics",
                     {"PHYS_VERIFY": {"mass_kg": _f(m.group(1)), "velocity_m_per_s": _f(v.group(1)),
                                      "claimed_kinetic_energy_J": _f(e.group(1)),
                                      "claimed_kinetic_energy_as_written": e.group(1)}}))

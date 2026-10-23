@@ -2761,14 +2761,11 @@ def _material(frag: str) -> bool:
     toks = re.findall(r"[A-Za-z][A-Za-z'’\-]*|\d[\d,.]*", frag)
     if any(ch.isdigit() for t in toks for ch in t):
         return True
-    run = best = 0
-    for t in toks:
-        if t.lower().strip("'’-") in _STOP:
-            run = 0
-        else:
-            run += 1
-            best = max(best, run)
-    return best >= 3
+    # P2 (2026-10-23): a clause that asserts something ("the moon is made of cheese") is material even when
+    # its content words are separated by function words — count content words in the fragment, not only
+    # consecutive runs. Three content words, or a number, and the fragment is something we did NOT check.
+    content = [t for t in toks if t.lower().strip("'’-") not in _STOP]
+    return len(content) >= 3
 
 
 def _material_fragments(norm: str, quotes: List[str], locate) -> List[str]:
