@@ -107,7 +107,7 @@ CLAIMS = [
 ]
 
 
-BENCHMARK_VERSION = "2.1.0"   # the bound every public "0 false positives" claim cites
+BENCHMARK_VERSION = "2.2.0"   # the bound every public "0 false positives" claim cites
 # v2.0.0 (2026-10-23): the 60 derivation-moat cases (v1.0.0, unchanged) PLUS one labelled true/false pair per
 # verifier domain from data/domain_goldens.json, run through the same derivation path a packet takes. FP and FN
 # are still reported separately; a new domain without a golden pair fails the --check gate.
@@ -212,6 +212,21 @@ def _check_cases():
                 spec = {key: art} if key else art
                 out.append((label == "true", [{"id": "c", "domain": dom, "spec": spec}],
                             f"check:{dom}.{c.get('check')}:{label}"))
+    return out
+
+
+def _check_cases():
+    """(label, steps, desc) per CHECK, harvested from the suite by tools/harvest_goldens.py."""
+    import json as _j, os as _os
+    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "data", "check_goldens.jsonl")
+    if not _os.path.exists(path):
+        return []
+    out = []
+    for line in open(path, encoding="utf-8"):
+        o = _j.loads(line)
+        out.append((True, [{"id": "c", "domain": o["domain"], "spec": o["true"]}], f"check:{o['check']}:true"))
+        if o.get("false"):
+            out.append((False, [{"id": "c", "domain": o["domain"], "spec": o["false"]}], f"check:{o['check']}:false"))
     return out
 
 

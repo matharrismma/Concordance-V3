@@ -27,6 +27,7 @@ def test_numpy_and_python_agree_to_the_last_bits_away_from_zeros():
     assert sc_py == sc_np
 
 
+@pytest.mark.slow
 def test_whatever_backend_is_live_gives_the_same_counts_as_the_strip():
     # This is the real contract: the on-line scan (through riemann_accel) equals Backlund's independent count.
     for T in (100.0, 1000.0):

@@ -37,6 +37,8 @@ concordance = ["schemas/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: heavy numeric checks (Riemann); run with -m slow in the nightly job"]
+addopts = "-m 'not slow'"
 
 [tool.coverage.run]
 source = ["src/concordance"]

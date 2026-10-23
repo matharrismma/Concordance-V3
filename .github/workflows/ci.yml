@@ -23,3 +23,12 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with: {name: benchmark, path: benchmark.json}
+  slow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[math,scribe,signing,dev]"
+      - run: PYTHONPATH=src python -m pytest -q -m slow
+      - run: PYTHONPATH=src python tools/mutate.py --sample 20 --seed 3 || true   # reported, not yet a hard gate

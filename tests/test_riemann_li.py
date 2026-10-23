@@ -3,12 +3,14 @@ The verifier computes lambda_n from the Taylor expansion of log xi(1/(1 - z)) an
 closed form before any verdict. Known values (Keiper 1992; Bombieri-Lagarias 1999): lambda_1 = 0.0230957089661...,
 lambda_2 = 0.0923457352280..., lambda_3 = 0.2076389205..."""
 from __future__ import annotations
+import pytest
 
 import math
 
 from concordance.verifiers import number_theory as NT
 
 
+@pytest.mark.slow
 def test_li_criterion_holds_to_twelve_and_matches_the_known_values():
     r = NT.verify_li_criterion({"li_to": 12, "claimed_li_positive": True})
     assert r.status == "CONFIRMED", r.detail
