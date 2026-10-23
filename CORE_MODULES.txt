@@ -1,6 +1,6 @@
 __main__                                             48  <- <entry>
 airlock                                             184  <- <entry>
-audit                                              2915  <- <entry>
+audit                                              2912  <- <entry>
 capabilities                                         88  <- <entry>
 cas                                                 277  <- <entry>
 chess                                               383  <- audit
@@ -10,7 +10,7 @@ constraints                                         152  <- engine
 context                                             412  <- airlock
 derivation                                          410  <- <entry>
 discern                                              74  <- <entry>
-domain_resolver                                     521  <- discern
+domain_resolver                                     501  <- discern
 domains                                               6  <- engine
 domains.base                                         64  <- domains
 engine                                              270  <- <entry>
@@ -24,15 +24,16 @@ packet                                               38  <- receipts
 receipts                                            189  <- <entry>
 record                                              253  <- receipts
 redact                                              129  <- <entry>
-schema                                              150  <- <entry>
-scribe                                                1  <- mcp.server
+schema                                              156  <- <entry>
+scribe                                                2  <- <entry>
+scribe.core                                         202  <- scribe
 signing                                             220  <- ledger
-slotfill                                            164  <- audit
+slotfill                                            198  <- audit
 telemetry                                            71  <- mcp.server
 text                                                205  <- <entry>
 tool_registry                                        76  <- <entry>
 validate                                            114  <- derivation
-verifiers                                           245  <- <entry>
+verifiers                                           237  <- <entry>
 verifiers._boolean                                   96  <- verifiers.mathematics
 verifiers.alpha_scale                               117  <- verifiers.periodic_table
 verifiers.base                                      222  <- audit
@@ -49,4 +50,4 @@ verifiers.si_units                                  188  <- audit
 verifiers.spec                                      379  <- verifiers
 verifiers.thermal_scale                              51  <- verifiers.chemistry
 verifiers.wordcraft                                 894  <- audit
-# 51 modules, 14226 lines (lazy imports)
+# 52 modules, 14438 lines (lazy imports)

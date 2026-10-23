@@ -1,0 +1,25 @@
+name: gates
+on: [push, pull_request]
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[math,scribe,dev]"
+      - run: PYTHONPATH=src python -m pytest -q
+      - run: PYTHONPATH=src python tools/benchmark.py --json > benchmark.json && PYTHONPATH=src python tools/benchmark.py --check
+      - run: PYTHONPATH=src python tools/schema_gen.py --check
+      - run: PYTHONPATH=src python tools/vocab_gate.py
+      - run: |
+          PYTHONPATH=src python tools/closure.py derivation audit receipts cas ledger discern capabilities redact airlock tool_registry verifiers mcp.server engine http_api __main__ schema text scribe --lazy --src src/concordance > closure.txt
+          # every module the core reaches must be one we chose
+          python - <<'PY'
+          core = {l.split()[0] for l in open("CORE_MODULES.txt") if not l.startswith("#")}
+          now = {l.split()[0] for l in open("closure.txt") if not l.startswith("#")}
+          extra = sorted(now - core)
+          assert not extra, f"modules reached but not in CORE_MODULES.txt: {extra}"
+          PY
+      - uses: actions/upload-artifact@v4
+        with: {name: benchmark, path: benchmark.json}

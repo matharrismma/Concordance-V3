@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "concordance"
-version = "2.0.0a0"
-description = "A deterministic verification engine — a verdict, the worked reasoning, and a re-checkable seal."
+version = "3.0.0a0"
+description = "Receipts for numbers: deterministic verification of AI (and human) arithmetic with a re-checkable, content-addressed seal. MCP server + HTTP API."
 license = {text = "AGPL-3.0-or-later"}
 requires-python = ">=3.10"
 # Sovereign: ZERO required dependencies — the engine imports, serves, seals, and keeps the
@@ -16,11 +16,16 @@ requires-python = ">=3.10"
 # "the moat runs on the stdlib."
 dependencies = []
 
+[project.scripts]
+concordance = "concordance.__main__:main"
+
+[project.entry-points."concordance.verifiers"]
+# third-party verifier packs register here: domain = "package.module" exposing run(packet)
+
 [project.optional-dependencies]
 math = ["sympy", "scipy", "numpy"]
 signing = ["cryptography"]      # Ed25519 seal attestations (optional, lazy)
-pdf = ["pypdf"]                 # robust PDF text extraction for Console intake (optional, lazy — the
-                                # stdlib floor handles simple text PDFs; pypdf covers embedded/CID fonts)
+scribe = ["numpy"]              # the multi-writer disagreement locator (SVD)
 schema = ["jsonschema"]         # full packet validation; without it, the sovereign structural fallback runs
 dev = ["pytest>=8", "coverage>=7", "ruff>=0.5"]
 
@@ -28,7 +33,7 @@ dev = ["pytest>=8", "coverage>=7", "ruff>=0.5"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-concordance = ["schema/*.json"]
+concordance = ["schemas/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

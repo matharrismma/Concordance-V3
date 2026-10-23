@@ -168,3 +168,10 @@ site/library/*.epub
 
 # the corpus cache (corpus_cache.py): derived from the keeping, rebuilt on any change — never tracked
 data/.cache/
+__pycache__/
+*.pyc
+data/cas/
+data/ledger/
+data/receipt_cards.jsonl
+benchmark.json
+closure.txt
