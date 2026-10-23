@@ -19,7 +19,7 @@
 | named checks | 395 | named checks across modules (from each module's docstring list, else its verify_* functions) |
 | domain names accepted | 194 | domain names the dispatcher accepts, aliases included |
 | MCP tools | 8 | verify, discern, find_verifier, seal_fetch, audit, scribe, capabilities, ledger_verify |
-| benchmark v2.2.0 | 1669 cases, 0 FP, 0 FN | `tools/benchmark.py --json` |
+| benchmark v2.2.0 | 1796 cases, 0 FP, 0 FN | `tools/benchmark.py --json` |
 
 ## Request path
 

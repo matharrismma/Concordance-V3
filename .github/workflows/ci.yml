@@ -12,6 +12,7 @@ jobs:
       - run: PYTHONPATH=src python tools/benchmark.py --json > benchmark.json && PYTHONPATH=src python tools/benchmark.py --check
       - run: PYTHONPATH=src python tools/schema_gen.py --check
       - run: PYTHONPATH=src python tools/vocab_gate.py
+      - run: pip install -q coverage && PYTHONPATH=src python tools/unreached.py
       - run: |
           PYTHONPATH=src python tools/closure.py derivation audit receipts cas ledger discern capabilities redact airlock tool_registry verifiers mcp.server engine http_api __main__ schema text scribe --lazy --src src/concordance > closure.txt
           # every module the core reaches must be one we chose

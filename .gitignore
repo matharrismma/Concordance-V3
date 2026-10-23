@@ -13,3 +13,4 @@ data/.cache/
 # CI artifacts
 benchmark.json
 closure.txt
+.coverage*
