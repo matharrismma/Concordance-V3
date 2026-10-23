@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import tempfile
 
-TMP = tempfile.mkdtemp(prefix="nh-words-")
-os.environ.setdefault("CONCORDANCE_DATA_DIR", TMP)
+# v3: no process-wide env mutation at import (it starved every later test of data/); wordcraft declines
+# the syllable check when the corpus is absent regardless, which is what these tests exercise.
 
 from concordance.audit import audit, extract  # noqa: E402
 from concordance.config import EngineConfig  # noqa: E402
