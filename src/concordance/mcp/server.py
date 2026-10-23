@@ -140,6 +140,13 @@ def _call_tool(name: str, args: dict, config: EngineConfig) -> Any:
     if name == "verify":
         from .. import receipts, schema as _schema
         seal_on = args.get("seal", True) is not False
+        if isinstance(args.get("document"), dict):
+            from .. import compose as _compose, schema as _schema2
+            bad = _schema2.validate_steps(args["document"].get("steps") or [])
+            if bad:
+                return {"verdict": "SCHEMA_ERROR", "root": None, "problems": bad,
+                        "means": "a step's packet did not match its domain's schema; nothing was sealed"}
+            return _compose.seal_document(args["document"], config, seal=seal_on)
         claim = str(args.get("claim") or "").strip()
         if claim and not isinstance(args.get("steps"), list) and not args.get("mode"):
             return _verify_plain(claim, config, seal_on, args.get("domain"))

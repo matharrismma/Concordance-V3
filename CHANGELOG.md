@@ -9,4 +9,6 @@
   depreciated value, abatement ladder, PV).
 - `concordance.scribe`: many-writer claim matrix, SVD disagreement axis, recompute verdicts, UNDERDETERMINED.
 - Benchmark v2.2.0: 1,669 cases over four tiers, 0 false positives; mutation tool.
+- `compose.py`: documents as trees of sealed steps (`bind` inputs to earlier outputs), one root hash,
+  parents, `/s/<root>?html=1` tree page with whole-chain re-check. Driven by a synthetic memo only.
 - License: MIT.

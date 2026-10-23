@@ -84,6 +84,7 @@ def verify_amortization(spec: Dict[str, Any]) -> VerifierResult:
     total_interest = io * io_pay + amort_n * pi - par
     data = {"par": par, "annual_rate": ar, "monthly_rate": r, "term_months": n, "interest_only_months": io,
             "amortizing_months": amort_n, "monthly_pi": pi, "monthly_io": io_pay, "total_interest": total_interest,
+            "annual_pi": 12 * pi, "annual_io": 12 * io_pay,            # outputs a later step may bind to
             "formula": "PI = P r (1+r)^m / ((1+r)^m - 1), m = term - IO months; IO = P r; interest = IO·io + PI·m - P"}
     results = []
     for key, actual, what in (("claimed_monthly_pi", pi, "monthly_pi"), ("claimed_monthly_io", io_pay, "monthly_io"),

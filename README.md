@@ -64,6 +64,23 @@ every push; `tools/mutate.py` measures whether the gate is load-bearing (current
 It checks arithmetic and formula application. It does **not** judge whether a correct dose is safe, a
 correct abatement is lawful, or a correct payment is affordable; those caveats ride in the receipt headline.
 
+## Documents — receipts that stand on receipts
+
+A document is a derivation whose steps may **bind** their inputs to earlier steps' outputs, sealed as one
+root over every step's packet hash, status and dependencies (plus any parent seals — an earlier version, a
+scribe pass):
+
+```bash
+curl -s localhost:8000/verify -d '{"document":{"title":"memo","steps":[
+  {"id":"par","domain":"public_finance","spec":{"PUBFIN_VERIFY":{"net_proceeds":12000000,"issuance_cost_pct":0.02,"round_up_to":5000,"claimed_par":12245000}}},
+  {"id":"debt","domain":"public_finance","spec":{"PUBFIN_VERIFY":{"par":0,"annual_rate":0.045,"term_months":240,"interest_only_months":24,"claimed_monthly_pi":82815.95}},
+   "bind":{"PUBFIN_VERIFY.par":"par.actual_par"}}]}}'
+```
+
+Change the gross-up and the par step breaks; the steps that rested on it refuse to run rather than report a
+stale HOLDS; the root changes. `GET /s/<root>?html=1` shows the tree and re-checks the whole chain from
+edited inputs. One hash covers the memo — the chain, not the number.
+
 ## scribe — many writers, one datum
 
 ```python

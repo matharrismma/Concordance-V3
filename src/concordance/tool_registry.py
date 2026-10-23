@@ -34,6 +34,7 @@ REGISTRY: List[ToolSpec] = [
                                                       "number_theory"]},
                  "params": {"type": "object"},
                  "claim": _S,
+                 "document": {"type": "object"},
                  "seal": _B}}),
     ToolSpec("discern", "read",
              "Plain text in; a proposal out, no verdict: the de-identified text that would be checked, the "

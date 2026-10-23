@@ -1,98 +1,71 @@
-"""Composition — the auditor chains claims the author stated (2026-09-25).
+"""compose — receipts that stand on receipts. Driven by the SYNTHETIC memo (invented company, invented
+numbers): no real deal is used anywhere in this repository."""
+import copy, json
+from concordance import cas, compose, http_api
+from concordance.config import EngineConfig
+from concordance.mcp.server import _call_tool
+from concordance.validate import canonical_json_bytes, sha256_bytes
 
-`compose_uses` sets a `uses` edge only when the prose explicitly chains two claims: a connective
-("so"/"therefore"/…) between them AND a shared number. The moat then gates the link — a conclusion
-resting on a false premise no longer stands on its own, even when its own arithmetic checks out.
-Nothing is invented; no connective or no shared number means no edge, and a miss stays a miss.
-"""
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-
-from concordance.audit import extract, compose_uses, audit, _spec_numbers  # noqa: E402
-from concordance.config import EngineConfig  # noqa: E402
-
-CFG = EngineConfig(skip_schema_validation=True)
-
-
-def _by_extractor(steps, name):
-    return next(s for s in steps if s["extractor"] == name)
+C = EngineConfig()
+PF = "PUBFIN_VERIFY"
+DOC = {"title": "Synthetic bond memo", "steps": [
+    {"id": "par", "domain": "public_finance", "label": "gross-up",
+     "spec": {PF: {"net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}},
+    {"id": "debt", "domain": "public_finance", "label": "P&I after IO",
+     "spec": {PF: {"par": 0, "annual_rate": 0.045, "term_months": 240, "interest_only_months": 24,
+                   "claimed_monthly_pi": 82815.95, "claimed_total_interest": 6745294.80}},
+     "bind": {"PUBFIN_VERIFY.par": "par.actual_par"}},
+    {"id": "dscr", "domain": "real_estate", "label": "coverage",
+     "spec": {"RE_VERIFY": {"net_operating_income": 1_500_000, "annual_debt_service": 0, "claimed_dscr": 1.5093}},
+     "bind": {"RE_VERIFY.annual_debt_service": "debt.annual_pi"}},
+], "text": "Par {par}; P&I {debt}; DSCR {dscr}."}
 
 
-def test_spec_numbers_reads_both_shapes():
-    # {WRAPPER: {...}} shape (values) and {mode, params} shape (numbers inside expr strings)
-    assert 24.0 in _spec_numbers({"GEOM_VERIFY": {"rect_length": 4, "rect_width": 6,
-                                                  "claimed_rect_area": 24}})
-    assert {24.0, 2.0, 48.0} <= _spec_numbers({"mode": "equality",
-                                               "params": {"expr_a": "24.0*2.0", "expr_b": "48.0"}})
-    # a boolean is not a number
-    assert _spec_numbers({"GEOM_VERIFY": {"claimed_valid_triangle": True}}) == set()
+def test_a_chained_document_seals_as_one_root_that_rehashes():
+    r = compose.seal_document(DOC, C)
+    assert r["verdict"] == "HOLDS" and r["root"]
+    assert [s["uses"] for s in r["steps"]] == [[], ["par"], ["debt"]]
+    rec = cas.fetch(r["root"]); h = rec.pop("content_hash")
+    assert sha256_bytes(canonical_json_bytes(rec)) == h
+    assert rec["kind"] == "document" and rec["derivation_seal"] == r["derivation_seal"]["content_hash"]
+    assert rec["binds"]["debt"] == {"PUBFIN_VERIFY.par": "par.actual_par"}
 
 
-def test_chain_sets_a_uses_edge():
-    text = "A rectangle 4 by 6 has area 24, so 24 x 2 = 48."
-    steps = extract(text)
-    compose_uses(steps, text)
-    prod = _by_extractor(steps, "product")
-    rect = _by_extractor(steps, "rectangle")
-    assert rect["id"] in prod.get("uses", []), [s.get("uses") for s in steps]
+def test_an_upstream_change_breaks_the_root_and_starves_what_rested_on_it():
+    d = copy.deepcopy(DOC)
+    d["steps"][0]["spec"][PF]["issuance_cost_pct"] = 0.03
+    r = compose.seal_document(d, C, seal=False)
+    assert r["verdict"] == "BROKEN"
+    st = {s["id"]: s["status"] for s in r["steps"]}
+    assert st == {"par": "MISMATCH", "debt": "NOT_APPLICABLE", "dscr": "NOT_APPLICABLE"}   # never a stale HOLDS
 
 
-def test_chain_confirms_end_to_end():
-    res = audit("A rectangle 4 by 6 has area 24, so 24 x 2 = 48.", CFG, seal=False)
-    assert res["verdict"] == "HOLDS"
-    prod = next(r for r in res["results"] if r["extractor"] == "product")
-    assert prod.get("uses")            # the edge surfaced in the report
+def test_a_document_can_stand_on_a_document_and_walk_back():
+    v1 = compose.seal_document(DOC, C)
+    v2 = compose.seal_document(dict(DOC, title="v2", parents=[v1["root"]]), C)
+    assert v1["root"] != v2["root"]
+    w = compose.walk(v2["root"])
+    assert w["title"] == "v2" and w["parents"][0]["root"] == v1["root"] and w["parents"][0]["title"] == "Synthetic bond memo"
 
 
-def test_false_premise_stops_the_conclusion():
-    # 4x6 = 24, so the "area 25" premise is FALSE. The arithmetic 25x2=50 is true IN ISOLATION,
-    # but it rests on the false premise, so the chained derivation does not let it stand alone.
-    res = audit("A rectangle 4 by 6 has area 25, so 25 x 2 = 50.", CFG, seal=False)
-    assert res["verdict"] == "BROKEN"
-    rect = next(r for r in res["results"] if r["extractor"] == "rectangle")
-    prod = next(r for r in res["results"] if r["extractor"] == "product")
-    assert rect["status"] == "MISMATCH"
-    assert prod["status"] == "CONFIRMED"                 # true in isolation
-    assert prod.get("builds_on_unconfirmed")             # …but it does not stand — rests on the break
+def test_an_unknown_parent_is_a_schema_error_not_a_dangling_pointer():
+    r = compose.seal_document(dict(DOC, parents=["0" * 64]), C, seal=False)
+    assert r["verdict"] == "SCHEMA_ERROR" and r["problems"][0]["field"] == "parents"
 
 
-def test_no_connective_no_edge():
-    """No "so"/"therefore" between them → the claims are independent, no edge (a miss stays a miss)."""
-    text = "A rectangle 4 by 6 has area 24. Also, 24 x 2 = 48."
-    steps = extract(text)
-    compose_uses(steps, text)
-    assert not _by_extractor(steps, "product").get("uses")
+def test_verify_tool_takes_a_document_and_validates_its_packets():
+    r = _call_tool("verify", {"document": DOC, "seal": False}, C)
+    assert r["verdict"] == "HOLDS"
+    bad = copy.deepcopy(DOC); bad["steps"][0]["spec"][PF]["net_proceds"] = bad["steps"][0]["spec"][PF].pop("net_proceeds")
+    r = _call_tool("verify", {"document": bad, "seal": False}, C)
+    assert r["verdict"] == "SCHEMA_ERROR" and r["problems"][0]["nearest"]["net_proceds"] == ["net_proceeds"]
 
 
-def test_no_shared_number_no_edge():
-    """Connective present, but the second claim reuses none of the first's numbers → no dependency."""
-    text = "A rectangle 4 by 6 has area 24, so 3 x 5 = 15."
-    steps = extract(text)
-    compose_uses(steps, text)
-    assert not _by_extractor(steps, "product").get("uses")
-
-
-def test_single_claim_never_self_links():
-    steps = extract("A rectangle 4 by 6 has area 24.")
-    compose_uses(steps, "A rectangle 4 by 6 has area 24.")
-    assert all(not s.get("uses") for s in steps)
-
-
-def test_discern_surfaces_the_chain():
-    """Increment 2 — the discern proposer chains too, not just /audit: the discerned claims carry the
-    `uses` edge, so whoever hands them to the gate gets the reasoning checked, not just the facts."""
-    from concordance import discern as D
-    prop = D.discern("A rectangle 4 by 6 has area 24, so 24 x 2 = 48.")
-    assert prop["kind"] == "claim"
-    claims = prop.get("claims") or []
-    assert any(c.get("uses") for c in claims), claims
-
-
-if __name__ == "__main__":
-    import pytest
-    raise SystemExit(int(pytest.main([__file__, "-q"])))
+def test_tree_page_renders_steps_binds_and_parents():
+    v1 = compose.seal_document(DOC, C)
+    v2 = compose.seal_document(dict(DOC, title="v2", parents=[v1["root"]]), C)
+    rec = cas.fetch(v2["root"])
+    html = http_api._document_html(rec, v2["root"]).decode()
+    assert html.count('class="step"') == 3 and "rests on: par" in html and "rests on: debt" in html
+    assert "par.actual_par" in html                       # binds travel to the page so re-check propagates
+    assert f'/s/{v1["root"]}?html=1' in html              # the parent is a link

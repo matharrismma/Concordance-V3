@@ -29,6 +29,8 @@ doc = f"""# Architecture (generated — `python tools/architecture_gen.py`, vers
 5. **Ledger** — append-only hash chain of seals (`ledger.py`, `ledger_verify`)
 6. **Schema** — every verifier's packet schema, generated from its code (`schema.py`)
 7. **Scribe** — many writers, one datum: claim matrix → SVD disagreement axis → recompute (`scribe/`)
+8. **Document** — a derivation whose steps bind to earlier outputs, sealed as one root over every step's
+   packet hash, dependencies and parent seals (`compose.py`) — the primitives applied to their own outputs
 
 ## Counts (derived at generation time)
 

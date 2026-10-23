@@ -80,7 +80,7 @@ narrowhighway.org and are not part of this product. The core must contain no voc
 - **Packs** are the people-facing SKUs and the first revenue:
   - **Public Finance pack** — amortization with IO periods, issuance gross-up, abatement ladders,
     depreciated-value ad valorem, millage vectors, DSCR/LTV, NPV/IRR with explicit conventions. Ported
-    from the prototype's `packets.py`. First customer: NWGA JDA — Matt is the signer. Second: every other
+    from the prototype's `packets.py`. First customer: NOT the JDA (owner's decision 2026-10-23: the product stands alone from his employer's work). The driving case is the synthetic memo in the repo; the first paying signer is to be found outside — a bond counsel, a lender, a CPA. Second: every other
     development authority and bond counsel in Georgia, reachable by one person in one quarter.
   - **Clinical arithmetic pack** — dose × weight, BSA, eGFR, unit conversions, with the red-team caveat
     carried in the receipt headline (already in `medicine.py`). Overlaps MedCalc MCP; the difference is the
@@ -145,8 +145,8 @@ under 5 minutes from the README. Measured with one person who has never seen the
 ### M2 (days 31–60): the first pack and the first signer
 - Public Finance pack as real verifiers (`V3_PLAN.md` P4) with ≥200-case benchmark v2 and mutation
   testing. Check-It page with grey "not checked" spans.
-- **JDA pilot:** one real board memo per meeting goes through Scribe + Check-It; every number on the
-  memo carries a receipt URL in a footnote. You are the signer. Record what the board asks.
+- **Pilot:** a synthetic memo (the repo fixture) plus one outside signer's real document, with their consent
+  and names stripped; every number carries a receipt URL. Nothing from the JDA.
 - Scribe benchmark: replay the two prototype rounds plus 20 new specs with **at least two non-Claude
   writers** (`LANDSCAPE_B` §A correlated-error data makes an all-Claude panel inadmissible). Report
   spread, BROKEN count, and — the test that matters — whether SVD localization beats random order for

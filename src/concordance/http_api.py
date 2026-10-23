@@ -98,6 +98,88 @@ document.querySelectorAll('form.recheck').forEach(f=>{{
 </script></html>""".encode()
 
 
+def _document_html(rec: Dict[str, Any], h: str) -> bytes:
+    """A document root as a tree: each step, what it rests on, its packet (from the spec sidecar), the
+    parents it stands on. Re-check re-runs the WHOLE chain from the edited inputs (seal=0): a change
+    upstream is felt downstream, exactly as in the sealed derivation."""
+    from . import cas as _cas, compose as _compose
+
+    def esc(x: Any) -> str:
+        return str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    steps = rec.get("steps") or []
+    labels = rec.get("labels") or {}
+    blocks = []
+    for st in steps:
+        spec = _cas.fetch_spec(str(st.get("spec_hash") or "")) or {}
+        art_key = next((k for k, v in spec.items() if isinstance(v, dict)), None)
+        art = spec.get(art_key) if art_key else spec
+        fields = "".join(
+            f'<label>{esc(k)} <input name="{esc(k)}" value="{esc(json.dumps(v) if isinstance(v, (list, dict)) else v)}"></label>'
+            for k, v in (art or {}).items())
+        rests = ", ".join(esc(u) for u in st.get("uses") or []) or "—"
+        blocks.append(f"""
+<section class="step" data-id="{esc(st.get('id'))}" data-domain="{esc(st.get('domain') or '')}" data-key="{esc(art_key or '')}" data-wrap="{esc(json.dumps({k: v for k, v in spec.items() if k != art_key}))}">
+  <h2>{esc(st.get('id'))} <span class="v {esc(st.get('status'))}">{esc(st.get('status'))}</span> <small>{esc(labels.get(str(st.get('id')), ''))}</small></h2>
+  <p class="muted">rests on: {rests} · domain {esc(st.get('domain'))} · packet <code>{esc(str(st.get('spec_hash') or '')[:12])}</code></p>
+  <p class="detail">{esc(st.get('detail', ''))}</p>
+  <div class="fields">{fields}</div>
+</section>""")
+    parents = ""
+    for p in rec.get("parents") or []:
+        pr = _compose.fetch_document(p)
+        parents += f'<li><a href="/s/{esc(p)}?html=1">{esc(pr.get("title") if pr else p[:16] + "…")}</a> <span class="v {esc(pr.get("verdict") if pr else "")}">{esc(pr.get("verdict") if pr else "seal")}</span></li>'
+    verdict = esc(rec.get("verdict", ""))
+    return f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{esc(rec.get('title') or 'Document')} — {esc(h[:12])}</title>
+<style>
+:root{{--bg:#fff;--fg:#1a1a1a;--mut:#666;--ok:#1f7a3a;--bad:#a12626;--line:#ddd}}
+@media(prefers-color-scheme:dark){{:root{{--bg:#111;--fg:#eee;--mut:#aaa;--line:#333}}}}
+body{{font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0 auto;max-width:54rem;padding:1.5rem 1rem}}
+h1{{font-size:1.4rem;margin:.2rem 0}} h2{{font-size:1.05rem;margin:1.1rem 0 .2rem}} h2 small{{font-weight:400;color:var(--mut)}}
+code{{word-break:break-all;font-size:.9em}} .muted{{color:var(--mut);margin:.1rem 0}}
+.v{{font-weight:600;padding:.05rem .45rem;border-radius:.3rem;border:1px solid var(--line);font-size:.85rem;vertical-align:middle}}
+.v.CONFIRMED,.v.HOLDS,.v.PASS{{color:var(--ok)}} .v.MISMATCH,.v.BROKEN{{color:var(--bad)}}
+.step{{border-left:3px solid var(--line);padding-left:.8rem;margin:.6rem 0}}
+.fields{{display:grid;grid-template-columns:1fr 1fr;gap:.4rem .9rem;margin:.4rem 0}}
+label{{display:flex;flex-direction:column;font-size:.85rem;color:var(--mut)}}
+input{{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:.3rem;padding:.3rem .4rem}}
+button{{font:inherit;padding:.45rem .9rem;border-radius:.4rem;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer;margin-top:.8rem}}
+#out{{white-space:pre-wrap;font-size:.9rem;margin-top:.6rem}} ul{{padding-left:1.2rem}}
+@media(max-width:520px){{.fields{{grid-template-columns:1fr}}}}
+</style>
+<h1>{esc(rec.get('title') or 'Document')} <span class="v {verdict}">{verdict}</span></h1>
+<p>Root <code>{esc(h)}</code> — the SHA-256 of a record naming every step's packet hash, status and dependencies, the derivation seal <code>{esc(str(rec.get('derivation_seal') or '')[:12])}</code>, and the parents below. Re-fetch <a href="/s/{esc(h)}">the JSON</a>, re-hash it, walk the tree.</p>
+{('<p class="muted">Stands on:</p><ul>' + parents + '</ul>') if parents else ''}
+{''.join(blocks)}
+<button id="recheck">Re-check the whole chain with these inputs</button>
+<div id="out"></div>
+<p class="muted">Checks arithmetic and formula application only — never whether a correct result is safe, lawful, or suitable. Re-checking never alters this record.</p>
+<script>
+const USES = {json.dumps({str(st.get('id')): list(st.get('uses') or []) for st in steps})};
+const BINDS = {json.dumps(rec.get('binds') or {})};
+const ORIG = {json.dumps([{"id": st.get("id"), "domain": st.get("domain")} for st in steps])};
+document.getElementById('recheck').addEventListener('click', async () => {{
+  const out = document.getElementById('out'); out.textContent = 'checking…';
+  const steps = [];
+  for (const sec of document.querySelectorAll('.step')) {{
+    const art = {{}}; for (const inp of sec.querySelectorAll('input')) {{ let v = inp.value.trim(); try {{ v = JSON.parse(v); }} catch (_e) {{}} art[inp.name] = v; }}
+    let spec; try {{ spec = JSON.parse(sec.dataset.wrap || '{{}}'); }} catch (_e) {{ spec = {{}}; }}
+    if (sec.dataset.key) spec[sec.dataset.key] = art; else spec = art;
+    const step = {{ id: sec.dataset.id, domain: sec.dataset.domain, spec }};
+    if ((USES[sec.dataset.id] || []).length) step.uses = USES[sec.dataset.id];
+    if (BINDS[sec.dataset.id]) step.bind = BINDS[sec.dataset.id];
+    steps.push(step);
+  }}
+  try {{
+    const r = await fetch('/verify?seal=0', {{ method: 'POST', headers: {{ 'content-type': 'application/json' }}, body: JSON.stringify({{ steps }}) }});
+    const j = await r.json();
+    out.textContent = [j.verdict || '?'].concat((j.trail || []).map(t => '  ' + t.id + ': ' + t.status + ' - ' + (t.detail || ''))).join(String.fromCharCode(10)) + (j.problems ? ' ' + JSON.stringify(j.problems).slice(0, 400) : '');
+  }} catch (err) {{ out.textContent = 'could not reach /verify: ' + err; }}
+}});
+</script></html>""".encode()
+
+
 def route(method: str, path: str, query: Dict[str, Any], body: Dict[str, Any], headers: Any, raw: bytes):
     seal_on = str(query.get("seal", ["1"])[0]) not in ("0", "false")
     if path == "/health":
@@ -134,6 +216,8 @@ def route(method: str, path: str, query: Dict[str, Any], body: Dict[str, Any], h
             if "error" in rec:
                 return _json(404, rec)
             if query.get("html"):
+                if rec.get("kind") == "document":
+                    return 200, {"Content-Type": "text/html; charset=utf-8"}, _document_html(rec, m.group(1))
                 return 200, {"Content-Type": "text/html; charset=utf-8"}, _receipt_html(rec, m.group(1))
             return _json(200, rec)
         if path == "/":
