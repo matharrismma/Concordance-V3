@@ -56,6 +56,9 @@ for i in $(seq 1 20); do
     rm -rf "$PREV"
     echo "== done. Next: paste deploy/Caddyfile.v3.snippet into api.narrowhighway.com's route block and"
     echo "   add Environment=NH_VERIFY_URL=http://127.0.0.1:$PORT to nh-org.service; then: sudo systemctl reload caddy && sudo systemctl restart nh-org"
+    if ! grep -q CONCORDANCE_ISSUER_KEY .env 2>/dev/null; then
+      echo "   receipts are self-attested until you add an issuer key: .venv/bin/python -m concordance keygen >> .env && chmod 600 .env && echo CONCORDANCE_PUBLISH=1 >> .env && sudo systemctl restart nh-v3"
+    fi
     exit 0
   fi
   sleep 1

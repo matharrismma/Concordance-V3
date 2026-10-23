@@ -24,7 +24,7 @@ concordance = "concordance.__main__:main"
 
 [project.optional-dependencies]
 math = ["sympy", "scipy", "numpy"]
-signing = ["cryptography"]      # Ed25519 seal attestations (optional, lazy)
+signing = ["cryptography", "cbor2"]   # Ed25519 seals, COSE_Sign1 statements, Rekor publication (optional, lazy)
 scribe = ["numpy"]              # the multi-writer disagreement locator (SVD)
 schema = ["jsonschema"]         # full packet validation; without it, the sovereign structural fallback runs
 dev = ["pytest>=8", "coverage>=7", "ruff>=0.5"]

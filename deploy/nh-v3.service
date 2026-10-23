@@ -9,6 +9,7 @@ After=network.target
 [Service]
 User=nh
 WorkingDirectory=/home/nh/concordance-3
+# .env holds CONCORDANCE_ISSUER_KEY=… (from `python -m concordance keygen`, mode 0600) and CONCORDANCE_PUBLISH=1
 EnvironmentFile=-/home/nh/concordance-3/.env
 Environment=PYTHONPATH=/home/nh/concordance-3/src
 Environment=CONCORDANCE_DATA_DIR=/home/nh/concordance-3/data

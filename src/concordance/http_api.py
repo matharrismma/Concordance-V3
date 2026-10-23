@@ -30,6 +30,23 @@ def _json(status: int, obj: Any) -> Tuple[int, Dict[str, str], bytes]:
     return status, {"Content-Type": "application/json; charset=utf-8"}, json.dumps(obj, ensure_ascii=False, default=str).encode()
 
 
+def _provenance_html(rec: Dict[str, Any]) -> str:
+    """One line saying who signed and where it is logged — or that it is self-attested."""
+    from html import escape as esc
+    att = rec.get("attest") or {}
+    env, log = att.get("envelope") or {}, att.get("log") or {}
+    if not env:
+        return '<p class="muted">Self-attested: content-addressed only; no issuer signature or public log entry.</p>'
+    line = f'Signed by issuer <code>{esc(env.get("kid") or "")}</code> (COSE_Sign1, Ed25519).'
+    if log and not log.get("pending") and log.get("uuid"):
+        line += (f' Logged on Rekor at index <code>{esc(str(log.get("index")))}</code>'
+                 f' — <a href="{esc(log.get("url") or "")}/api/v1/log/entries/{esc(log["uuid"])}">entry</a>'
+                 f'{", inclusion proof held" if log.get("inclusion_proof") else ""}.')
+    else:
+        line += f' Log entry pending{(": " + esc(str(log.get("error")))) if log.get("error") else ""}.'
+    return f'<p class="muted">{line} Check it yourself with <code>docs/verify_receipt.py</code>.</p>'
+
+
 def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
     """The receipt as a page a person can read — and re-check. Each step's packet (filed beside the seal
     under its spec_hash) is shown as editable inputs; "Re-check" posts the edited packet to /verify with
@@ -79,6 +96,7 @@ output{{grid-column:1/-1;white-space:pre-wrap;font-size:.9rem}}
 </style>
 <h1>Sealed record <span class="v {overall}">{overall}</span></h1>
 <p>Content hash <code>{esc(h)}</code>. The JSON at <a href="/s/{esc(h)}">/s/{esc(h)}</a>, hashed canonically with SHA-256, reproduces this hash — that is the whole claim of the seal. Changing inputs below recomputes a fresh verdict; it does not alter this record.</p>
+{_provenance_html(rec)}
 {''.join(blocks)}
 <p class="muted">Checks arithmetic and formula application only — never whether a correct result is safe, lawful, or suitable.</p>
 <script>
@@ -150,6 +168,7 @@ button{{font:inherit;padding:.45rem .9rem;border-radius:.4rem;border:1px solid v
 </style>
 <h1>{esc(rec.get('title') or 'Document')} <span class="v {verdict}">{verdict}</span></h1>
 <p>Root <code>{esc(h)}</code> — the SHA-256 of a record naming every step's packet hash, status and dependencies, the derivation seal <code>{esc(str(rec.get('derivation_seal') or '')[:12])}</code>, and the parents below. Re-fetch <a href="/s/{esc(h)}">the JSON</a>, re-hash it, walk the tree.</p>
+{_provenance_html(rec)}
 {('<p class="muted">Stands on:</p><ul>' + parents + '</ul>') if parents else ''}
 {''.join(blocks)}
 <button id="recheck">Re-check the whole chain with these inputs</button>

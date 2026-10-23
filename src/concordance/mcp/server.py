@@ -177,8 +177,19 @@ def _call_tool(name: str, args: dict, config: EngineConfig) -> Any:
             r["schemas"] = {d: _schema.schema_for(d) for d in doms[:3]}
         return r
     if name == "seal_fetch":
-        rec = cas.fetch(args.get("hash", ""))
-        return rec if rec is not None else {"error": "seal not found"}
+        h = str(args.get("hash", ""))
+        rec = cas.fetch(h)
+        if rec is None:
+            return {"error": "seal not found"}
+        # provenance rides beside the record, never inside it: `record` re-hashes to `content_hash` as-is
+        from .. import transparency as _tr
+        att = _tr.attest(h) if (_tr.status()["issuer_key_configured"] or _tr._sidecar(h)) else None
+        if att and "error" not in att:
+            return {**rec, "attest": {"envelope": att.get("envelope"), "log": att.get("log"),
+                                      "means": "verify with docs/verify_receipt.py: re-hash the record (minus content_hash "
+                                               "and attest), check the COSE_Sign1 under the issuer key, check the log entry "
+                                               "and its inclusion proof"}}
+        return rec
     if name == "audit":
         from .. import audit as _audit, text as _text
         t = str(args.get("text") or "")

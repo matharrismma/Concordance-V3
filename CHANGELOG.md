@@ -12,3 +12,8 @@
 - `compose.py`: documents as trees of sealed steps (`bind` inputs to earlier outputs), one root hash,
   parents, `/s/<root>?html=1` tree page with whole-chain re-check. Driven by a synthetic memo only.
 - License: MIT.
+- Transparency: `transparency.py` mints COSE_Sign1 (Ed25519) statements over every served record and logs them
+  on Rekor as `rekord` entries (Rekor re-verifies the signature on admission); `attest` rides beside the record
+  in `seal_fetch` / `/s/<hash>` and the receipt and tree pages; `python -m concordance keygen`;
+  `tools/publish_seals.py` flushes pending entries; `docs/verify_receipt.py` checks hash, signature, log entry
+  and Merkle inclusion with no Concordance import; `docs/RECEIPT_SPEC.md`.

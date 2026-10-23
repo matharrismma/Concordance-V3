@@ -74,10 +74,23 @@ def _ledger() -> Dict[str, Any]:
         return {"entries": None, "means": "ledger not readable in this process"}
 
 
+def _transparency() -> Dict[str, Any]:
+    try:
+        from . import transparency as T
+        st = T.status()
+        return {"issuer_key_configured": st["issuer_key_configured"], "kid": st["kid"], "log": st["rekor"],
+                "publish_by_default": st["publish_by_default"],
+                "means": "whether seals are signed (COSE_Sign1, Ed25519) and logged to a public transparency log; "
+                         "without a key they are self-attested and say so"}
+    except Exception:  # noqa: BLE001
+        return {"issuer_key_configured": False, "means": "transparency module not importable (install the signing extra)"}
+
+
 def statement(surface: str = "secular") -> Dict[str, Any]:
     from . import __version__
     return {"engine": "concordance", "version": __version__, "note": NOTE,
             "verifiers": _verifiers(), "tools": _tools(), "benchmark": _benchmark(), "ledger": _ledger(),
+            "transparency": _transparency(),
             "limits": ["verifies arithmetic and formula application only — never clinical, legal, or "
                        "financial suitability",
                        "a plain-text claim is checked only where an extractor recognised a tight span; "

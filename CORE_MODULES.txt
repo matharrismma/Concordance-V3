@@ -1,7 +1,7 @@
 __main__                                             48  <- <entry>
 airlock                                             184  <- <entry>
 audit                                              2912  <- <entry>
-capabilities                                         88  <- <entry>
+capabilities                                        101  <- <entry>
 cas                                                 305  <- <entry>
 chess                                               383  <- audit
 compose                                             108  <- <entry>
@@ -16,11 +16,11 @@ domains                                               6  <- engine
 domains.base                                         64  <- domains
 engine                                              270  <- <entry>
 gates                                                27  <- engine
-http_api                                            284  <- <entry>
+http_api                                            303  <- <entry>
 layers                                                9  <- config
 ledger                                              502  <- <entry>
 mcp.http                                            171  <- http_api
-mcp.server                                          268  <- <entry>
+mcp.server                                          279  <- <entry>
 packet                                               38  <- receipts
 receipts                                            204  <- <entry>
 record                                              253  <- receipts
@@ -33,6 +33,7 @@ slotfill                                            198  <- audit
 telemetry                                            71  <- mcp.server
 text                                                205  <- <entry>
 tool_registry                                        77  <- <entry>
+transparency                                        257  <- <entry>
 validate                                            114  <- derivation
 verifiers                                           237  <- <entry>
 verifiers._boolean                                   96  <- verifiers.mathematics
@@ -51,4 +52,4 @@ verifiers.si_units                                  188  <- audit
 verifiers.spec                                      379  <- verifiers
 verifiers.thermal_scale                              51  <- verifiers.chemistry
 verifiers.wordcraft                                 894  <- audit
-# 53 modules, 14779 lines (lazy imports)
+# 54 modules, 15079 lines (lazy imports)

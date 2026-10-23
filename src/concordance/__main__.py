@@ -4,6 +4,7 @@
     python -m concordance mcp                             MCP server over stdio
     python -m concordance mcp --list-tools
     python -m concordance verify '<json: {steps|mode,params|claim}>'
+    python -m concordance keygen                          print a fresh issuer key (CONCORDANCE_ISSUER_KEY) + kid
 """
 from __future__ import annotations
 
@@ -34,6 +35,15 @@ def main(argv=None) -> int:
             return 0
         from .mcp.server import serve_stdio
         serve_stdio()
+        return 0
+    if argv[0] == "keygen":
+        from . import signing
+        priv, pub = signing.generate_keypair()
+        print(f"CONCORDANCE_ISSUER_KEY={priv}")
+        print(f"# public key (b64url raw Ed25519): {pub}")
+        import hashlib
+        print(f"# kid: ed25519:{hashlib.sha256(signing._b64u_decode(pub)).hexdigest()[:16]}")
+        print("# keep the private line in the service's EnvironmentFile (mode 0600); publish the public key beside your receipts")
         return 0
     if argv[0] == "verify" and len(argv) > 1:
         from .config import EngineConfig

@@ -81,6 +81,24 @@ Change the gross-up and the par step breaks; the steps that rested on it refuse 
 stale HOLDS; the root changes. `GET /s/<root>?html=1` shows the tree and re-checks the whole chain from
 edited inputs. One hash covers the memo — the chain, not the number.
 
+## Receipts anyone can check — signed and publicly logged
+
+With an issuer key configured (`python -m concordance keygen`), every record served at `/s/<hash>` carries,
+beside it and never inside the hashed bytes, a **COSE_Sign1 statement** (Ed25519) over the record and — with
+`CONCORDANCE_PUBLISH=1` — a **Rekor transparency-log entry** holding that statement, the signature and the
+public key, with its Merkle inclusion proof. A stranger checks all of it with one file and two pip packages:
+
+```bash
+curl -s https://narrowhighway.org/s/<hash> > receipt.json
+python3 docs/verify_receipt.py receipt.json
+# HASH ok · SIGNATURE ok · LOG ok (rekor index …) · INCLUSION ok (root reproduced)
+```
+
+`verify_receipt.py` imports nothing from this repo: it re-hashes the record, verifies the signature itself,
+fetches the log entry, and recomputes the log's root hash from the inclusion proof (RFC 6962). Tamper with
+one digit and HASH fails; swap the key and SIGNATURE fails. Without an issuer key the receipt says
+"self-attested" and still re-hashes. Format: `docs/RECEIPT_SPEC.md`.
+
 ## scribe — many writers, one datum
 
 ```python

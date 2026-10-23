@@ -14,7 +14,7 @@ jobs:
       - run: PYTHONPATH=src python tools/vocab_gate.py
       - run: pip install -q coverage && PYTHONPATH=src python tools/unreached.py
       - run: |
-          PYTHONPATH=src python tools/closure.py derivation audit receipts cas ledger discern capabilities redact airlock tool_registry verifiers mcp.server engine http_api __main__ schema text scribe compose --lazy --src src/concordance > closure.txt
+          PYTHONPATH=src python tools/closure.py derivation audit receipts cas ledger discern capabilities redact airlock tool_registry verifiers mcp.server engine http_api __main__ schema text scribe compose transparency --lazy --src src/concordance > closure.txt
           # every module the core reaches must be one we chose
           python - <<'PY'
           core = {l.split()[0] for l in open("CORE_MODULES.txt") if not l.startswith("#")}

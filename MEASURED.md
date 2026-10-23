@@ -5,11 +5,11 @@
 | core modules (top-level .py) | 175 | 32 | ≤ 40 |
 | core lines excl. verifiers | 51,666 | 9375 | ≤ 22,000 |
 | verifier modules / lines | 94 / 27,780 | 92 / 26520 | secular set + public_finance |
-| lazy import closure from the 8 tools | 187 modules / 63,598 lines | 52 modules, 14438 lines | ⊆ CORE_MODULES.txt |
+| lazy import closure from the 8 tools | 187 modules / 63,598 lines | 54 modules (transparency added) | ⊆ CORE_MODULES.txt |
 | MCP tools | 102 | 8 | 8 |
 | server instructions | house metaphor | 98 words, no org vocabulary | < 120 words |
-| docs files | 44 | 3 + README | ≤ 6 |
-| suite | 2,914 passed / 97 s | 781 passed, 25 skipped, 2 deselected / 28 s (2 Riemann tests behind `-m slow`, run nightly) | green, ≤ 60 s — MET |
+| docs files | 44 | 5 + README (SEAL_SPEC, RECEIPT_SPEC, RUNBOOK, BENCHMARK, ARCHITECTURE) | ≤ 6 |
+| suite | 2,914 passed / 97 s | 795 passed, 25 skipped, 2 deselected / 28 s (2 Riemann tests behind `-m slow`, run nightly) | green, ≤ 60 s — MET |
 | benchmark | v1.0.0: 60 cases, 3 modes | v2.2.0: **1,796 cases, 0 FP, 0 FN** — 60 derivation + 156 per-domain goldens + 798 Lighthouse rows + 782 per-check goldens (655 harvested from the suite, 127 written by hand against function field lists); 126 Lighthouse rows skipped by policy, 1 labelled policy disagreement | ≥ 200, 0 FP — MET |
 | mutation score (operator flips) | not measured | seed 3: 19/20; seed 7: 13/20 of which 5 are equivalent mutants (an error-message string, a constants listing, a detail string, a both-sides-negated balance, S=0 in a threshold) and 1 is Riemann–Siegel Z above the 8 s budget → effective 19/20 and 19/20. Published nightly, not yet a hard gate | 20/20 — effectively met; 1 real gap (_rs_z) |
 | coverage lie (compound sentence) | present | regression-tested gone (13 cases) | gone |
@@ -25,6 +25,14 @@ import-tested; tag v3.0.0a0 pushed.
 
 Verifier coverage (tools/unreached.py, a CI gate): 424 of 443 verify_* functions execute under the benchmark; the 19 that do not each carry a stated reason (5 policy — they execute caller code; 2 over the 8 s budget; 11 data-bound to the .org corpus; 1 gate-path). Zero unexplained gaps.
 
+Transparency layer (PRODUCT_PLAN M1), measured live on 2026-10-23: a document root sealed over HTTP was
+enveloped (COSE_Sign1, kid ed25519:1f6075ccb26ec618) and admitted by the public Rekor log at index 3428399704
+(uuid 108e9186…, tree size 3.3 billion); `docs/verify_receipt.py`, run with `python3 -I` from a directory
+holding nothing but itself, reported HASH ok · SIGNATURE ok · LOG ok · INCLUSION ok (22-hash proof, root
+reproduced), FAILed HASH on a one-field tamper, and FAILed SIGNATURE under a random key. Duplicate publication
+resolved to the same entry (409 path). 8 tests; Rekor is stubbed in the suite. Closure grows by one module (54).
+
 Not done: PyPI publish and the GitHub Release (both need the owner's credentials — artifacts are in dist/);
-Rekor/SCITT receipt envelope (PRODUCT_PLAN M1); 
+an issuer key on the production box (`python -m concordance keygen`, see RUNBOOK) — until then production
+receipts say "self-attested"; 
 Tests skipped from v2 are listed in tests/SKIPPED_FROM_V2.txt (all org-module tests).
