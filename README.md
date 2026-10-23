@@ -95,5 +95,5 @@ PYTHONPATH=src python tools/vocab_gate.py
 PYTHONPATH=src python tools/closure.py <entrypoints> --lazy   # must be ⊆ CORE_MODULES.txt
 ```
 
-AGPL-3.0-or-later. Receipts are self-signed in this release; publishing seals to a transparency log
+MIT. Receipts are self-signed in this release; publishing seals to a transparency log
 (Sigstore/Rekor, SCITT) is the next milestone.

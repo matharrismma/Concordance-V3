@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "concordance"
 version = "3.0.0a0"
 description = "Receipts for numbers: deterministic verification of AI (and human) arithmetic with a re-checkable, content-addressed seal. MCP server + HTTP API."
-license = {text = "AGPL-3.0-or-later"}
+license = {text = "MIT"}
 requires-python = ">=3.10"
 # Sovereign: ZERO required dependencies — the engine imports, serves, seals, and keeps the
 # corpus on the stdlib alone. Heavy deps are optional + lazy-loaded. NOTE: the derivation
