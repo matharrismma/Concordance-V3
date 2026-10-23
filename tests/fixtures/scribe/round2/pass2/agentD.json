@@ -1,0 +1,14 @@
+{"draft": "MEMORANDUM TO THE BOARD OF [AUTHORITY]\n\nRe: Taxable revenue bond and PILOT for [COMPANY]'s [PROJECT] in [COUNTY]\n\nCounsel's caution first: I have not accepted any round figure below without rebuilding it.\n\nFinancing. To net $12,000,000 after a 2.0% issuance cost paid from proceeds, par must be at least $12,244,898; rounded up to the next $5,000, par is $12,245,000 (net $12,000,100). At 4.50% fixed, months 1-24 are interest-only at $45,918.75 per month. Months 25-240 amortize at a level $82,815.95 per month. Total interest over the term is about $6,745,295. Against projected NOI of $1,500,000, amortization-period coverage is about 1.509x, a thin cushion for a single-credit taxable bond.\n\nPILOT. Year-1 full combined tax is $291,276 (equipment valued at $8,100,000 in year 1). Equipment is $6,300,000 in year 3 and reaches its 20% floor in year 8, when full tax is $225,720. Year-6 PILOT, after a 50% abatement, is $123,120. Abated tax over years 1-10 totals $1,447,740, or about $9,652 per job for 150 jobs; its present value at 5.0% is about $1,210,577.\n\nRecommendation: approve subject to confirming the figures with the financial advisor.", "claims": [
+{"id":"par","value":12245000,"inputs":"12000000 cost; 2% of par issuance cost; round up to 5000","formula":"12245000"},
+{"id":"monthly_io","value":45918.75,"inputs":"par 12245000; monthly rate 0.045/12","formula":"12245000*0.045/12"},
+{"id":"monthly_pi","value":82815.95,"inputs":"par 12245000; r=0.00375; n=216 level payments after IO","formula":"45918.75/(1-1/1.00375^216)"},
+{"id":"total_interest","value":6745295.2,"inputs":"24*45918.75 + 216*82815.95 - 12245000","formula":"24*45918.75+216*82815.95-12245000"},
+{"id":"dscr_amort","value":1.509371,"inputs":"NOI 1500000; annual P&I 12*82815.95","formula":"1500000/(12*82815.95)"},
+{"id":"equip_val_y3","value":6300000,"inputs":"9000000 * (1-0.30)","formula":"9000000*0.70"},
+{"id":"full_tax_y1","value":291276,"inputs":"real 18000000 + equip 8100000, 40%, 27.9 mills","formula":"(18000000+8100000)*0.4*0.0279"},
+{"id":"full_tax_y8","value":225720,"inputs":"real 18000000 + equip 1800000 floor, 40%, 28.5 mills","formula":"(18000000+1800000)*0.4*0.0285"},
+{"id":"pilot_y6","value":123120,"inputs":"equip 3600000; full tax 246240; 50% abated so 50% paid","formula":"(18000000+3600000)*0.4*0.0285*0.5"},
+{"id":"total_abated_10","value":1447740,"inputs":"yearly abated: 291276, 253108.8, 216950.4, 182800.8, 150660, 123120, 94392, 67716, 45144, 22572","formula":"291276+253108.8+216950.4+182800.8+150660+123120+94392+67716+45144+22572"},
+{"id":"npv_abated","value":1210576.5,"inputs":"yearly abated amounts discounted at 5%, end of year","formula":"291276/1.05+253108.8/1.05^2+216950.4/1.05^3+182800.8/1.05^4+150660/1.05^5+123120/1.05^6+94392/1.05^7+67716/1.05^8+45144/1.05^9+22572/1.05^10"},
+{"id":"abated_per_job","value":9651.6,"inputs":"total_abated_10 1447740 / 150 jobs","formula":"1447740/150"}
+]}

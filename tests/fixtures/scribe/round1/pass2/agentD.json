@@ -1,0 +1,14 @@
+{"draft": "MEMO TO THE BOARD OF [AUTHORITY]\nRe: Proposed taxable revenue bond and PILOT for [COMPANY]'s [PROJECT] in [COUNTY]\n\nCounsel's caution first: none of the figures below is a round number, and I do not trust any that look like one. The $12,000,000 taxable bond (20 years, 4.50%, 240 level monthly payments) carries a payment of about $75,917.90 a month, or $911,014.80 a year, and total interest of roughly $6,220,296. Against projected net operating income of $1,500,000, coverage is 1.6465x, which is adequate but rests entirely on a projection. Loan-to-value on $27,000,000 of investment is 0.4444.\n\nThe PILOT applies to the $18,000,000 building only; equipment is excluded, so the abatement is smaller than the headline investment suggests. Full tax is $205,200 a year (40% assessment, 28.5 mills). Years 1-5 are fully abated, then the abatement steps down ten points a year. The company pays $41,040 in year 7. Over 15 years, $1,949,400 is abated and $1,128,600 is paid. Discounted at 5.0%, the abatement is worth about $1,496,855 today.\n\nOn 150 jobs and a $7,800,000 payroll, the abatement is $12,996 per job over 15 years. Ambiguity: the year-15 full-tax assumption and end-of-year discounting are as specified; the board should confirm both.", "claims": [
+{"id":"monthly_ds","value":75917.9,"inputs":{"par":12000000,"annual_rate":0.045,"payments":240},"formula":"12000000*0.00375/(1-1.00375^(-240))"},
+{"id":"annual_ds","value":911014.8,"inputs":{"monthly_ds":75917.9},"formula":"75917.9*12"},
+{"id":"total_interest","value":6220296,"inputs":{"monthly_ds":75917.9,"payments":240,"par":12000000},"formula":"75917.9*240-12000000"},
+{"id":"dscr","value":1.64652,"inputs":{"noi":1500000,"annual_ds":911014.8},"formula":"1500000/911014.8"},
+{"id":"ltv","value":0.444444,"inputs":{"par":12000000,"total_investment":27000000},"formula":"12000000/27000000"},
+{"id":"full_tax","value":205200,"inputs":{"real_property":18000000,"assessment_ratio":0.4,"millage":28.5},"formula":"18000000*0.4*28.5/1000"},
+{"id":"pilot_y7","value":41040,"inputs":{"full_tax":205200,"abated_share":0.8},"formula":"205200*(1-0.8)"},
+{"id":"total_abated_15","value":1949400,"inputs":{"full_tax":205200,"years_100pct":5,"sum_step_shares":4.5},"formula":"205200*(5+4.5)"},
+{"id":"total_pilot_15","value":1128600,"inputs":{"full_tax":205200,"total_abated_15":1949400},"formula":"205200*15-1949400"},
+{"id":"npv_abated","value":1496854.7,"inputs":{"full_tax":205200,"discount_rate":0.05,"abated_shares":"1.0 x5 yrs, then 0.9 down to 0.1 in yrs 6-14, 0 in yr 15"},"formula":"205200*(1/1.05+1/1.05^2+1/1.05^3+1/1.05^4+1/1.05^5+0.9/1.05^6+0.8/1.05^7+0.7/1.05^8+0.6/1.05^9+0.5/1.05^10+0.4/1.05^11+0.3/1.05^12+0.2/1.05^13+0.1/1.05^14)"},
+{"id":"payroll","value":7800000,"inputs":{"jobs":150,"avg_wage":52000},"formula":"150*52000"},
+{"id":"abated_per_job","value":12996,"inputs":{"total_abated_15":1949400,"jobs":150},"formula":"1949400/150"}
+]}
