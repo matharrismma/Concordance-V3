@@ -210,9 +210,9 @@ def verify_step(domain: str, spec: Dict[str, Any]) -> Dict[str, str]:
     if not domain:
         return {"status": "ERROR", "detail": "step missing 'domain'"}
     try:
-        if domain in ("mathematics", "math"):
-            return verify_math(spec or {})
-        return verify_domain(domain, spec or {})
+        if domain in ("mathematics", "math") and "MATH_VERIFY" not in (spec or {}):
+            return verify_math(spec or {})          # the {mode, params} form -> the sympy moat
+        return verify_domain(domain, spec or {})     # a MATH_VERIFY packet routes like any other domain
     except Exception as exc:  # noqa: BLE001 — fail closed
         return {"status": "ERROR", "detail": f"verifier raised: {type(exc).__name__}: {str(exc)[:200]}"}
 

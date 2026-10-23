@@ -74,7 +74,10 @@ def _word_study(strongs: str) -> Dict[str, Any]:
     hooks aren't available (e.g. during unit tests that exercise
     transliteration normalization without touching the DB).
     """
-    from . import scripture as _scr
+    try:
+        from . import scripture as _scr          # provided by the .org application's verifier pack
+    except ImportError:
+        return {}                                  # Layer 0 unavailable in the core -> NOT_APPLICABLE
     return _scr.word_study(strongs) or {}
 
 

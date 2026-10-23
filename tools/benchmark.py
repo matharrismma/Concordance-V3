@@ -107,7 +107,46 @@ CLAIMS = [
 ]
 
 
-BENCHMARK_VERSION = "1.0.0"   # the bound every public "0 false positives" claim cites
+BENCHMARK_VERSION = "2.0.0"   # the bound every public "0 false positives" claim cites
+# v2.0.0 (2026-10-23): the 60 derivation-moat cases (v1.0.0, unchanged) PLUS one labelled true/false pair per
+# verifier domain from data/domain_goldens.json, run through the same derivation path a packet takes. FP and FN
+# are still reported separately; a new domain without a golden pair fails the --check gate.
+
+
+def _domain_cases():
+    """(label, steps, desc) for every domain golden: a true packet that must HOLD, a false one that must not."""
+    import json as _j, os as _os
+    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "data", "domain_goldens.json")
+    try:
+        goldens = _j.load(open(path, encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    from concordance import verifiers as V
+    V._load_plugins()
+    registered = {v.rsplit(".", 1)[-1] for v in V.VERIFIERS.values()}
+    out = []
+    for dom in sorted(goldens):
+        if dom not in registered:
+            continue
+        g = goldens[dom]
+        key = g.get("packet_key")
+        for label in ("true", "false"):
+            art = g.get(label)
+            if not isinstance(art, dict) or not key:
+                continue
+            steps = [{"id": "g", "domain": dom, "spec": {key: art}}]
+            out.append((label == "true", steps, f"golden:{dom}:{label}"))
+    return out
+
+
+def _missing_goldens():
+    import json as _j, os as _os
+    from concordance import verifiers as V
+    V._load_plugins()
+    registered = {v.rsplit(".", 1)[-1] for v in V.VERIFIERS.values()} - {"mathematics"}
+    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "data", "domain_goldens.json")
+    have = set(_j.load(open(path, encoding="utf-8")))
+    return sorted(registered - have)
 
 
 def emit_json(results, false_pos, false_neg):
@@ -126,13 +165,14 @@ def emit_json(results, false_pos, false_neg):
 
 
 def run(verbose: bool = True, as_json: bool = False):
-    cats = {"equality": [0, 0, 0, 0], "inequality": [0, 0, 0, 0], "derivative": [0, 0, 0, 0]}
+    cats = {"equality": [0, 0, 0, 0], "inequality": [0, 0, 0, 0], "derivative": [0, 0, 0, 0], "domain": [0, 0, 0, 0]}
     false_pos, false_neg = [], []
     rows = []
-    for label, spec, desc in CLAIMS:
-        mode = spec["mode"]
+    from concordance.derivation import verify_derivation as _vd
+    all_cases = [(l, s_, d, s_["mode"]) for l, s_, d in CLAIMS] + [(l, s_, d, "domain") for l, s_, d in _domain_cases()]
+    for label, spec, desc, mode in all_cases:
         try:
-            verdict = verify(spec).get("verdict")
+            verdict = (_vd(spec) if mode == "domain" else verify(spec)).get("verdict")
         except Exception as e:  # noqa: BLE001
             verdict = "ERROR:" + str(e)[:40]
         holds = (verdict == "HOLDS")
@@ -173,6 +213,13 @@ def run(verbose: bool = True, as_json: bool = False):
 
 
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        miss = _missing_goldens()
+        if miss:
+            print("domains without a golden pair:", ", ".join(miss))
+            raise SystemExit(1)
+        print("every registered domain has a golden pair")
+        raise SystemExit(0)
     if "--json" in sys.argv:
         raise SystemExit(run(verbose=False, as_json=True))
     n, corr, fp, fn = run()

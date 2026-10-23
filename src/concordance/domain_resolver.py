@@ -57,6 +57,9 @@ _INCLUDE_DOCSTRINGS = True           # source (3); toggled off in tuning to isol
 # domains when it is genuinely shared (the menu then offers both). Phrases are <=3 words, tokens >=3
 # chars (one- and two-letter cues like "f-stop" don't tokenize, so they're spelled out: "aperture").
 _SYNONYMS: Dict[str, Tuple[str, ...]] = {
+    "public_finance": ("bond par", "revenue bond", "pilot payment", "payment in lieu", "abatement", "abated",
+                       "millage", "mills", "assessment ratio", "debt service", "interest only", "issuance cost",
+                       "amortization schedule", "development authority", "ad valorem"),
     # ── reach (issue #11, 2026-10-16): everyday vocabulary for the 29 registered domains that had none.
     # Written as _phrases tokenizes a query; words another domain owns are deliberately left out.
     "approximation": ('ballpark', 'rough estimate', 'approximately', 'roughly', 'order magnitude', 'close enough', 'within percent', 'give take', 'estimate within'),

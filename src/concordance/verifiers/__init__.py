@@ -155,6 +155,8 @@ VERIFIERS: Dict[str, str] = {
     # chess — the third game-type witness, the one where optimal is computable (PERFT-proven rules engine
     # in concordance/chess.py; this adapter makes a chess claim chain + seal like the others)
     "wordcraft": _P + "wordcraft", "words": _P + "wordcraft", "spelling": _P + "wordcraft", "letters": _P + "wordcraft",
+    "public_finance": _P + "public_finance", "bond": _P + "public_finance", "pilot": _P + "public_finance",
+    "abatement": _P + "public_finance", "municipal_finance": _P + "public_finance",
     "chess": _P + "chess", "games": _P + "game_theory", "strategy": _P + "game_theory",
     "archaeology": _P + "archaeology", "radiocarbon": _P + "archaeology", "radiometric_dating": _P + "archaeology",
     # the elliptic-curve L-value door for the Birch and Swinnerton-Dyer stick (tick stick, 2026-10-05)

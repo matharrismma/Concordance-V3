@@ -65,6 +65,12 @@ def _analyse(mod_path: str) -> Dict[str, Any]:
                     keys.add(n.slice.value)
                 if isinstance(n, ast.Compare) and isinstance(n.left, ast.Constant) and isinstance(n.left.value, str):
                     keys.add(n.left.value)
+                # helper calls that read fields off the spec: _num(spec, "a", "b"), _get(art, "k")
+                if isinstance(n, ast.Call) and n.args and isinstance(n.args[0], ast.Name) \
+                        and n.args[0].id in ("spec", "art", "a", "rv", "pv", "mv", "packet_spec"):
+                    for arg in n.args[1:]:
+                        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                            keys.add(arg.value)
             keys = {k for k in keys if k in fs}
             checks[node.name[7:]] = sorted(keys)
             fields |= keys
