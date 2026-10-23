@@ -1,0 +1,17 @@
+{
+ "domain": "astronomy",
+ "packet_key": "ASTRO_VERIFY",
+ "cases": [
+  {
+   "check": "light_travel",
+   "true": {
+    "light_distance_m": 149600000000.0,
+    "claimed_light_time_s": 499.01
+   },
+   "false": {
+    "light_distance_m": 149600000000.0,
+    "claimed_light_time_s": 480.0
+   }
+  }
+ ]
+}

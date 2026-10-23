@@ -1,0 +1,28 @@
+{
+ "domain": "periodic_table",
+ "packet_key": "PT_VERIFY",
+ "cases": [
+  {
+   "check": "element_lowercase_symbol",
+   "true": {
+    "symbol": "fe",
+    "claimed_atomic_number": 26
+   },
+   "false": {
+    "symbol": "fe",
+    "claimed_atomic_number": 27
+   }
+  },
+  {
+   "check": "molar_mass",
+   "true": {
+    "formula": "NaCl",
+    "claimed_molar_mass": 58.44
+   },
+   "false": {
+    "formula": "NaCl",
+    "claimed_molar_mass": 60.0
+   }
+  }
+ ]
+}

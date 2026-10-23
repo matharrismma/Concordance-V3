@@ -1,0 +1,19 @@
+{
+ "domain": "economics",
+ "packet_key": "ECON_VERIFY",
+ "cases": [
+  {
+   "check": "inflation_rate",
+   "true": {
+    "cpi_current": 310.3,
+    "cpi_previous": 300.0,
+    "claimed_inflation_rate": 3.4333
+   },
+   "false": {
+    "cpi_current": 310.3,
+    "cpi_previous": 300.0,
+    "claimed_inflation_rate": 2.5
+   }
+  }
+ ]
+}

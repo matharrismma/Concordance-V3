@@ -1,0 +1,53 @@
+{
+ "domain": "governance",
+ "packet_key": "DECISION_PACKET",
+ "cases": [
+  {
+   "check": "rationale_alignment",
+   "true": {
+    "title": "Adopt a four-day week",
+    "scope": "local",
+    "red_items": [
+     "r1"
+    ],
+    "floor_items": [
+     "f1"
+    ],
+    "way_path": "the chosen path through the options",
+    "execution_steps": [
+     "s1"
+    ],
+    "witnesses": [
+     "w1"
+    ],
+    "decision": "adopt a compressed four-day work schedule",
+    "rationale": "a compressed schedule keeps output steady while cutting commute days"
+   },
+   "false": {
+    "title": "Adopt a four-day week",
+    "scope": "local",
+    "red_items": [
+     "r1"
+    ],
+    "floor_items": [
+     "f1"
+    ],
+    "way_path": "the chosen path through the options",
+    "execution_steps": [
+     "s1"
+    ],
+    "witnesses": [
+     "w1"
+    ],
+    "decision": "adopt a compressed four-day work schedule",
+    "rationale": "the cafeteria menu needs more vegetarian options"
+   }
+  }
+ ],
+ "skipped": [
+  {
+   "check": "domain_profile",
+   "why": "verify_domain_profile(domain, decision_packet) is never dispatched by run(); no packet field triggers it"
+  }
+ ]
+}

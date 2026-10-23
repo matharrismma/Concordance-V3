@@ -1,0 +1,19 @@
+{
+ "domain": "computer_science",
+ "packet_key": "CS_VERIFY",
+ "cases": [],
+ "skipped": [
+  {
+   "check": "runtime_complexity",
+   "why": "requires executing caller-supplied code via _exec_function; CONCORDANCE_ALLOW_CODE_EXEC is off by default so it returns ERROR (setup failure), and run() always emits cs.static_termination first when code is present"
+  },
+  {
+   "check": "space_complexity",
+   "why": "same: tracemalloc over exec'd caller code; disabled by default -> ERROR"
+  },
+  {
+   "check": "determinism",
+   "why": "same: runs exec'd caller function repeatedly; disabled by default -> ERROR"
+  }
+ ]
+}

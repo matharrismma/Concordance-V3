@@ -1,0 +1,32 @@
+{
+ "domain": "medicine",
+ "packet_key": "MED_VERIFY",
+ "cases": [
+  {
+   "check": "blood_pressure",
+   "true": {
+    "systolic": 125,
+    "diastolic": 82,
+    "claimed_bp_class": "hypertension_stage_1"
+   },
+   "false": {
+    "systolic": 125,
+    "diastolic": 82,
+    "claimed_bp_class": "elevated"
+   }
+  },
+  {
+   "check": "ibw_devine",
+   "true": {
+    "height_in": 70,
+    "sex_ibw": "male",
+    "claimed_ibw_kg": 73.0
+   },
+   "false": {
+    "height_in": 70,
+    "sex_ibw": "male",
+    "claimed_ibw_kg": 80.0
+   }
+  }
+ ]
+}

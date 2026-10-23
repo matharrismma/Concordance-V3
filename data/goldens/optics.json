@@ -1,0 +1,58 @@
+{
+ "domain": "optics",
+ "packet_key": "OPT_VERIFY",
+ "cases": [
+  {
+   "check": "critical_angle",
+   "true": {
+    "n_core": 1.48,
+    "n_cladding": 1.46,
+    "claimed_critical_angle_deg": 80.57
+   },
+   "false": {
+    "n_core": 1.48,
+    "n_cladding": 1.46,
+    "claimed_critical_angle_deg": 75.0
+   }
+  },
+  {
+   "check": "numerical_aperture",
+   "true": {
+    "n_core": 1.48,
+    "n_cladding": 1.46,
+    "claimed_numerical_aperture": 0.2425
+   },
+   "false": {
+    "n_core": 1.48,
+    "n_cladding": 1.46,
+    "claimed_numerical_aperture": 0.3
+   }
+  },
+  {
+   "check": "fiber_attenuation",
+   "true": {
+    "attenuation_db_per_km": 0.2,
+    "length_km": 40.0,
+    "claimed_loss_db": 8.0
+   },
+   "false": {
+    "attenuation_db_per_km": 0.2,
+    "length_km": 40.0,
+    "claimed_loss_db": 10.0
+   }
+  },
+  {
+   "check": "wdm_capacity",
+   "true": {
+    "num_channels": 80,
+    "bitrate_per_channel_gbps": 100,
+    "claimed_total_gbps": 8000
+   },
+   "false": {
+    "num_channels": 80,
+    "bitrate_per_channel_gbps": 100,
+    "claimed_total_gbps": 6400
+   }
+  }
+ ]
+}

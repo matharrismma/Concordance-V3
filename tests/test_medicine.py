@@ -42,3 +42,13 @@ def test_egfr_cockcroft():
     assert r.status == "CONFIRMED"
     assert M.verify_egfr_cockcroft({"age_years": 60, "weight_kg": 70, "serum_creatinine": 1.0,
                                     "sex_egfr": "male", "claimed_egfr": 50.0}).status == "MISMATCH"
+
+
+def test_bp_stage_2_is_either_reading_over_threshold():
+    """AHA 2017: 150/85 is stage 2 (systolic ≥ 140), not stage 1. Regression for the `or`→`and` fix."""
+    from concordance.verifiers import medicine as M
+    assert M._bp_class(150, 85) == "hypertension_stage_2"
+    assert M._bp_class(135, 85) == "hypertension_stage_1"
+    assert M._bp_class(125, 95) == "hypertension_stage_2"
+    assert M._bp_class(185, 100) == "hypertensive_crisis"
+    assert M._bp_class(180, 120) == "hypertension_stage_2"

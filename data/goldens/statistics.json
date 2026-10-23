@@ -1,0 +1,40 @@
+{
+ "domain": "statistics",
+ "packet_key": "STAT_VERIFY",
+ "cases": [
+  {
+   "check": "pvalue_calibration",
+   "true": {
+    "test": "z",
+    "z": 1.96,
+    "tail": "two-sided",
+    "claimed_p": 0.05
+   },
+   "false": {
+    "test": "z",
+    "z": 1.96,
+    "tail": "two-sided",
+    "claimed_p": 0.1
+   }
+  },
+  {
+   "check": "pvalue_calibration_one_proportion",
+   "true": {
+    "test": "one_proportion_z",
+    "n": 200,
+    "successes": 120,
+    "p0": 0.5,
+    "tail": "two-sided",
+    "claimed_p": 0.004678
+   },
+   "false": {
+    "test": "one_proportion_z",
+    "n": 200,
+    "successes": 120,
+    "p0": 0.5,
+    "tail": "two-sided",
+    "claimed_p": 0.014033
+   }
+  }
+ ]
+}

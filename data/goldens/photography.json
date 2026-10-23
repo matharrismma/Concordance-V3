@@ -1,0 +1,59 @@
+{
+ "domain": "photography",
+ "packet_key": "PHOTO_VERIFY",
+ "cases": [
+  {
+   "check": "reciprocity_equivalent",
+   "true": {
+    "settings_a": [
+     8.0,
+     0.004
+    ],
+    "settings_b": [
+     11.0,
+     0.008
+    ],
+    "claimed_equivalent": true
+   },
+   "false": {
+    "settings_a": [
+     8.0,
+     0.004
+    ],
+    "settings_b": [
+     11.0,
+     0.008
+    ],
+    "claimed_equivalent": false
+   }
+  },
+  {
+   "check": "angle_of_view",
+   "true": {
+    "focal_length_mm": 50.0,
+    "sensor_dimension_mm": 36.0,
+    "claimed_angle_of_view_deg": 39.6
+   },
+   "false": {
+    "focal_length_mm": 50.0,
+    "sensor_dimension_mm": 36.0,
+    "claimed_angle_of_view_deg": 46.8
+   }
+  },
+  {
+   "check": "hyperfocal_distance",
+   "true": {
+    "focal_length_mm_for_h": 50.0,
+    "f_number_for_h": 8.0,
+    "circle_of_confusion_mm": 0.03,
+    "claimed_hyperfocal_distance_m": 10.47
+   },
+   "false": {
+    "focal_length_mm_for_h": 50.0,
+    "f_number_for_h": 8.0,
+    "circle_of_confusion_mm": 0.03,
+    "claimed_hyperfocal_distance_m": 8.0
+   }
+  }
+ ]
+}

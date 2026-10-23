@@ -1,0 +1,43 @@
+{
+ "domain": "labor",
+ "packet_key": "LABOR_VERIFY",
+ "cases": [
+  {
+   "check": "annual_to_hourly",
+   "true": {
+    "annual_salary": 52000,
+    "claimed_hourly_equivalent": 25.0
+   },
+   "false": {
+    "annual_salary": 52000,
+    "claimed_hourly_equivalent": 26.0
+   }
+  },
+  {
+   "check": "take_home_pay",
+   "true": {
+    "gross_pay": 1000,
+    "total_tax_rate": 0.28,
+    "claimed_take_home": 720.0
+   },
+   "false": {
+    "gross_pay": 1000,
+    "total_tax_rate": 0.28,
+    "claimed_take_home": 700.0
+   }
+  },
+  {
+   "check": "minimum_wage_check",
+   "true": {
+    "claimed_hourly_rate": 7.25,
+    "minimum_wage_threshold": 7.25,
+    "claimed_compliant": true
+   },
+   "false": {
+    "claimed_hourly_rate": 7.25,
+    "minimum_wage_threshold": 7.25,
+    "claimed_compliant": false
+   }
+  }
+ ]
+}

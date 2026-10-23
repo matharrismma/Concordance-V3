@@ -1,0 +1,115 @@
+{
+ "domain": "wordcraft",
+ "packet_key": "WORD_VERIFY",
+ "cases": [
+  {
+   "check": "rhyme",
+   "true": {
+    "word_a": "cat",
+    "word_b": "hat",
+    "pronunciation_a": "K AE1 T",
+    "pronunciation_b": "HH AE1 T",
+    "claimed_rhyme": true
+   },
+   "false": {
+    "word_a": "cat",
+    "word_b": "hat",
+    "pronunciation_a": "K AE1 T",
+    "pronunciation_b": "HH AE1 T",
+    "claimed_rhyme": false
+   }
+  },
+  {
+   "check": "homophone",
+   "true": {
+    "word_a": "two",
+    "word_b": "too",
+    "pronunciation_a": "T UW1",
+    "pronunciation_b": "T UW1",
+    "claimed_homophone": true
+   },
+   "false": {
+    "word_a": "two",
+    "word_b": "too",
+    "pronunciation_a": "T UW1",
+    "pronunciation_b": "T UW1",
+    "claimed_homophone": false
+   }
+  },
+  {
+   "check": "stress",
+   "true": {
+    "word": "banana",
+    "pronunciation": "B AH0 N AE1 N AH0",
+    "claimed_stress_syllable": 2
+   },
+   "false": {
+    "word": "banana",
+    "pronunciation": "B AH0 N AE1 N AH0",
+    "claimed_stress_syllable": 1
+   }
+  },
+  {
+   "check": "silent_letter",
+   "true": {
+    "word": "knife",
+    "letter": "k",
+    "pronunciation": "N AY1 F",
+    "claimed_silent": true
+   },
+   "false": {
+    "word": "knife",
+    "letter": "k",
+    "pronunciation": "N AY1 F",
+    "claimed_silent": false
+   }
+  },
+  {
+   "check": "vowel_sound",
+   "true": {
+    "word": "cake",
+    "pronunciation": "K EY1 K",
+    "claimed_vowel_sound": "long a",
+    "claimed": true
+   },
+   "false": {
+    "word": "cake",
+    "pronunciation": "K EY1 K",
+    "claimed_vowel_sound": "long a",
+    "claimed": false
+   }
+  },
+  {
+   "check": "edge_sound",
+   "true": {
+    "word": "fish",
+    "pronunciation": "F IH1 SH",
+    "claimed_edge_sound": "f",
+    "position": "first",
+    "claimed": true
+   },
+   "false": {
+    "word": "fish",
+    "pronunciation": "F IH1 SH",
+    "claimed_edge_sound": "f",
+    "position": "first",
+    "claimed": false
+   }
+  },
+  {
+   "check": "origin",
+   "true": {
+    "word": "salary",
+    "etymology": "F. salaire, L. salarium, originally, salt money, the money given to soldiers for salt",
+    "claimed_language": "latin",
+    "claimed_origin": true
+   },
+   "false": {
+    "word": "salary",
+    "etymology": "F. salaire, L. salarium, originally, salt money, the money given to soldiers for salt",
+    "claimed_language": "latin",
+    "claimed_origin": false
+   }
+  }
+ ]
+}

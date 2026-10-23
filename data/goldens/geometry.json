@@ -1,0 +1,17 @@
+{
+ "domain": "geometry",
+ "packet_key": "GEOM_VERIFY",
+ "cases": [
+  {
+   "check": "coordination_geometry",
+   "true": {
+    "coordination": "tetrahedral",
+    "claimed_central_angle_deg": 109.47
+   },
+   "false": {
+    "coordination": "tetrahedral",
+    "claimed_central_angle_deg": 120.0
+   }
+  }
+ ]
+}

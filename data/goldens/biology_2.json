@@ -1,0 +1,65 @@
+{
+ "domain": "biology",
+ "packet_key": "BIO_CONTROL",
+ "cases": [
+  {
+   "check": "failure_mode_known",
+   "true": {
+    "failure_mode": "loop_saturation"
+   },
+   "false": {
+    "failure_mode": "feedback_inversion"
+   }
+  },
+  {
+   "check": "control_layer_match",
+   "true": {
+    "failure_layer": "L4",
+    "intervention_layers": [
+     "L2",
+     "L5"
+    ]
+   },
+   "false": {
+    "failure_layer": "L4",
+    "intervention_layers": [
+     "L2",
+     "L1"
+    ]
+   }
+  },
+  {
+   "check": "cross_layer_override",
+   "true": {
+    "failure_mode": "cross_layer_override",
+    "upper_layer_driver_addressed": true
+   },
+   "false": {
+    "failure_mode": "cross_layer_override",
+    "upper_layer_driver_addressed": false
+   }
+  },
+  {
+   "check": "setpoint_mechanism",
+   "true": {
+    "failure_mode": "setpoint_drift",
+    "setpoint_shift_mechanism_stated": true
+   },
+   "false": {
+    "failure_mode": "setpoint_drift",
+    "setpoint_shift_mechanism_stated": false
+   }
+  },
+  {
+   "check": "sensor_failure_plan",
+   "true": {
+    "failure_mode": "sensor_failure",
+    "sensor_recalibration_plan": true
+   },
+   "false": {
+    "failure_mode": "sensor_failure",
+    "sensor_recalibration_plan": false
+   }
+  }
+ ]
+}

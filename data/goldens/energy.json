@@ -1,0 +1,62 @@
+{
+ "domain": "energy",
+ "packet_key": "ENERGY_VERIFY",
+ "cases": [
+  {
+   "check": "battery_sizing",
+   "true": {
+    "daily_load_kwh": 5.0,
+    "days_autonomy": 2,
+    "depth_of_discharge": 0.5,
+    "system_voltage_V": 24,
+    "claimed_battery_Ah": 833.3
+   },
+   "false": {
+    "daily_load_kwh": 5.0,
+    "days_autonomy": 2,
+    "depth_of_discharge": 0.5,
+    "system_voltage_V": 24,
+    "claimed_battery_Ah": 417
+   }
+  },
+  {
+   "check": "solar_daily_yield",
+   "true": {
+    "panel_W": 400,
+    "peak_sun_hours": 5.0,
+    "system_efficiency": 0.85,
+    "claimed_daily_kwh": 1.7
+   },
+   "false": {
+    "panel_W": 400,
+    "peak_sun_hours": 5.0,
+    "system_efficiency": 0.85,
+    "claimed_daily_kwh": 2.0
+   }
+  },
+  {
+   "check": "efficiency",
+   "true": {
+    "input_W": 1000,
+    "output_W": 850,
+    "claimed_efficiency": 0.85
+   },
+   "false": {
+    "input_W": 1000,
+    "output_W": 850,
+    "claimed_efficiency": 0.9
+   }
+  },
+  {
+   "check": "peak_load_vs_inverter",
+   "true": {
+    "peak_load_W": 2400,
+    "inverter_continuous_W": 3000
+   },
+   "false": {
+    "peak_load_W": 3600,
+    "inverter_continuous_W": 3000
+   }
+  }
+ ]
+}

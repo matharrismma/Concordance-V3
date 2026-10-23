@@ -1,0 +1,142 @@
+{
+ "domain": "probability",
+ "packet_key": "PROB_VERIFY",
+ "cases": [
+  {
+   "check": "variance",
+   "true": {
+    "outcomes": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "probabilities": [
+     0.16666666666666666,
+     0.16666666666666666,
+     0.16666666666666666,
+     0.16666666666666666,
+     0.16666666666666666,
+     0.16666666666666666
+    ],
+    "claimed_variance": 2.91666667
+   },
+   "false": {
+    "outcomes": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "probabilities": [
+     0.16666666666666666,
+     0.16666666666666666,
+     0.16666666666666666,
+     0.16666666666666666,
+     0.16666666666666666,
+     0.16666666666666666
+    ],
+    "claimed_variance": 3.5
+   }
+  },
+  {
+   "check": "binomial_mean",
+   "true": {
+    "binomial_n": 100,
+    "binomial_p": 0.3,
+    "claimed_binomial_mean": 30
+   },
+   "false": {
+    "binomial_n": 100,
+    "binomial_p": 0.3,
+    "claimed_binomial_mean": 33
+   }
+  },
+  {
+   "check": "normal_cdf",
+   "true": {
+    "normal_mu": 0,
+    "normal_sigma": 1,
+    "normal_x": 1.96,
+    "claimed_normal_cdf": 0.975002
+   },
+   "false": {
+    "normal_mu": 0,
+    "normal_sigma": 1,
+    "normal_x": 1.96,
+    "claimed_normal_cdf": 0.95
+   }
+  },
+  {
+   "check": "normal_within_std",
+   "true": {
+    "k_std": 2,
+    "claimed_normal_within_std": 0.9545
+   },
+   "false": {
+    "k_std": 2,
+    "claimed_normal_within_std": 0.6827
+   }
+  },
+  {
+   "check": "poisson_probability",
+   "true": {
+    "poisson_lambda": 3,
+    "poisson_k": 2,
+    "claimed_poisson_probability": 0.224042
+   },
+   "false": {
+    "poisson_lambda": 3,
+    "poisson_k": 2,
+    "claimed_poisson_probability": 0.3
+   }
+  },
+  {
+   "check": "bayes",
+   "true": {
+    "p_a": 0.01,
+    "p_b_given_a": 0.99,
+    "p_b_given_not_a": 0.05,
+    "claimed_p_a_given_b": 0.166667
+   },
+   "false": {
+    "p_a": 0.01,
+    "p_b_given_a": 0.99,
+    "p_b_given_not_a": 0.05,
+    "claimed_p_a_given_b": 0.99
+   }
+  },
+  {
+   "check": "conditional_probability",
+   "true": {
+    "p_a_and_b": 0.2,
+    "p_b": 0.5,
+    "claimed_p_a_given_b": 0.4
+   },
+   "false": {
+    "p_a_and_b": 0.2,
+    "p_b": 0.5,
+    "claimed_p_a_given_b": 0.1
+   }
+  },
+  {
+   "check": "independence",
+   "true": {
+    "p_a": 0.3,
+    "p_b": 0.4,
+    "p_a_and_b": 0.12,
+    "claimed_independent": true
+   },
+   "false": {
+    "p_a": 0.3,
+    "p_b": 0.4,
+    "p_a_and_b": 0.12,
+    "claimed_independent": false
+   }
+  }
+ ]
+}

@@ -1,0 +1,23 @@
+{
+ "domain": "genetics",
+ "packet_key": "GENETICS_VERIFY",
+ "cases": [
+  {
+   "check": "orf_bounds",
+   "true": {
+    "sequence": "GGATGGCCAAATAAGG",
+    "claimed_orf": {
+     "start": 2,
+     "end": 14
+    }
+   },
+   "false": {
+    "sequence": "GGATGGCCAAATAAGG",
+    "claimed_orf": {
+     "start": 2,
+     "end": 11
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,28 @@
+{
+ "domain": "agriculture",
+ "packet_key": "AG_VERIFY",
+ "cases": [
+  {
+   "check": "stocking_density",
+   "true": {
+    "animal": "cattle_beef",
+    "stocking_per_acre": 1.0
+   },
+   "false": {
+    "animal": "cattle_beef",
+    "stocking_per_acre": 5.0
+   }
+  },
+  {
+   "check": "hardiness_zone_b_half",
+   "true": {
+    "crop": "apple",
+    "claimed_zone": "7b"
+   },
+   "false": {
+    "crop": "apple",
+    "claimed_zone": "10b"
+   }
+  }
+ ]
+}

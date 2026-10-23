@@ -1,0 +1,41 @@
+{
+ "domain": "history_chronology",
+ "packet_key": "HIST_VERIFY",
+ "cases": [
+  {
+   "check": "era_classification",
+   "true": {
+    "year": -44,
+    "claimed_era": "BCE"
+   },
+   "false": {
+    "year": -44,
+    "claimed_era": "CE"
+   }
+  },
+  {
+   "check": "elapsed_years_bce_to_ce",
+   "true": {
+    "from_BCE": 44,
+    "to_CE": 1453,
+    "claimed_elapsed": 1496
+   },
+   "false": {
+    "from_BCE": 44,
+    "to_CE": 1453,
+    "claimed_elapsed": 1497
+   }
+  },
+  {
+   "check": "decade_assignment",
+   "true": {
+    "year_CE": 1985,
+    "claimed_decade_start": 1980
+   },
+   "false": {
+    "year_CE": 1985,
+    "claimed_decade_start": 1990
+   }
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+ "domain": "philosophy",
+ "packet_key": "PHIL_VERIFY",
+ "cases": [
+  {
+   "check": "modal_logic_validity",
+   "true": {
+    "is_necessarily_true": true,
+    "is_possibly_true": false,
+    "claimed_consistent": false
+   },
+   "false": {
+    "is_necessarily_true": true,
+    "is_possibly_true": false,
+    "claimed_consistent": true
+   }
+  }
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "domain": "atomic",
+ "packet_key": "ATOM_VERIFY",
+ "cases": [
+  {
+   "check": "shell_capacity",
+   "true": {
+    "shell_n": 3,
+    "claimed_shell_capacity": 18
+   },
+   "false": {
+    "shell_n": 3,
+    "claimed_shell_capacity": 8
+   }
+  }
+ ]
+}

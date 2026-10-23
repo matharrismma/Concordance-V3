@@ -1,0 +1,20 @@
+{
+ "domain": "governance",
+ "packet_key": null,
+ "cases": [
+  {
+   "check": "decision_timing",
+   "true": {
+    "scope": "local",
+    "created_epoch": 1700000000,
+    "acted_at_epoch": 1700003600
+   },
+   "false": {
+    "scope": "local",
+    "created_epoch": 1700000000,
+    "acted_at_epoch": 1700001800
+   }
+  }
+ ],
+ "note": "decision_timing reads scope/created_epoch/acted_at_epoch at the TOP level of the packet, not under DECISION_PACKET; packet_key null means the case IS the packet (tools/benchmark.py: spec = {key: art} if key else art)"
+}

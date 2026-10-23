@@ -1,0 +1,66 @@
+{
+ "domain": "thermodynamics",
+ "packet_key": "THERMO_VERIFY",
+ "cases": [
+  {
+   "check": "ideal_gas_law",
+   "true": {
+    "volume_m3": 0.0224,
+    "moles": 1.0,
+    "temperature_K": 273.15,
+    "claimed_pressure_Pa": 101388.19
+   },
+   "false": {
+    "volume_m3": 0.0224,
+    "moles": 1.0,
+    "temperature_K": 273.15,
+    "claimed_pressure_Pa": 120000.0
+   }
+  },
+  {
+   "check": "specific_heat",
+   "true": {
+    "mass_kg": 1.0,
+    "specific_heat_J_per_kgK": 4186.0,
+    "delta_T_K": 10.0,
+    "claimed_heat_J": 41860.0
+   },
+   "false": {
+    "mass_kg": 1.0,
+    "specific_heat_J_per_kgK": 4186.0,
+    "delta_T_K": 10.0,
+    "claimed_heat_J": 48600.0
+   }
+  },
+  {
+   "check": "entropy_change",
+   "true": {
+    "heat_J": 1000.0,
+    "temperature_K": 300.0,
+    "claimed_entropy_change_J_per_K": 3.3333
+   },
+   "false": {
+    "heat_J": 1000.0,
+    "temperature_K": 300.0,
+    "claimed_entropy_change_J_per_K": 3.0
+   }
+  },
+  {
+   "check": "clausius_clapeyron",
+   "true": {
+    "latent_heat_J_per_mol": 40660.0,
+    "t_ref_K": 373.15,
+    "p_ref": 101325.0,
+    "pressure": 70000.0,
+    "claimed_boiling_point_K": 362.9
+   },
+   "false": {
+    "latent_heat_J_per_mol": 40660.0,
+    "t_ref_K": 373.15,
+    "p_ref": 101325.0,
+    "pressure": 70000.0,
+    "claimed_boiling_point_K": 380.0
+   }
+  }
+ ]
+}

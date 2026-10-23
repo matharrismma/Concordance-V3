@@ -1,0 +1,36 @@
+{
+ "domain": "ecology",
+ "packet_key": "ECO_VERIFY",
+ "cases": [
+  {
+   "check": "logistic_growth",
+   "true": {
+    "carrying_capacity_K": 1000.0,
+    "initial_population_N0": 100.0,
+    "growth_rate_r": 0.1,
+    "time_t": 20.0,
+    "claimed_population": 450.8531
+   },
+   "false": {
+    "carrying_capacity_K": 1000.0,
+    "initial_population_N0": 100.0,
+    "growth_rate_r": 0.1,
+    "time_t": 20.0,
+    "claimed_population": 500.0
+   }
+  },
+  {
+   "check": "carbon_footprint_transport",
+   "true": {
+    "distance_km": 500.0,
+    "emission_factor_kg_per_km": 0.21,
+    "claimed_co2_kg": 105.0
+   },
+   "false": {
+    "distance_km": 500.0,
+    "emission_factor_kg_per_km": 0.21,
+    "claimed_co2_kg": 120.0
+   }
+  }
+ ]
+}

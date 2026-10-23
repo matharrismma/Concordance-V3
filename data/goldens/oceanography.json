@@ -1,0 +1,39 @@
+{
+ "domain": "oceanography",
+ "packet_key": "OCEAN_VERIFY",
+ "cases": [
+  {
+   "check": "deep_water_wave_speed",
+   "true": {
+    "wavelength_m": 100,
+    "claimed_wave_speed_m_per_s": 12.495
+   },
+   "false": {
+    "wavelength_m": 100,
+    "claimed_wave_speed_m_per_s": 15.0
+   }
+  },
+  {
+   "check": "tidal_range_classification",
+   "true": {
+    "tidal_range_m": 3.0,
+    "claimed_tidal_type": "mesotidal"
+   },
+   "false": {
+    "tidal_range_m": 3.0,
+    "claimed_tidal_type": "macrotidal"
+   }
+  },
+  {
+   "check": "thermocline_depth_classification",
+   "true": {
+    "depth_m": 2500,
+    "claimed_zone": "bathypelagic"
+   },
+   "false": {
+    "depth_m": 2500,
+    "claimed_zone": "mesopelagic"
+   }
+  }
+ ]
+}

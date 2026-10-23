@@ -1,0 +1,23 @@
+{
+ "domain": "statistics",
+ "packet_key": "STAT_INFERENCE",
+ "cases": [
+  {
+   "check": "effect_size_present",
+   "true": {
+    "p_value": 0.01,
+    "alpha": 0.05,
+    "effect_size": 0.5,
+    "effect_size_type": "cohen_d",
+    "confidence_interval": [
+     0.2,
+     0.8
+    ]
+   },
+   "false": {
+    "p_value": 0.01,
+    "alpha": 0.05
+   }
+  }
+ ]
+}

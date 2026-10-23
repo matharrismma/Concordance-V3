@@ -1,0 +1,23 @@
+{
+ "domain": "geography",
+ "packet_key": "GEO_LOC_VERIFY",
+ "cases": [
+  {
+   "check": "initial_bearing",
+   "true": {
+    "lat1": 35.0,
+    "lon1": -85.0,
+    "lat2": 33.74,
+    "lon2": -84.39,
+    "claimed_bearing_deg": 158.05
+   },
+   "false": {
+    "lat1": 35.0,
+    "lon1": -85.0,
+    "lat2": 33.74,
+    "lon2": -84.39,
+    "claimed_bearing_deg": 90.0
+   }
+  }
+ ]
+}

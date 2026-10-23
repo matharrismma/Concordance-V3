@@ -1,0 +1,33 @@
+{
+ "domain": "neuroscience",
+ "packet_key": "NEURO_VERIFY",
+ "cases": [
+  {
+   "check": "goldman",
+   "true": {
+    "p_k": 1.0,
+    "p_na": 0.04,
+    "p_cl": 0.45,
+    "k_out": 4,
+    "k_in": 140,
+    "na_out": 145,
+    "na_in": 12,
+    "cl_out": 110,
+    "cl_in": 10,
+    "claimed_vm_mV": -69.1
+   },
+   "false": {
+    "p_k": 1.0,
+    "p_na": 0.04,
+    "p_cl": 0.45,
+    "k_out": 4,
+    "k_in": 140,
+    "na_out": 145,
+    "na_in": 12,
+    "cl_out": 110,
+    "cl_in": 10,
+    "claimed_vm_mV": -60.0
+   }
+  }
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "domain": "information_theory",
+ "packet_key": "INFO_VERIFY",
+ "cases": [
+  {
+   "check": "bsc_capacity",
+   "true": {
+    "bsc_error_rate": 0.1,
+    "claimed_capacity_bits": 0.531
+   },
+   "false": {
+    "bsc_error_rate": 0.1,
+    "claimed_capacity_bits": 0.6
+   }
+  }
+ ]
+}

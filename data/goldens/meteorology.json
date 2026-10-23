@@ -1,0 +1,34 @@
+{
+ "domain": "meteorology",
+ "packet_key": "MET_VERIFY",
+ "cases": [
+  {
+   "check": "wind_chill_metric",
+   "true": {
+    "temp_c": -5,
+    "wind_kmh": 20,
+    "claimed_wc_c": -11.55
+   },
+   "false": {
+    "temp_c": -5,
+    "wind_kmh": 20,
+    "claimed_wc_c": -8.0
+   }
+  },
+  {
+   "check": "scale_height",
+   "true": {
+    "scale_height_temp_K": 250,
+    "molecular_mass_kg": 4.8e-26,
+    "gravity_m_s2": 9.81,
+    "claimed_scale_height_m": 7330.153117567107
+   },
+   "false": {
+    "scale_height_temp_K": 250,
+    "molecular_mass_kg": 4.8e-26,
+    "gravity_m_s2": 9.81,
+    "claimed_scale_height_m": 8796.183741080527
+   }
+  }
+ ]
+}

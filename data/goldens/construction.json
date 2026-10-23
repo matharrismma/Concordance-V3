@@ -1,0 +1,71 @@
+{
+ "domain": "construction",
+ "packet_key": "CONSTR_VERIFY",
+ "cases": [
+  {
+   "check": "circular_area",
+   "true": {
+    "radius_m": 2.0,
+    "claimed_circle_area_m2": 12.5664
+   },
+   "false": {
+    "radius_m": 2.0,
+    "claimed_circle_area_m2": 13.0
+   }
+  },
+  {
+   "check": "rebar_weight",
+   "true": {
+    "rebar_length_m": 100,
+    "rebar_unit_weight_kg_per_m": 0.617,
+    "claimed_rebar_weight_kg": 61.7
+   },
+   "false": {
+    "rebar_length_m": 100,
+    "rebar_unit_weight_kg_per_m": 0.617,
+    "claimed_rebar_weight_kg": 67.1
+   }
+  },
+  {
+   "check": "wall_area",
+   "true": {
+    "perimeter_m": 30,
+    "wall_height_m": 3,
+    "openings_m2": 12,
+    "claimed_wall_area_m2": 78.0
+   },
+   "false": {
+    "perimeter_m": 30,
+    "wall_height_m": 3,
+    "openings_m2": 12,
+    "claimed_wall_area_m2": 90.0
+   }
+  },
+  {
+   "check": "beam_load",
+   "true": {
+    "total_load_kn": 120,
+    "span_m": 6,
+    "claimed_load_intensity_kn_per_m": 20.0
+   },
+   "false": {
+    "total_load_kn": 120,
+    "span_m": 6,
+    "claimed_load_intensity_kn_per_m": 24.0
+   }
+  },
+  {
+   "check": "paint_coverage",
+   "true": {
+    "paint_area_m2": 100,
+    "coverage_m2_per_can": 12,
+    "claimed_paint_cans": 9
+   },
+   "false": {
+    "paint_area_m2": 100,
+    "coverage_m2_per_can": 12,
+    "claimed_paint_cans": 8
+   }
+  }
+ ]
+}

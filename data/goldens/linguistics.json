@@ -1,0 +1,31 @@
+{
+ "domain": "linguistics",
+ "packet_key": "LING_VERIFY",
+ "cases": [],
+ "skipped": [
+  {
+   "check": "strongs_resolution",
+   "why": "requires Layer 0 Strong's lexicon via verifiers.scripture; module absent in core -> NOT_APPLICABLE by design"
+  },
+  {
+   "check": "word_count",
+   "why": "requires Layer 0 corpus occurrence counts (scripture.word_study); unavailable -> NOT_APPLICABLE"
+  },
+  {
+   "check": "transliteration",
+   "why": "requires Layer 0 lexicon transliteration; unavailable -> NOT_APPLICABLE"
+  },
+  {
+   "check": "gloss",
+   "why": "requires Layer 0 lexicon definition; unavailable -> NOT_APPLICABLE"
+  },
+  {
+   "check": "cognate",
+   "why": "requires Layer 0 lexicon derivation/lemma for both Strong's; unavailable -> NOT_APPLICABLE"
+  },
+  {
+   "check": "semantic_relation",
+   "why": "requires data/thesaurus.db (WordNet); not present (thesaurus.available() is False) -> NOT_APPLICABLE"
+  }
+ ]
+}

@@ -1,0 +1,42 @@
+{
+ "domain": "physics",
+ "packet_key": "PHYS_VERIFY",
+ "cases": [
+  {
+   "check": "relativistic_speed_limit",
+   "true": {
+    "speed_m_per_s": 100000000.0,
+    "massive": true
+   },
+   "false": {
+    "speed_m_per_s": 350000000.0,
+    "massive": true
+   }
+  },
+  {
+   "check": "named_conservation",
+   "true": {
+    "law": "energy",
+    "before": {
+     "KE": 100.0,
+     "PE": 50.0
+    },
+    "after": {
+     "KE": 150.0,
+     "PE": 0.0
+    }
+   },
+   "false": {
+    "law": "energy",
+    "before": {
+     "KE": 100.0,
+     "PE": 50.0
+    },
+    "after": {
+     "KE": 140.0,
+     "PE": 0.0
+    }
+   }
+  }
+ ]
+}

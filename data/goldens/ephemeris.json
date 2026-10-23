@@ -1,0 +1,36 @@
+{
+ "domain": "ephemeris",
+ "packet_key": "EPH_VERIFY",
+ "cases": [
+  {
+   "check": "moon_phase",
+   "true": {
+    "iso_date": "2024-01-26",
+    "claimed_moon_phase": "full"
+   },
+   "false": {
+    "iso_date": "2024-01-26",
+    "claimed_moon_phase": "new"
+   }
+  },
+  {
+   "check": "sunrise_sunset",
+   "true": {
+    "iso_date": "2025-07-04",
+    "lat": 40.7128,
+    "lon": -74.006,
+    "tz_offset_hours": -4,
+    "claimed_sunrise_hour": 5.43,
+    "claimed_sunset_hour": 20.43
+   },
+   "false": {
+    "iso_date": "2025-07-04",
+    "lat": 40.7128,
+    "lon": -74.006,
+    "tz_offset_hours": -4,
+    "claimed_sunrise_hour": 6.93,
+    "claimed_sunset_hour": 20.43
+   }
+  }
+ ]
+}

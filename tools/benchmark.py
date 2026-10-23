@@ -194,6 +194,27 @@ def _lighthouse_cases():
     return out
 
 
+def _check_cases():
+    """(label, steps, desc) from data/goldens/<module>.json — per-CHECK pairs (one golden per verify_* function),
+    the tier that makes the mutation gate load-bearing. Format:
+      {"domain": "biology", "packet_key": "BIO_VERIFY", "cases": [{"check": "hardy_weinberg", "true": {...}, "false": {...}}]}"""
+    import glob as _g, json as _j, os as _os
+    here = _os.path.dirname(_os.path.abspath(__file__))
+    out = []
+    for path in sorted(_g.glob(_os.path.join(here, "..", "data", "goldens", "*.json"))):
+        g = _j.load(open(path, encoding="utf-8"))
+        dom, key = g["domain"], g.get("packet_key")
+        for c in g.get("cases", []):
+            for label in ("true", "false"):
+                art = c.get(label)
+                if not isinstance(art, dict):
+                    continue
+                spec = {key: art} if key else art
+                out.append((label == "true", [{"id": "c", "domain": dom, "spec": spec}],
+                            f"check:{dom}.{c.get('check')}:{label}"))
+    return out
+
+
 def _missing_goldens():
     import json as _j, os as _os
     from concordance import verifiers as V
@@ -224,15 +245,16 @@ def run(verbose: bool = True, as_json: bool = False):
     _os.environ.setdefault("CONCORDANCE_DATA_DIR",
                            _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "data"))
     cats = {"equality": [0, 0, 0, 0], "inequality": [0, 0, 0, 0], "derivative": [0, 0, 0, 0], "domain": [0, 0, 0, 0],
-            "lighthouse": [0, 0, 0, 0]}
+            "lighthouse": [0, 0, 0, 0], "check": [0, 0, 0, 0]}
     false_pos, false_neg = [], []
     rows = []
     from concordance.derivation import verify_derivation as _vd
     all_cases = ([(l, s_, d, s_["mode"]) for l, s_, d in CLAIMS] + [(l, s_, d, "domain") for l, s_, d in _domain_cases()]
-                 + [(l, s_, d, "lighthouse") for l, s_, d in _lighthouse_cases()])
+                 + [(l, s_, d, "lighthouse") for l, s_, d in _lighthouse_cases()]
+                 + [(l, s_, d, "check") for l, s_, d in _check_cases()])
     for label, spec, desc, mode in all_cases:
         try:
-            verdict = (_vd(spec) if mode in ("domain", "lighthouse") else verify(spec)).get("verdict")
+            verdict = (_vd(spec) if mode in ("domain", "lighthouse", "check") else verify(spec)).get("verdict")
         except Exception as e:  # noqa: BLE001
             verdict = "ERROR:" + str(e)[:40]
         holds = (verdict == "HOLDS")

@@ -1,0 +1,28 @@
+{
+ "domain": "number_theory",
+ "packet_key": "NUM_VERIFY",
+ "cases": [
+  {
+   "check": "perfect_number",
+   "true": {
+    "n_perfect": 496,
+    "claimed_perfect": true
+   },
+   "false": {
+    "n_perfect": 496,
+    "claimed_perfect": false
+   }
+  },
+  {
+   "check": "critical_line",
+   "true": {
+    "critical_line_height": 100,
+    "claimed_zeros_on_line": 29
+   },
+   "false": {
+    "critical_line_height": 100,
+    "claimed_zeros_on_line": 30
+   }
+  }
+ ]
+}

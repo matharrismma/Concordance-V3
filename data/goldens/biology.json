@@ -1,0 +1,88 @@
+{
+ "domain": "biology",
+ "packet_key": "BIO_VERIFY",
+ "cases": [
+  {
+   "check": "replicates",
+   "true": {
+    "n_replicates": 4,
+    "min_replicates": 3
+   },
+   "false": {
+    "n_replicates": 2,
+    "min_replicates": 3
+   }
+  },
+  {
+   "check": "orthogonal_assays",
+   "true": {
+    "assay_classes": [
+     "qPCR",
+     "western_blot",
+     "imaging"
+    ],
+    "min_assay_classes": 2
+   },
+   "false": {
+    "assay_classes": [
+     "qPCR",
+     "qPCR"
+    ],
+    "min_assay_classes": 2
+   }
+  },
+  {
+   "check": "sample_size_powered",
+   "true": {
+    "power_analysis": {
+     "effect_size": 0.5,
+     "alpha": 0.05,
+     "n_per_group": 64
+    }
+   },
+   "false": {
+    "power_analysis": {
+     "effect_size": 0.5,
+     "alpha": 0.05,
+     "n_per_group": 40
+    }
+   }
+  },
+  {
+   "check": "hardy_weinberg",
+   "true": {
+    "hardy_weinberg": {
+     "counts": [
+      25,
+      50,
+      25
+     ],
+     "alpha": 0.05
+    }
+   },
+   "false": {
+    "hardy_weinberg": {
+     "counts": [
+      50,
+      0,
+      50
+     ],
+     "alpha": 0.05
+    }
+   }
+  },
+  {
+   "check": "primer",
+   "true": {
+    "primer": {
+     "sequence": "ATGCATGCATGCATGCATGC"
+    }
+   },
+   "false": {
+    "primer": {
+     "sequence": "GCGCGCGCGCGCGCGCGCGC"
+    }
+   }
+  }
+ ]
+}

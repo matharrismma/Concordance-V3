@@ -1,0 +1,36 @@
+{
+ "domain": "photonics",
+ "packet_key": "PHOT_VERIFY",
+ "cases": [
+  {
+   "check": "second_harmonic",
+   "true": {
+    "reference_fundamental_w": 1.0,
+    "reference_shg_w": 0.01,
+    "test_fundamental_w": 2.0,
+    "claimed_shg_w": 0.04
+   },
+   "false": {
+    "reference_fundamental_w": 1.0,
+    "reference_shg_w": 0.01,
+    "test_fundamental_w": 2.0,
+    "claimed_shg_w": 0.02
+   }
+  },
+  {
+   "check": "laser_slope",
+   "true": {
+    "threshold_current_a": 0.015,
+    "slope_efficiency_w_per_a": 0.9,
+    "drive_current_a": 0.05,
+    "claimed_output_w": 0.0315
+   },
+   "false": {
+    "threshold_current_a": 0.015,
+    "slope_efficiency_w_per_a": 0.9,
+    "drive_current_a": 0.05,
+    "claimed_output_w": 0.045
+   }
+  }
+ ]
+}

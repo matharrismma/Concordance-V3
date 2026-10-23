@@ -1,0 +1,23 @@
+{
+ "domain": "manufacturing",
+ "packet_key": "MFG_VERIFY",
+ "cases": [
+  {
+   "check": "process_capability",
+   "true": {
+    "usl": 110.0,
+    "lsl": 90.0,
+    "process_mean": 100.0,
+    "process_sigma": 2.0,
+    "claimed_cp_capable": true
+   },
+   "false": {
+    "usl": 110.0,
+    "lsl": 90.0,
+    "process_mean": 100.0,
+    "process_sigma": 2.0,
+    "claimed_cp_capable": false
+   }
+  }
+ ]
+}

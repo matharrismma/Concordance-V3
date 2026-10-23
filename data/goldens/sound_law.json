@@ -1,0 +1,141 @@
+{
+ "domain": "sound_law",
+ "packet_key": "SOUNDLAW_VERIFY",
+ "cases": [
+  {
+   "check": "sound_law",
+   "true": {
+    "pairs": [
+     [
+      "pater",
+      "father"
+     ],
+     [
+      "piscis",
+      "fish"
+     ],
+     [
+      "pes",
+      "foot"
+     ]
+    ],
+    "source_onset": "p",
+    "target_onset": "f",
+    "claimed_regular": true,
+    "law": "Grimm's law (p -> f)"
+   },
+   "false": {
+    "pairs": [
+     [
+      "pater",
+      "father"
+     ],
+     [
+      "piscis",
+      "fish"
+     ],
+     [
+      "pes",
+      "pedal"
+     ]
+    ],
+    "source_onset": "p",
+    "target_onset": "f",
+    "claimed_regular": true,
+    "law": "Grimm's law (p -> f)"
+   }
+  },
+  {
+   "check": "vowel_shift",
+   "true": {
+    "vowel_pairs": [
+     [
+      "bite",
+      "i:",
+      "aɪ"
+     ],
+     [
+      "meet",
+      "e:",
+      "i:"
+     ],
+     [
+      "boot",
+      "o:",
+      "u:"
+     ]
+    ],
+    "shift": {
+     "i:": "aɪ",
+     "e:": "i:",
+     "o:": "u:"
+    },
+    "claimed_regular": true,
+    "law": "Great Vowel Shift"
+   },
+   "false": {
+    "vowel_pairs": [
+     [
+      "bite",
+      "i:",
+      "aɪ"
+     ],
+     [
+      "meet",
+      "e:",
+      "i:"
+     ],
+     [
+      "boot",
+      "o:",
+      "i:"
+     ]
+    ],
+    "shift": {
+     "i:": "aɪ",
+     "e:": "i:",
+     "o:": "u:"
+    },
+    "claimed_regular": true,
+    "law": "Great Vowel Shift"
+   }
+  },
+  {
+   "check": "dissimilation",
+   "true": {
+    "dissimilation": [
+     [
+      "thithemi",
+      "tithemi"
+     ],
+     [
+      "phephuka",
+      "pephuka"
+     ],
+     [
+      "khekhuka",
+      "kekhuka"
+     ]
+    ],
+    "claimed_regular": true
+   },
+   "false": {
+    "dissimilation": [
+     [
+      "thithemi",
+      "tithemi"
+     ],
+     [
+      "phephuka",
+      "phepuka"
+     ],
+     [
+      "khekhuka",
+      "kekhuka"
+     ]
+    ],
+    "claimed_regular": true
+   }
+  }
+ ]
+}

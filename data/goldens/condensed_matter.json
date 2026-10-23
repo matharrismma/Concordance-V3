@@ -1,0 +1,21 @@
+{
+ "domain": "condensed_matter",
+ "packet_key": "CONDMAT_VERIFY",
+ "cases": [
+  {
+   "check": "bragg",
+   "true": {
+    "diff_order": 1,
+    "wavelength_m": 1.54e-10,
+    "plane_spacing_m": 3.13e-10,
+    "claimed_theta_deg": 14.241
+   },
+   "false": {
+    "diff_order": 1,
+    "wavelength_m": 1.54e-10,
+    "plane_spacing_m": 3.13e-10,
+    "claimed_theta_deg": 16.0
+   }
+  }
+ ]
+}

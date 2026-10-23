@@ -1,0 +1,73 @@
+{
+ "domain": "quantum_computing",
+ "packet_key": "QCOMP_VERIFY",
+ "cases": [
+  {
+   "check": "shor_period",
+   "true": {
+    "shor_a": 7,
+    "shor_N": 15,
+    "shor_r": 4,
+    "claimed_period_valid": true
+   },
+   "false": {
+    "shor_a": 7,
+    "shor_N": 15,
+    "shor_r": 4,
+    "claimed_period_valid": false
+   }
+  },
+  {
+   "check": "bb84_security",
+   "true": {
+    "qber": 0.09,
+    "qber_threshold": 0.11,
+    "claimed_secure": true
+   },
+   "false": {
+    "qber": 0.09,
+    "qber_threshold": 0.11,
+    "claimed_secure": false
+   }
+  },
+  {
+   "check": "von_neumann_entropy",
+   "true": {
+    "density_eigenvalues": [
+     0.5,
+     0.5
+    ],
+    "claimed_entropy_bits": 1.0
+   },
+   "false": {
+    "density_eigenvalues": [
+     0.5,
+     0.5
+    ],
+    "claimed_entropy_bits": 0.5
+   }
+  },
+  {
+   "check": "quantum_fidelity",
+   "true": {
+    "inner_product": 0.6,
+    "claimed_fidelity": 0.36
+   },
+   "false": {
+    "inner_product": 0.6,
+    "claimed_fidelity": 0.6
+   }
+  },
+  {
+   "check": "qubit_energy",
+   "true": {
+    "qubit_frequency_hz": 5000000000.0,
+    "claimed_qubit_energy_j": 3.3130350749999996e-24
+   },
+   "false": {
+    "qubit_frequency_hz": 5000000000.0,
+    "claimed_qubit_energy_j": 3.6443385825e-24
+   }
+  }
+ ]
+}

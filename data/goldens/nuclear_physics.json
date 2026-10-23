@@ -1,0 +1,30 @@
+{
+ "domain": "nuclear_physics",
+ "packet_key": "NUCLEAR_VERIFY",
+ "cases": [
+  {
+   "check": "half_life_from_activity",
+   "true": {
+    "activity_Bq": 10000000000.0,
+    "atom_count": 23100000000000.0,
+    "claimed_half_life_seconds": 1601.17
+   },
+   "false": {
+    "activity_Bq": 10000000000.0,
+    "atom_count": 23100000000000.0,
+    "claimed_half_life_seconds": 1800.0
+   }
+  },
+  {
+   "check": "decay_constant",
+   "true": {
+    "half_life_seconds": 1600.0,
+    "claimed_decay_constant": 0.00043322
+   },
+   "false": {
+    "half_life_seconds": 1600.0,
+    "claimed_decay_constant": 0.0005
+   }
+  }
+ ]
+}

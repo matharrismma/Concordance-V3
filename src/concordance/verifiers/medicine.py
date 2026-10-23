@@ -144,9 +144,11 @@ def _bp_class(sys: float, dia: float) -> str:
         return "normal"
     if sys < 130 and dia < 80:
         return "elevated"
-    if sys < 140 or dia < 90:
+    # AHA 2017: stage 1 = 130–139 systolic OR 80–89 diastolic; stage 2 = ≥140 OR ≥90; crisis = >180 and/or >120.
+    # (Found 2026-10-23 writing per-check goldens: `or` here sent 150/85 to stage 1.)
+    if sys < 140 and dia < 90:
         return "hypertension_stage_1"
-    if sys < 180 and dia < 120:
+    if sys <= 180 and dia <= 120:
         return "hypertension_stage_2"
     return "hypertensive_crisis"
 

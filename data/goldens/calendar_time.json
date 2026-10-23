@@ -1,0 +1,19 @@
+{
+ "domain": "calendar_time",
+ "packet_key": "CAL_VERIFY",
+ "cases": [
+  {
+   "check": "utc_offset",
+   "true": {
+    "timezone": "America/New_York",
+    "at_iso": "2024-07-04T12:00:00",
+    "claimed_utc_offset_hours": -4
+   },
+   "false": {
+    "timezone": "America/New_York",
+    "at_iso": "2024-07-04T12:00:00",
+    "claimed_utc_offset_hours": -5
+   }
+  }
+ ]
+}

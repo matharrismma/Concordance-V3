@@ -1,0 +1,83 @@
+{
+ "domain": "soil_science",
+ "packet_key": "SOIL_VERIFY",
+ "cases": [
+  {
+   "check": "npk_requirement",
+   "true": {
+    "crop_npk": "wheat",
+    "area_hectares": 2.0,
+    "claimed_n_kg": 240,
+    "claimed_p_kg": 120,
+    "claimed_k_kg": 120
+   },
+   "false": {
+    "crop_npk": "wheat",
+    "area_hectares": 2.0,
+    "claimed_n_kg": 300,
+    "claimed_p_kg": 120,
+    "claimed_k_kg": 120
+   }
+  },
+  {
+   "check": "lime_requirement",
+   "true": {
+    "current_ph": 5.5,
+    "target_ph": 6.5,
+    "soil_type": "loam",
+    "claimed_lime_t_per_ha": 2.5
+   },
+   "false": {
+    "current_ph": 5.5,
+    "target_ph": 6.5,
+    "soil_type": "loam",
+    "claimed_lime_t_per_ha": 4.0
+   }
+  },
+  {
+   "check": "soil_texture_silty_clay",
+   "true": {
+    "sand_pct": 15,
+    "silt_pct": 50,
+    "clay_pct": 35,
+    "claimed_texture_class": "silty_clay"
+   },
+   "false": {
+    "sand_pct": 15,
+    "silt_pct": 50,
+    "clay_pct": 35,
+    "claimed_texture_class": "clay"
+   }
+  },
+  {
+   "check": "soil_texture_sandy_clay",
+   "true": {
+    "sand_pct": 50,
+    "silt_pct": 15,
+    "clay_pct": 35,
+    "claimed_texture_class": "sandy_clay"
+   },
+   "false": {
+    "sand_pct": 50,
+    "silt_pct": 15,
+    "clay_pct": 35,
+    "claimed_texture_class": "clay"
+   }
+  },
+  {
+   "check": "soil_texture_silt_loam",
+   "true": {
+    "sand_pct": 20,
+    "silt_pct": 65,
+    "clay_pct": 15,
+    "claimed_texture_class": "silty_loam"
+   },
+   "false": {
+    "sand_pct": 20,
+    "silt_pct": 65,
+    "clay_pct": 15,
+    "claimed_texture_class": "loam"
+   }
+  }
+ ]
+}

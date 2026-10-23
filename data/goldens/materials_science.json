@@ -1,0 +1,19 @@
+{
+ "domain": "materials_science",
+ "packet_key": "MAT_VERIFY",
+ "cases": [
+  {
+   "check": "stress_strain",
+   "true": {
+    "youngs_modulus_Pa": 200000000000.0,
+    "strain": 0.001,
+    "claimed_stress_Pa": 200000000.0
+   },
+   "false": {
+    "youngs_modulus_Pa": 200000000000.0,
+    "strain": 0.001,
+    "claimed_stress_Pa": 150000000.0
+   }
+  }
+ ]
+}
