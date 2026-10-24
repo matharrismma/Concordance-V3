@@ -57,10 +57,11 @@ REGISTRY: List[ToolSpec] = [
              {"type": "object", "properties": {"text": _S, "seal": _B}, "required": ["text"]}),
     ToolSpec("scribe", "derive",
              "Score one pass of a multi-writer draft: drafts=[{writer, claims:[{id, value, formula}]}] plus "
-             "packets={claim_id: steps}. Returns the claim matrix, the SVD spectrum (which claims the writers "
-             "disagree on), engine verdicts per writer, the nearest clean draft, and feedback text per writer. "
-             "Disagreement is triage for the verifier, not a truth signal; a flat spectrum returns "
-             "INCOMPLETE rather than an average.",
+             "packets={claim_id: steps}. Elimination, not averaging: per claim, the band the recompute names, the "
+             "stated values it eliminated (with how far outside), the survivors, and their [min, max] bracket "
+             "(narrow_way); plus the claim matrix, the SVD spectrum (triage: which claims to try to kill first), "
+             "verdicts per writer, the nearest clean draft, and feedback per writer naming its counterexample. "
+             "A flat spectrum returns UNDERDETERMINED rather than a mean.",
              {"type": "object", "properties": {
                  "drafts": {"type": "array", "items": {"type": "object"}},
                  "packets": {"type": "object"},

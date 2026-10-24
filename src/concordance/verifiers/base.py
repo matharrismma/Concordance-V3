@@ -79,6 +79,32 @@ def band(name: str, actual: float, claimed: float, tol: float, what: str = "valu
                           f"[{fmt.format(lo)}, {fmt.format(hi)}] (off by {off:+,.6g})", d)
 
 
+def bound(name: str, value: float, limit: float, kind: str, what: str = "value",
+          data: Optional[Dict[str, Any]] = None, *, fmt: str = "{:,.6g}", unit: str = "",
+          tol: float = 0.0) -> VerifierResult:
+    """A one-sided band: `kind` is "min" (value must be ≥ limit) or "max" (value must be ≤ limit). Minimum and
+    maximum are how a constraint narrows; two of them bracket an optimum. `data.band` has the same shape as
+    band() with the open side None, so receipts, the scribe and the page read both alike. A small `tol`
+    forgives display rounding at the edge, never past it."""
+    tol = abs(float(tol))
+    if kind not in ("min", "max"):
+        return error(name, f"bound kind must be 'min' or 'max', not {kind!r}")
+    lo, hi = (limit, None) if kind == "min" else (None, limit)
+    inside = (value >= limit - tol) if kind == "min" else (value <= limit + tol)
+    off = (value - limit)
+    bd = {"what": what, "low": lo, "high": hi, "actual": value, "claimed": value, "tolerance": tol,
+          "inside": inside, "off_by": off, "unit": unit, "kind": kind}
+    d = dict(data or {}, **{what: value, "band": bd})
+    u = f" {unit}" if unit else ""
+    sym = "≥" if kind == "min" else "≤"
+    if inside:
+        return confirm(name, f"{what} = {fmt.format(value)}{u} {sym} {fmt.format(limit)} (inside the bound)", d)
+    d["counterexample"] = {"what": what, "claimed": value, "recomputed": value,
+                           "band": [lo, hi], "off_by": off, "kind": kind}
+    return mismatch(name, f"{what} = {fmt.format(value)}{u} violates {sym} {fmt.format(limit)} "
+                          f"(outside by {abs(off):,.6g})", d)
+
+
 def merge_checks(name: str, results: Sequence[VerifierResult], data: Optional[Dict[str, Any]] = None) -> VerifierResult:
     """Fold several band() results for one check into one VerifierResult without losing any band or
     counterexample: the first MISMATCH governs (a counterexample outranks any number of survivals), and

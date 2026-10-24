@@ -120,6 +120,12 @@ report["status"]                                 # CONVERGED | OPEN | UNDERDETER
 Measured 2026-10-20: five LLM writers agreed to 5–6 significant figures on a bond memo; the recompute still
 caught 3 wrong claims consensus could not see. Disagreement locates where to look; the verifier decides.
 
+The pass report is **elimination**: for each claim, `narrow_way` gives the band the recompute names, the stated
+values it eliminated and by how far, the survivors, and their `[min, max]` bracket cut to the band. Minimum and
+maximum make the optimum easy to find; the engine never averages. Where no packet exists the claim is reported
+`un-narrowed` with the bracket of what was stated, labelled unverified. Each writer's feedback names its
+counterexample — the band and the distance — never another writer's value.
+
 ## Extend
 
 Register a verifier pack without forking: `pyproject.toml` → `[project.entry-points."concordance.verifiers"]

@@ -114,10 +114,56 @@ def verify_matrix(writers, claim_ids, M, packets: Dict[str, List[Dict[str, Any]]
                 out[w][cid] = {"verdict": "NO_PACKET", "detail": "no recompute packet for this claim"}
                 continue
             r = verify_derivation(_fill(steps, v, value_key))
-            st = r["trail"][0]["status"] if r.get("trail") else r.get("verdict")
-            out[w][cid] = {"verdict": "CONFIRMED" if r.get("verdict") == "HOLDS" else
-                           ("MISMATCH" if r.get("verdict") == "BROKEN" else str(st)),
-                           "detail": (r["trail"][0].get("detail") if r.get("trail") else "")[:240]}
+            t0 = r["trail"][0] if r.get("trail") else {}
+            st = t0.get("status", r.get("verdict"))
+            cell = {"verdict": "CONFIRMED" if r.get("verdict") == "HOLDS" else
+                    ("MISMATCH" if r.get("verdict") == "BROKEN" else str(st)),
+                    "detail": (t0.get("detail") or "")[:240]}
+            ref = t0.get("refutations") or {}
+            if ref.get("bands"):
+                b = ref["bands"][0]
+                cell["band"] = [b.get("low"), b.get("high")]
+                cell["off_by"] = b.get("off_by")
+            out[w][cid] = cell
+    return out
+
+
+def narrow_way(writers, claim_ids, M, verdicts) -> Dict[str, Any]:
+    """Elimination, per claim: the band the recompute names, which stated values fell outside it (eliminated,
+    with how far), and which survived. The answer is never the average of the drafts; it is what is left after
+    the verifier has killed what it can — the narrow way. A claim with no band (no packet, or a verifier that
+    has not adopted band()) is reported as un-narrowed."""
+    out: Dict[str, Any] = {}
+    for j, cid in enumerate(claim_ids):
+        band = None
+        eliminated, surviving, unknown = [], [], []
+        for i, w in enumerate(writers):
+            v = M[i][j]
+            cell = verdicts[w][cid]
+            if cell.get("band") and band is None:
+                band = cell["band"]
+            if v is None:
+                continue
+            if cell["verdict"] == "MISMATCH":
+                eliminated.append({"writer": w, "value": v, "off_by": cell.get("off_by")})
+            elif cell["verdict"] == "CONFIRMED":
+                surviving.append({"writer": w, "value": v})
+            else:
+                unknown.append({"writer": w, "value": v, "why": cell["verdict"]})
+        # the bracket: minimum and maximum of what survived (or, un-narrowed, of everything stated), cut to
+        # the band. Two bounds make the optimum easy to find; a single point does not.
+        pool = [x["value"] for x in surviving] or [x["value"] for x in unknown]
+        bracket = None
+        if pool:
+            mn, mx = min(pool), max(pool)
+            if band:
+                lo, hi = band
+                mn = max(mn, lo) if lo is not None else mn
+                mx = min(mx, hi) if hi is not None else mx
+            bracket = {"min": mn, "max": mx, "from": "surviving" if surviving else "stated, unverified"}
+        out[cid] = {"band": band, "bracket": bracket, "eliminated": eliminated, "surviving": surviving,
+                    "unnarrowed": unknown,
+                    "state": ("narrowed" if band and (surviving or eliminated) else "un-narrowed")}
     return out
 
 
@@ -145,13 +191,23 @@ def score_pass(drafts: List[Dict[str, Any]], packets: Optional[Dict[str, List[Di
     status = "CONVERGED" if (spec["spread"] <= SPREAD_TOL and clean and not any(broken.values())) else \
              ("UNDERDETERMINED" if (spec["top_axis_share"] is not None and spec["top_axis_share"] < FLAT_SHARE
                                     and spec["spread"] > SPREAD_TOL) else "OPEN")
-    report = {"status": status, "writers": writers, "claim_ids": ids, "matrix": M, "spectrum": spec,
+    nw = narrow_way(writers, ids, M, verdicts)
+    n_elim = sum(len(c["eliminated"]) for c in nw.values())
+    n_surv = sum(len(c["surviving"]) for c in nw.values())
+    n_narrowed = sum(1 for c in nw.values() if c["state"] == "narrowed")
+    read = (f"{n_elim} stated value{'s' if n_elim != 1 else ''} eliminated by counterexample, {n_surv} inside "
+            f"the band, across {n_narrowed} of {len(ids)} claims narrowed; status {status}")
+    report = {"status": status, "read": read, "writers": writers, "claim_ids": ids, "matrix": M, "spectrum": spec,
               "verdicts": verdicts, "broken": broken, "broken_total": sum(len(v) for v in broken.values()),
+              "narrow_way": nw,
               "clean_writers": clean, "center": center, "divergent": divergent,
               "means": {"status": "CONVERGED: spread at tolerance and every writer passes every recompute; "
                                   "UNDERDETERMINED: real spread with no dominant axis — the spec is ambiguous, "
                                   "do not average; OPEN: a dominant disagreement axis or broken claims remain",
                         "center": "the clean draft nearest the centroid — never an average of drafts",
+                        "narrow_way": "per claim: the band the recompute names, the values it eliminated and by how "
+                                      "much, the values that survived, and the bracket [min, max] of the survivors "
+                                      "cut to the band; the answer is what is left, not a mean",
                         "spectrum": "locates disagreement; it is not evidence of truth (writers sharing training "
                                     "data share errors)"}}
     report["feedback"] = {w: feedback(report, w) for w in writers}
@@ -169,7 +225,12 @@ def feedback(report: Dict[str, Any], writer: str) -> str:
     L.append("Engine verdicts on your claims:")
     for cid in report["claim_ids"]:
         v = report["verdicts"][writer][cid]
-        L.append(f"- {cid}: {v['verdict']}" + ("" if v["verdict"] == "CONFIRMED" else f" — {v['detail']}"))
+        if v["verdict"] == "MISMATCH" and v.get("band"):
+            # the counterexample, not the answer: the band the value must lie in and how far outside it fell
+            L.append(f"- {cid}: ELIMINATED — your value is outside [{v['band'][0]:,.6g}, {v['band'][1]:,.6g}] "
+                     f"by {v.get('off_by') or 0:+,.6g}; recompute from the packet")
+        else:
+            L.append(f"- {cid}: {v['verdict']}" + ("" if v["verdict"] == "CONFIRMED" else f" — {v['detail']}"))
     if report["divergent"]:
         L.append("Values the writers diverge on (no names):")
         for cid, vals in report["divergent"].items():

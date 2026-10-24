@@ -18,13 +18,14 @@ SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[-1]
 
 INSTRUCTIONS = (
-    "Concordance verifies numbers deterministically and returns a re-checkable receipt. "
-    "Start with find_verifier(query) to get a domain's packet schema, then verify(steps=[{id, domain, spec}]). "
-    "Read the verdict exactly: only BROKEN is a finding about the claim; INCOMPLETE means nothing applied; "
-    "SYSTEM_ERROR means our verifier failed; SCHEMA_ERROR names the field to fix. PARTIAL means the checked "
-    "fragment held and other text was not checked. Every seal has a content hash: seal_fetch returns the "
-    "record, and re-hashing it must reproduce the hash. The engine checks arithmetic and formula application "
-    "only; it never judges whether a correct result is safe, legal, or suitable."
+    "Not a truth engine: what can be computed is computed and the claim must fall in a narrow band around it; "
+    "the rest is narrowed by attempted refutation, never proven. Start with find_verifier(query) for a packet "
+    "schema, then verify(steps=[{id, domain, spec}]). Read the verdict exactly: HOLDS = survived every attempted "
+    "refutation, not shown true; BROKEN = a re-runnable counterexample, the only finding about the claim; "
+    "INCOMPLETE = nothing applied; SYSTEM_ERROR = our verifier failed; SCHEMA_ERROR names the field to fix. "
+    "`read` and `refutations` say what was attempted. seal_fetch returns a record whose re-hash must reproduce "
+    "its content hash. Arithmetic and formula application only — never whether a correct result is safe, legal, "
+    "or suitable."
 )
 
 ERROR_CODES: Dict[str, str] = {

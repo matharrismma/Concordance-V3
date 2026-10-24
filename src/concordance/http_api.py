@@ -66,8 +66,15 @@ def _narrow_html(ref: Dict[str, Any]) -> str:
             return f"{float(x):,.6g}"
         except (TypeError, ValueError):
             return esc(str(x))
+    def where(b):
+        lo, hi = b.get("low"), b.get("high")
+        if lo is None and hi is not None:
+            return f"be at most <code>{num(hi)}</code>"
+        if hi is None and lo is not None:
+            return f"be at least <code>{num(lo)}</code>"
+        return f"lie in <code>[{num(lo)}, {num(hi)}]</code>"
     rows = "".join(
-        f'<li><code>{esc(str(b.get("what")))}</code> must lie in <code>[{num(b.get("low"))}, {num(b.get("high"))}]</code>'
+        f'<li><code>{esc(str(b.get("what")))}</code> must {where(b)}'
         f' — claimed {num(b.get("claimed"))}: <span class="v {"CONFIRMED" if b.get("inside") else "MISMATCH"}">'
         f'{"inside" if b.get("inside") else "outside, off by " + num(b.get("off_by"))}</span></li>'
         for b in ref.get("bands") or [])
