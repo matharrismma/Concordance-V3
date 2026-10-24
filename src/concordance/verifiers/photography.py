@@ -31,7 +31,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -56,13 +56,10 @@ def verify_exposure_value(spec: Dict[str, Any]) -> VerifierResult:
     actual = _ev(Nf, tf)
     tol = clamp_tol(spec, "tolerance_ev", 0.1)
     diff = abs(actual - c)
-    data = {"f_number": Nf, "shutter_seconds": tf,
-            "actual_ev": actual, "claimed_ev": c, "diff": diff,
+    data = {"f_number": Nf, "shutter_seconds": tf, "diff": diff,
             "tolerance_ev": tol,
             "formula": "EV = log₂(N²/t)  [ISO 100]"}
-    if diff <= tol:
-        return confirm(name, f"EV = {actual:.3f} (matches claim)", data)
-    return mismatch(name, f"EV = {actual:.3f}, claimed {c} (diff {diff:.3f})", data)
+    return band(name, actual, c, tol, "ev", data, fmt="{:.3f}", unit="EV")
 
 
 def verify_reciprocity_equivalent(spec: Dict[str, Any]) -> VerifierResult:
@@ -117,13 +114,10 @@ def verify_angle_of_view(spec: Dict[str, Any]) -> VerifierResult:
     actual = 2.0 * math.degrees(math.atan(df / (2.0 * ff)))
     tol = clamp_tol(spec, "tolerance_deg", 0.5)
     diff = abs(actual - c)
-    data = {"focal_length_mm": ff, "sensor_dim_mm": df,
-            "actual_aov_deg": actual, "claimed_aov_deg": c, "diff_deg": diff,
+    data = {"focal_length_mm": ff, "sensor_dim_mm": df, "diff_deg": diff,
             "tolerance_deg": tol,
             "formula": "AOV = 2·atan(d / 2f)"}
-    if diff <= tol:
-        return confirm(name, f"AOV = {actual:.3f}° (matches claim)", data)
-    return mismatch(name, f"AOV = {actual:.3f}°, claimed {c} (diff {diff:.3f})", data)
+    return band(name, actual, c, tol, "aov_deg", data, fmt="{:.3f}", unit="°")
 
 
 def verify_hyperfocal_distance(spec: Dict[str, Any]) -> VerifierResult:
@@ -146,13 +140,10 @@ def verify_hyperfocal_distance(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 0.02)
     diff = abs(actual_m - cl)
     threshold = max(0.05, rel_tol * actual_m)
-    data = {"focal_length_mm": ff, "f_number": Nf, "coc_mm": cf,
-            "actual_H_m": actual_m, "claimed_H_m": cl, "diff_m": diff,
+    data = {"focal_length_mm": ff, "f_number": Nf, "coc_mm": cf, "diff_m": diff,
             "tolerance_relative": rel_tol,
             "formula": "H = f² / (N·c) + f"}
-    if diff <= threshold:
-        return confirm(name, f"H = {actual_m:.3f} m (matches claim)", data)
-    return mismatch(name, f"H = {actual_m:.3f} m, claimed {cl} (diff {diff:.3f})", data)
+    return band(name, actual_m, cl, threshold, "H_m", data, fmt="{:.3f}", unit="m")
 
 
 _RULES = [

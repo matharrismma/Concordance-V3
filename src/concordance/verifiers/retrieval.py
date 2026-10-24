@@ -47,7 +47,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch
 
 
@@ -86,13 +86,9 @@ def verify_precision(spec: Dict[str, Any]) -> VerifierResult:
     actual = len(hits) / len(returned)
     tol = clamp_tol(spec, "tolerance", 0.005)
     data = {"query": spec.get("query"), "returned": len(returned), "relevant_returned": len(hits),
-            "actual_precision": actual, "claimed_precision": c,
             "noise_ids": [r for r in returned if r not in relevant][:10],
             "formula": "precision = |returned ∩ relevant| / |returned|"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"precision {actual:.4f} over {len(returned)} results "
-                             f"(matches claim {c})", data)
-    return mismatch(name, f"precision is {actual:.4f}, claimed {c}", data)
+    return band(name, actual, c, tol, "precision", data, fmt="{:.4f}")
 
 
 def verify_recall_of_known(spec: Dict[str, Any]) -> VerifierResult:
@@ -127,11 +123,11 @@ def verify_recall_of_known(spec: Dict[str, Any]) -> VerifierResult:
             data["claimed_f1"] = float(spec["claimed_f1"])
         except (TypeError, ValueError):
             pass
-    if abs(actual - c) <= tol:
-        return confirm(name, f"recall {actual:.4f} — found {len(found)} of {len(relevant)} known "
-                             f"(matches claim {c})", data)
-    return mismatch(name, f"recall is {actual:.4f}, claimed {c}; missed {len(missed)} "
-                          f"document(s) the library holds", data)
+    r = band(name, actual, c, tol, "recall", data, fmt="{:.4f}")
+    if r.status == "MISMATCH":
+        # naming what was dropped is the whole value of a failed recall check
+        return mismatch(name, r.detail + f"; missed {len(missed)} document(s) the library holds", r.data)
+    return r
 
 
 def verify_rank_of_target(spec: Dict[str, Any]) -> VerifierResult:

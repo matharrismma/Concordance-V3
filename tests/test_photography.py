@@ -6,5 +6,6 @@ from concordance.verifiers import photography as PG
 
 def test_exposure_value():
     assert PG.verify_exposure_value({"f_number": 8, "shutter_seconds": 0.004, "claimed_exposure_value": 13.97}).status == "CONFIRMED"
-    assert PG.verify_exposure_value({"f_number": 8, "shutter_seconds": 0.004, "claimed_exposure_value": 10.0}).status == "MISMATCH"
+    r = PG.verify_exposure_value({"f_number": 8, "shutter_seconds": 0.004, "claimed_exposure_value": 10.0})
+    assert r.status == "MISMATCH" and r.data["band"]["what"] == "ev" and r.data["counterexample"]["off_by"] < 0
     assert PG.verify_exposure_value({}).status == "NOT_APPLICABLE"

@@ -44,7 +44,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from .base import VerifierResult, clamp_tol, confirm, error, mismatch, na
+from .base import VerifierResult, band, clamp_tol, confirm, error, merge_checks, mismatch, na
 
 SPEC_FILE = "verifier_specs.jsonl"
 MAX_EXPR = 400
@@ -178,16 +178,16 @@ def run_check(domain: str, chk: Dict[str, Any], art: Dict[str, Any]) -> Optional
         if not math.isfinite(v):
             return error(name, f"{f} is not finite")
         values.append((f, v))
-    bad = []
-    for f, v in values:
-        if abs(v - claimed) > max(ab, rel * abs(v)):
-            bad.append(f"{f} = {v:.6g}, claimed {claimed:.6g}")
     data = {"law": chk.get("law"), "inputs": {k: env[k] for k in env}, "claimed": claimed,
             "computed": {f: v for f, v in values}, "tolerance": {"rel": rel, "abs": ab}, "spec": True}
-    if bad:
-        return mismatch(name, "; ".join(bad), data)
-    shown = ", ".join(f"{f} = {v:.6g}" for f, v in values)
-    return confirm(name, f"{chk.get('law') or name}: {shown} (matches claim {claimed:.6g})", data)
+    # one band per computable form; every form's band must hold the claim
+    what = claimed_key[len("claimed_"):] if claimed_key.startswith("claimed_") and len(claimed_key) > 8 else claimed_key
+    results = [band(name, v, claimed, max(ab, rel * abs(v)), what, data, fmt="{:.6g}") for f, v in values]
+    r = merge_checks(name, results, data)
+    if r.status == "CONFIRMED":
+        shown = ", ".join(f"{f} = {v:.6g}" for f, v in values)
+        return confirm(name, f"{chk.get('law') or name}: {shown}; {r.detail}", r.data)
+    return r
 
 
 # ── the specs on disk ───────────────────────────────────────────────────────────────────────────

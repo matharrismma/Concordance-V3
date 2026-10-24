@@ -42,7 +42,7 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Optional
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band
 
 
 _STRONGS_PATTERN = re.compile(r"^[GHgh]\d+$")
@@ -153,13 +153,12 @@ def verify_word_count(strongs: str, claimed_count: Any) -> VerifierResult:
     actual = result.get("occurrence_count")
     if actual is None:
         return na(name, f"no occurrence_count available for {strongs}")
-    if claimed == actual:
-        return confirm(name,
-                       f"{strongs} occurs {actual} times in the corpus, matching claim",
-                       {"strongs": strongs, "claimed": claimed, "actual": actual})
-    return mismatch(name,
-                    f"{strongs} claimed {claimed} occurrences, corpus has {actual}",
-                    {"strongs": strongs, "claimed": claimed, "actual": actual})
+    if isinstance(actual, bool) or not isinstance(actual, (int, float)):
+        return mismatch(name, f"{strongs} claimed {claimed} occurrences, corpus has {actual!r}",
+                        {"strongs": strongs, "claimed": claimed, "actual": actual})
+    actual_i = int(actual) if float(actual).is_integer() else actual
+    r = band(name, actual_i, claimed, 0, "count", {"strongs": strongs, "claimed": claimed, "actual": actual_i}, fmt="{:.0f}")
+    return (confirm if r.passed else mismatch)(name, f"{strongs} occurrences in the corpus: {r.detail}", r.data)
 
 
 def verify_transliteration(strongs: str, claimed: str) -> VerifierResult:

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band
 
 _BOOL_CLAIMS = ("check", "checkmate", "stalemate", "legal_move")
 
@@ -62,9 +62,8 @@ def verify_position(spec: Dict[str, Any]) -> VerifierResult:
             claimed_i = int(claimed)
         except (TypeError, ValueError):
             return error(name, "claimed_balance must be an integer")
-        if claimed_i != balance:
-            return mismatch(name, f"material balance is {balance:+d}, claimed {claimed_i:+d}", data)
-        return confirm(name, f"material balance {balance:+d} (white - black) — matches the claim", data)
+        r = band(name, balance, claimed_i, 0, "balance", data, fmt="{:+.0f}")
+        return (confirm if r.passed else mismatch)(name, f"material (white - black): {r.detail}", r.data)
 
     computed = (verdict == "HOLDS")      # the property is true of the position
     data["computed"] = computed

@@ -31,7 +31,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -122,9 +122,8 @@ def verify_interval_semitones(spec: Dict[str, Any]) -> VerifierResult:
     data = {"note_a": a, "note_b": b,
             "actual_semitones": actual, "claimed_semitones": c,
             "rule": "12 semitones per octave; signed (b - a)"}
-    if actual == c:
-        return confirm(name, f"{a} → {b} = {actual} semitones (matches claim)", data)
-    return mismatch(name, f"{a} → {b} = {actual} semitones, claimed {c}", data)
+    r = band(name, actual, c, 0, "semitones", data, fmt="{:.0f}")
+    return (confirm if r.passed else mismatch)(name, f"{a} → {b}: {r.detail}", r.data)
 
 
 def verify_frequency_ratio(spec: Dict[str, Any]) -> VerifierResult:
@@ -148,16 +147,11 @@ def verify_frequency_ratio(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 0.02)
     diff = abs(actual - expected)
     threshold = max(1e-3, rel_tol * expected)
-    data = {"freq_a": af, "freq_b": bf, "actual_ratio": actual,
+    data = {"freq_a": af, "freq_b": bf,
             "claimed_interval": cn, "expected_ratio": expected,
             "diff": diff, "tolerance_relative": rel_tol}
-    if diff <= threshold:
-        return confirm(name,
-                       f"{bf}/{af} = {actual:.4f} matches {cn} ratio {expected:.4f}",
-                       data)
-    return mismatch(name,
-                    f"{bf}/{af} = {actual:.4f}; {cn} requires {expected:.4f} (diff {diff:.4f})",
-                    data)
+    # the claimed interval names a ratio; the measured ratio must lie in the band around it
+    return band(name, actual, expected, threshold, "ratio", data, fmt="{:.4f}")
 
 
 def verify_equal_temperament_freq(spec: Dict[str, Any]) -> VerifierResult:
@@ -178,16 +172,9 @@ def verify_equal_temperament_freq(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     diff = abs(actual - c)
     threshold = max(0.01, rel_tol * abs(actual))
-    data = {"midi_note": nf, "actual_freq_hz": actual,
-            "claimed_freq_hz": c, "diff_hz": diff,
+    data = {"midi_note": nf, "diff_hz": diff,
             "formula": "f = 440·2^((n−69)/12); A4 = 440 Hz"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"MIDI {nf} → {actual:.4f} Hz (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"MIDI {nf} → {actual:.4f} Hz, claimed {c} (diff {diff:.4f})",
-                    data)
+    return band(name, actual, c, threshold, "freq_hz", data, fmt="{:.4f}", unit="Hz")
 
 
 def verify_scale_membership(spec: Dict[str, Any]) -> VerifierResult:

@@ -20,7 +20,8 @@ def _v(text: str) -> str:
 
 
 def test_the_verifier_counts_and_compares():
-    assert W.verify_letters({"word": "strengths", "claimed_letters": 9, "claimed_vowels": 1}).status == "CONFIRMED"
+    r = W.verify_letters({"word": "strengths", "claimed_letters": 9, "claimed_vowels": 1})
+    assert r.status == "CONFIRMED" and [b["what"] for b in r.data["bands"]] == ["letters", "vowels"]
     assert W.verify_letters({"word": "strengths", "claimed_vowels": 2}).status == "MISMATCH"
     assert W.verify_letters({"word": "rhythm", "claimed_vowels": 0}).status == "CONFIRMED"      # y is a consonant letter here, said so
     assert W.verify_anagram({"word_a": "listen", "word_b": "silent", "claimed_anagram": True}).status == "CONFIRMED"

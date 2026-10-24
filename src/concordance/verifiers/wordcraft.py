@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error, dispatch
+from .base import VerifierResult, na, confirm, mismatch, error, dispatch, band, merge_checks
 
 # the explicit golden the domain gate derives its true/false pair from (numbers and booleans only: a string claim
 # such as a plural cannot be falsified by scaling); every check here confirms, and its perturbed twin must not
@@ -222,10 +222,10 @@ def verify_letters(spec: Dict[str, Any]) -> VerifierResult:
         checks.append((key, cf, actual[key]))
     if not checks:
         return na(name)
-    bad = [(k, c, a) for k, c, a in checks if c != a]
-    if not bad:
-        return confirm(name, f"{word!r}: " + ", ".join(f"{a} {k}" for k, _c, a in checks) + " (matches claim; " + data["convention"] + ")", data)
-    return mismatch(name, f"{word!r}: " + ", ".join(f"{a} {k}, claimed {c}" for k, c, a in bad) + " (" + data["convention"] + ")", data)
+    # exact counts: the band is [n, n]
+    results = [band(name, a, c, 0, k, data, fmt="{:.0f}") for k, c, a in checks]
+    r = merge_checks(name, results, data)
+    return (confirm if r.passed else mismatch)(name, f"{word!r}: {r.detail} ({data['convention']})", r.data)
 
 
 def verify_anagram(spec: Dict[str, Any]) -> VerifierResult:
@@ -266,9 +266,7 @@ def verify_edit_distance(spec: Dict[str, Any]) -> VerifierResult:
     actual = levenshtein(str(a).lower(), str(b).lower())
     data = {"word_a": a, "word_b": b, "actual_edit_distance": actual, "claimed_edit_distance": c,
             "convention": "Levenshtein distance: insertions, deletions and substitutions, case ignored"}
-    if actual == c:
-        return confirm(name, f"edit distance {a!r} -> {b!r} = {actual} (matches claim)", data)
-    return mismatch(name, f"edit distance {a!r} -> {b!r} = {actual}, claimed {c}", data)
+    return band(name, actual, c, 0, "edit_distance", data, fmt="{:.0f}")
 
 
 def verify_syllables(spec: Dict[str, Any]) -> VerifierResult:
@@ -287,22 +285,21 @@ def verify_syllables(spec: Dict[str, Any]) -> VerifierResult:
     syll, phon = arpabet_counts(pron)
     data = {"word": w, "pronunciation": pron, "actual_syllables": syll, "actual_phonemes": phon, "source": source,
             "convention": "ARPABET: one syllable per vowel phoneme (each carries a stress digit); phonemes = tokens"}
-    bad = []
+    results = []
     if cs is not None:
         try:
-            if int(float(cs)) != syll:
-                bad.append(f"syllables {syll}, claimed {int(float(cs))}")
+            results.append(band(name, syll, int(float(cs)), 0, "syllables", data, fmt="{:.0f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_syllables must be a whole number")
     if cp is not None:
         try:
-            if int(float(cp)) != phon:
-                bad.append(f"phonemes {phon}, claimed {int(float(cp))}")
+            results.append(band(name, phon, int(float(cp)), 0, "phonemes", data, fmt="{:.0f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_phonemes must be a whole number")
-    if not bad:
-        return confirm(name, f"{w!r} = {pron}: {syll} syllable(s), {phon} phoneme(s) (matches claim; {source})", data)
-    return mismatch(name, f"{w!r} = {pron}: " + "; ".join(bad) + f" ({source})", data)
+    r = merge_checks(name, results, data)
+    if r.status == "CONFIRMED":
+        return confirm(name, f"{w!r} = {pron}: {r.detail} ({source})", r.data)
+    return mismatch(name, f"{w!r} = {pron}: {r.detail} ({source})", r.data)
 
 
 def verify_alphabet(spec: Dict[str, Any]) -> VerifierResult:
@@ -320,9 +317,8 @@ def verify_alphabet(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "claimed_alphabet_letters must be a whole number")
     n, note = entry
     data = {"alphabet": alpha, "actual_letters": n, "claimed_letters": c, "note": note, "source": ALPHABETS_SOURCE}
-    if n == c:
-        return confirm(name, f"the {key} alphabet has {n} letters ({note}; matches claim)", data)
-    return mismatch(name, f"the {key} alphabet has {n} letters ({note}), claimed {c}", data)
+    r = band(name, n, c, 0, "letters", data, fmt="{:.0f}")
+    return (confirm if r.passed else mismatch)(name, f"the {key} alphabet: {r.detail} ({note})", r.data)
 
 
 def verify_plural(spec: Dict[str, Any]) -> VerifierResult:
@@ -358,9 +354,8 @@ def verify_letter_rank(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "claimed_rank must be a whole number (1 = most common)")
     actual = LETTER_RANK_EN.index(ch) + 1
     data = {"letter": ch, "actual_rank": actual, "claimed_rank": c, "order": LETTER_RANK_EN, "source": LETTER_RANK_SOURCE}
-    if actual == c:
-        return confirm(name, f"{ch.upper()} is the {actual}{'st' if actual == 1 else 'nd' if actual == 2 else 'rd' if actual == 3 else 'th'} most common letter in English ({LETTER_RANK_SOURCE}; matches claim)", data)
-    return mismatch(name, f"{ch.upper()} ranks {actual} of 26 in English letter frequency, claimed {c} ({LETTER_RANK_SOURCE})", data)
+    r = band(name, actual, c, 0, "rank", data, fmt="{:.0f}")
+    return (confirm if r.passed else mismatch)(name, f"{ch.upper()} in English letter frequency: {r.detail} of 26 ({LETTER_RANK_SOURCE})", r.data)
 
 
 
