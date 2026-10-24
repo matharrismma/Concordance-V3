@@ -1,0 +1,81 @@
+{
+ "anchors": [],
+ "content_hash": "17f7858ed1c86b7e96faf401289ca39609ebb372a664af7f7144e92d334f9591",
+ "gate_results": [
+  {
+   "details": {
+    "broken_at": null,
+    "confirmed_steps": 1,
+    "error_at": null,
+    "gap_at": null,
+    "read": "survived 1 attempted refutation; not shown true — shown not false by these checks, and silent on anything they did not test",
+    "refutations": {
+     "attempted": 1,
+     "counterexamples": 0,
+     "errored": 0,
+     "not_applicable": 0,
+     "survived": 1
+    },
+    "steps": 1,
+    "verdict": "HOLDS"
+   },
+   "gate": "RED",
+   "reasons": [
+    "derivation verdict: HOLDS"
+   ],
+   "status": "PASS"
+  }
+ ],
+ "overall": "PASS",
+ "schema_version": "2.0",
+ "verifier_results": [
+  {
+   "data": {
+    "claim": "",
+    "domain": "real_estate",
+    "link_ok": true,
+    "refutations": {
+     "attempted": [
+      "real_estate.monthly_mortgage"
+     ],
+     "bands": [
+      {
+       "actual": 75917.92514639649,
+       "check": "real_estate.monthly_mortgage",
+       "claimed": 75917.93,
+       "high": 75993.84307154288,
+       "inside": true,
+       "low": 75842.0072212501,
+       "off_by": 0.004853603502851911,
+       "tolerance": 75.9179251463965,
+       "unit": "$/mo",
+       "what": "monthly_payment"
+      }
+     ],
+     "counterexamples": [],
+     "errored": [],
+     "not_applicable": [],
+     "survived": [
+      "real_estate.monthly_mortgage"
+     ]
+    },
+    "spec_hash": "ae9a5318251d8c18fd4888443fc980d82eda2b30d7747d23283a05c0ce45ad99",
+    "uses": []
+   },
+   "detail": "real_estate.monthly_mortgage: monthly_payment = 75,917.93 $/mo; claim inside [75,842.01, 75,993.84]",
+   "name": "m",
+   "status": "CONFIRMED"
+  }
+ ],
+ "attest": {
+  "envelope": {
+   "format": "COSE_Sign1",
+   "spec": "concordance-receipt/3.0",
+   "cose_sign1_b64": "0oRYsKQBJwN4I2FwcGxpY2F0aW9uL2NvbmNvcmRhbmNlLXJlY29yZCtqc29uBFgYZWQyNTUxOTpkZWM5YTJlMDBlMDAyNjI0OgABEXCjbGNvbnRlbnRfaGFzaHhAMTdmNzg1OGVkMWM4NmI3ZTk2ZmFmNDAxMjg5Y2EzOTYwOWViYjM3MmE2NjRhZjdmNzE0NGU5MmQzMzRmOTU5MWRraW5kZHNlYWxndmVyZGljdGRQQVNToFkEt3siYW5jaG9ycyI6W10sImdhdGVfcmVzdWx0cyI6W3siZGV0YWlscyI6eyJicm9rZW5fYXQiOm51bGwsImNvbmZpcm1lZF9zdGVwcyI6MSwiZXJyb3JfYXQiOm51bGwsImdhcF9hdCI6bnVsbCwicmVhZCI6InN1cnZpdmVkIDEgYXR0ZW1wdGVkIHJlZnV0YXRpb247IG5vdCBzaG93biB0cnVlIOKAlCBzaG93biBub3QgZmFsc2UgYnkgdGhlc2UgY2hlY2tzLCBhbmQgc2lsZW50IG9uIGFueXRoaW5nIHRoZXkgZGlkIG5vdCB0ZXN0IiwicmVmdXRhdGlvbnMiOnsiYXR0ZW1wdGVkIjoxLCJjb3VudGVyZXhhbXBsZXMiOjAsImVycm9yZWQiOjAsIm5vdF9hcHBsaWNhYmxlIjowLCJzdXJ2aXZlZCI6MX0sInN0ZXBzIjoxLCJ2ZXJkaWN0IjoiSE9MRFMifSwiZ2F0ZSI6IlJFRCIsInJlYXNvbnMiOlsiZGVyaXZhdGlvbiB2ZXJkaWN0OiBIT0xEUyJdLCJzdGF0dXMiOiJQQVNTIn1dLCJvdmVyYWxsIjoiUEFTUyIsInNjaGVtYV92ZXJzaW9uIjoiMi4wIiwidmVyaWZpZXJfcmVzdWx0cyI6W3siZGF0YSI6eyJjbGFpbSI6IiIsImRvbWFpbiI6InJlYWxfZXN0YXRlIiwibGlua19vayI6dHJ1ZSwicmVmdXRhdGlvbnMiOnsiYXR0ZW1wdGVkIjpbInJlYWxfZXN0YXRlLm1vbnRobHlfbW9ydGdhZ2UiXSwiYmFuZHMiOlt7ImFjdHVhbCI6NzU5MTcuOTI1MTQ2Mzk2NDksImNoZWNrIjoicmVhbF9lc3RhdGUubW9udGhseV9tb3J0Z2FnZSIsImNsYWltZWQiOjc1OTE3LjkzLCJoaWdoIjo3NTk5My44NDMwNzE1NDI4OCwiaW5zaWRlIjp0cnVlLCJsb3ciOjc1ODQyLjAwNzIyMTI1MDEsIm9mZl9ieSI6MC4wMDQ4NTM2MDM1MDI4NTE5MTEsInRvbGVyYW5jZSI6NzUuOTE3OTI1MTQ2Mzk2NSwidW5pdCI6IiQvbW8iLCJ3aGF0IjoibW9udGhseV9wYXltZW50In1dLCJjb3VudGVyZXhhbXBsZXMiOltdLCJlcnJvcmVkIjpbXSwibm90X2FwcGxpY2FibGUiOltdLCJzdXJ2aXZlZCI6WyJyZWFsX2VzdGF0ZS5tb250aGx5X21vcnRnYWdlIl19LCJzcGVjX2hhc2giOiJhZTlhNTMxODI1MWQ4YzE4ZmQ0ODg4NDQzZmM5ODBkODJlZGEyYjMwZDc3NDdkMjMyODNhMDVjMGNlNDVhZDk5IiwidXNlcyI6W119LCJkZXRhaWwiOiJyZWFsX2VzdGF0ZS5tb250aGx5X21vcnRnYWdlOiBtb250aGx5X3BheW1lbnQgPSA3NSw5MTcuOTMgJC9tbzsgY2xhaW0gaW5zaWRlIFs3NSw4NDIuMDEsIDc1LDk5My44NF0iLCJuYW1lIjoibSIsInN0YXR1cyI6IkNPTkZJUk1FRCJ9XX1YQNFZu0A7vp76sAR3zRLsZDx0sCoAlwPutbcwhzgUx0RWPOLUf3x8wNM628J1jv/MmNN4e9TfEOK8ZIecIQp0uwI=",
+   "content_hash": "17f7858ed1c86b7e96faf401289ca39609ebb372a664af7f7144e92d334f9591",
+   "kid": "ed25519:dec9a2e00e002624",
+   "public_key": "M0tzQB4YkjzLFeovYb0eXf94Ux2_2uFqzJHOfypitxM",
+   "means": "payload = canonical record bytes (SHA-256 = content_hash); protected header: alg EdDSA (-8), content type, kid, and the concordance claim set under label -70001; verify with any COSE library or docs/verify_receipt.py"
+  }
+ }
+}

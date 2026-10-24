@@ -1,4 +1,11 @@
-# Receipt specification — v3.0
+# Receipt specification — `concordance-receipt/3.0`
+
+This is the versioned, open format of a Concordance receipt. The version id travels in the receipt itself,
+in the attestation's `spec` field, so a consumer knows which rules apply; it is bumped on any change to the
+envelope or attestation shape, and the record's own `content_hash` is unaffected (SEAL_SPEC.md). A committed
+golden receipt (`tests/fixtures/receipt_golden.json`) and its conformance test
+(`tests/test_receipt_conformance.py`) pin this format — the reference verifier validates the golden and
+rejects tampered copies; regenerate the golden with `tools/mint_golden_receipt.py`.
 
 A receipt is what `seal_fetch` (MCP) and `GET /s/<hash>` (HTTP) return. It has two parts: the **record**,
 whose SHA-256 is its address, and the **attestation** beside it, which says who vouches for the record and
@@ -10,7 +17,8 @@ is the same whether or not anyone has signed it, and a reader with no key materi
   ...record fields...,                 # see SEAL_SPEC.md; kind = seal | document
   "content_hash": "<64 hex>",          # sha256(canonical(record minus content_hash))
   "attest": {                          # absent → self-attested (content-addressed only)
-    "envelope": { "format": "COSE_Sign1", "cose_sign1_b64": "...", "content_hash": "...",
+    "envelope": { "format": "COSE_Sign1", "spec": "concordance-receipt/3.0",
+                  "cose_sign1_b64": "...", "content_hash": "...",
                   "kid": "ed25519:<16 hex>", "public_key": "<b64url raw Ed25519>" },
     "log":      { "service": "rekor", "kind": "rekord", "url": "https://rekor.sigstore.dev",
                   "uuid": "...", "index": 3428399704, "integrated_time": 1792795463, "log_id": "...",
@@ -44,6 +52,17 @@ Verification needs only the issuer public key: check the signature over the Sig_
 `"ed25519:" + sha256(raw public key)[:16]` — a label for key rotation, not a trust anchor; the public key
 itself travels in the envelope and in the log entry. Pin the public key of an issuer you trust; `kid` tells
 you which one to pin.
+
+## 2a. Standards alignment
+
+The envelope is a COSE_Sign1 (RFC 9052) Signed Statement — the shape the SCITT architecture
+(`draft-ietf-scitt-architecture`) and the AI agent-receipt draft (`draft-noa-scitt-ai-agent-receipt`) build
+on, so a SCITT-aware consumer can treat a Concordance receipt as a signed statement about an artifact.
+Today the Concordance claim set (`content_hash`, `kind`, `verdict`) rides under the private-use header
+label `-70001`; mapping it to registered SCITT CWT claims, also emitting the record as an in-toto Statement
+signed keylessly, and mapping the fields to AgentLedger proof-of-behavior are planned so the receipt
+interchanges without a bespoke reader. This section states the shape the format conforms to; it does not
+yet claim registered-claim conformance. The `spec` field names the version a given receipt was minted under.
 
 ## 3. The log entry — Rekor `rekord`
 
@@ -89,10 +108,14 @@ record of its own with its own attestation. Walk the tree by fetching each one a
 
 ## 6. Reference verifier
 
-`docs/verify_receipt.py` (≈190 lines; depends on `cbor2` and `cryptography`, imports nothing from this repo)
-runs the four checks and prints one line per check plus the document tree. Exit 0 iff every check that could
-run passed. `--offline` skips the live log fetch and uses the entry held in the receipt (if any);
-`--public-key` pins a key instead of trusting the one in the envelope.
+`docs/verify_receipt.py` (≈200 lines; imports nothing from this repo) runs the four checks and prints one
+line per check plus the document tree. The hash check is pure Python standard library — a reader with no
+dependencies installed can re-hash a record and confirm its `content_hash`; the signature and log checks
+import `cbor2` and `cryptography` lazily, only when they run. Exit 0 iff every check that could run passed.
+`--offline` skips the live log fetch and uses the entry held in the receipt (if any); `--public-key` pins a
+key instead of trusting the one in the envelope. `tests/test_receipt_conformance.py` runs these same
+functions against the golden receipt and against tampered copies, so the independent check is known to pass
+a real receipt and reject a forged one.
 
 ## 7. What this does and does not establish
 

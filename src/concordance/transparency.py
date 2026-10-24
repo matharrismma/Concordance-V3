@@ -7,8 +7,9 @@ T1 ENVELOPE: every sealed record can be wrapped as a COSE_Sign1 signed statement
     signature = Ed25519 over the COSE Sig_structure, with the engine's issuer key.
 Anyone with pycose (or any COSE library) and the issuer's public key verifies it without this code.
 
-T2 LOG: the statement's hash is registered on a public transparency log (Sigstore's Rekor, as a
-`hashedrekord`: SHA-256 digest + signature + public key). The log answers with the entry's index, its
+T2 LOG: the signed statement is registered on a public transparency log (Sigstore's Rekor, as a
+`rekord`: the statement bytes are the artifact and Rekor verifies the signature before admitting, so a
+logged entry is itself a check (`hashedrekord` is not used — see publish()). The log answers with the entry's index, its
 integrated time, and a Merkle inclusion proof against a signed tree head. The seal gains
     log = {"service": "rekor", "index": ..., "uuid": ..., "integrated_time": ..., "inclusion_proof": {...}}
 and `rekor-cli verify --rekor-server https://rekor.sigstore.dev --uuid <uuid>` confirms it from anywhere.
@@ -33,6 +34,10 @@ from .validate import canonical_json_bytes, sha256_bytes
 
 REKOR = os.environ.get("CONCORDANCE_REKOR_URL", "https://rekor.sigstore.dev").rstrip("/")
 CONTENT_TYPE = "application/concordance-record+json"
+# The receipt-format version, carried in the attestation (unhashed) so a consumer knows which rules
+# apply (RECEIPT_SPEC.md). Bump on any change to the envelope/attestation shape; the record's own
+# content_hash is unaffected — SEAL_SPEC.md: a record hashes the same with or without attestation.
+SPEC_VERSION = "concordance-receipt/3.0"
 
 
 # ── keys ──────────────────────────────────────────────────────────────────────────────────────────
@@ -97,7 +102,7 @@ def envelope(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                              LABEL_CLAIMS: {"content_hash": content_hash, "kind": kind, "verdict": verdict}})
     sig = signing._b64u_decode(signing.sign_bytes(_sig_structure(protected, payload), priv))
     encoded = cbor2.dumps(cbor2.CBORTag(18, [protected, {}, payload, sig]))
-    return {"format": "COSE_Sign1", "cose_sign1_b64": base64.b64encode(encoded).decode(),
+    return {"format": "COSE_Sign1", "spec": SPEC_VERSION, "cose_sign1_b64": base64.b64encode(encoded).decode(),
             "content_hash": content_hash, "kid": issuer_kid(), "public_key": signing.public_from_private(priv),
             "means": "payload = canonical record bytes (SHA-256 = content_hash); protected header: alg EdDSA (-8), "
                      "content type, kid, and the concordance claim set under label -70001; verify with any COSE "
