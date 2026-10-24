@@ -33,6 +33,7 @@ import urllib.request
 
 ALG_EDDSA = -8
 LABEL_CLAIMS = -70001
+CWT_CLAIMS, CWT_ISS, CWT_SUB = 15, 1, 2   # SCITT CWT Claims header (RFC 9597) and CWT claims (RFC 8392)
 
 
 def canonical(obj) -> bytes:
@@ -76,8 +77,13 @@ def check_signature(statement_b64: str, public_key_b64u: str) -> tuple[bool, str
     payload_hash = sha256(payload)
     if payload_hash != claims.get("content_hash"):
         return False, f"payload hashes to {payload_hash[:16]}… but header claims {str(claims.get('content_hash'))[:16]}…", claims
-    return True, f"EdDSA ok; kid {(hdr.get(4) or b'').decode(errors='replace')}; payload sha256 = {payload_hash[:16]}…", {
-        **claims, "payload_hash": payload_hash, "statement_bytes": raw}
+    # SCITT CWT Claims header (RFC 9597), when present: the subject must be this content_hash.
+    cwt = dict(hdr.get(CWT_CLAIMS) or {})
+    if cwt and cwt.get(CWT_SUB) != payload_hash:
+        return False, f"CWT sub {str(cwt.get(CWT_SUB))[:16]}… does not match the payload hash {payload_hash[:16]}…", claims
+    scitt = f"; SCITT sub ok, iss {cwt.get(CWT_ISS)}" if cwt else ""
+    return True, f"EdDSA ok; kid {(hdr.get(4) or b'').decode(errors='replace')}; payload sha256 = {payload_hash[:16]}…{scitt}", {
+        **claims, "payload_hash": payload_hash, "statement_bytes": raw, "cwt_iss": cwt.get(CWT_ISS), "cwt_sub": cwt.get(CWT_SUB)}
 
 
 def fetch_entry(rekor: str, uuid: str) -> dict:

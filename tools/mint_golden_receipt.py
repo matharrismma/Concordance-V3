@@ -33,11 +33,13 @@ assert r["verdict"] == "HOLDS", r["verdict"]
 h = r["seal"]["content_hash"]
 record = dict(cas.fetch(h))
 record["content_hash"] = h
-env = T.envelope(record)
+att = T.attest(h, publish_log=False)   # envelope (COSE/SCITT) + in_toto (DSSE), no live log entry
+env = att.get("envelope")
 assert env, "no issuer key configured — envelope() returned None"
-receipt = {**record, "attest": {"envelope": env}}   # offline golden: the record + who vouches, no log line
+receipt = {**record, "attest": {"envelope": env, "in_toto": att.get("in_toto")}}   # offline golden, no log line
 
 out = ROOT / "tests" / "fixtures" / "receipt_golden.json"
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(json.dumps(receipt, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print(f"wrote {out.relative_to(ROOT)}  (content_hash {h[:16]}…, spec {env.get('spec')}, kid {env.get('kid')})")
+print(f"wrote {out.relative_to(ROOT)}  (content_hash {h[:16]}…, spec {env.get('spec')}, kid {env.get('kid')}, "
+      f"in_toto {'yes' if att.get('in_toto') else 'no'})")

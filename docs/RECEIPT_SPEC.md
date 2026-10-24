@@ -20,6 +20,10 @@ is the same whether or not anyone has signed it, and a reader with no key materi
     "envelope": { "format": "COSE_Sign1", "spec": "concordance-receipt/3.0",
                   "cose_sign1_b64": "...", "content_hash": "...",
                   "kid": "ed25519:<16 hex>", "public_key": "<b64url raw Ed25519>" },
+    "in_toto":  { "payloadType": "application/vnd.in-toto+json",   # the same verdict, DSSE-wrapped (§2b)
+                  "payload": "<b64 of an in-toto Statement v1>",
+                  "signatures": [ { "keyid": "ed25519:<16 hex>", "sig": "<b64 Ed25519 over PAE>" } ],
+                  "public_key": "<b64url raw Ed25519>" },
     "log":      { "service": "rekor", "kind": "rekord", "url": "https://rekor.sigstore.dev",
                   "uuid": "...", "index": 3428399704, "integrated_time": 1792795463, "log_id": "...",
                   "digest": "<sha256 of the statement bytes>",
@@ -42,7 +46,7 @@ of a seal (SEAL_SPEC.md); everything below is about who stands behind it.
 
 | part | content |
 |---|---|
-| protected (bstr-wrapped CBOR map) | `1: -8` (EdDSA) · `3: "application/concordance-record+json"` · `4: <kid bytes>` · `-70001: {content_hash, kind, verdict}` — the claim set, under a private-use label |
+| protected (bstr-wrapped CBOR map) | `1: -8` (EdDSA) · `3: "application/concordance-record+json"` · `4: <kid bytes>` · `15: {1: iss (kid), 2: sub (content_hash), 6: iat}` — the CWT Claims header (RFC 9597), the SCITT claims · `-70001: {content_hash, kind, verdict}` — the richer claim set, under a private-use label |
 | unprotected | `{}` |
 | payload | `canonical(record − {content_hash})` — so `sha256(payload) == content_hash` |
 | signature | Ed25519 over `Sig_structure = CBOR(["Signature1", protected, b"", payload])` |
@@ -55,14 +59,25 @@ you which one to pin.
 
 ## 2a. Standards alignment
 
-The envelope is a COSE_Sign1 (RFC 9052) Signed Statement — the shape the SCITT architecture
-(`draft-ietf-scitt-architecture`) and the AI agent-receipt draft (`draft-noa-scitt-ai-agent-receipt`) build
-on, so a SCITT-aware consumer can treat a Concordance receipt as a signed statement about an artifact.
-Today the Concordance claim set (`content_hash`, `kind`, `verdict`) rides under the private-use header
-label `-70001`; mapping it to registered SCITT CWT claims, also emitting the record as an in-toto Statement
-signed keylessly, and mapping the fields to AgentLedger proof-of-behavior are planned so the receipt
-interchanges without a bespoke reader. This section states the shape the format conforms to; it does not
-yet claim registered-claim conformance. The `spec` field names the version a given receipt was minted under.
+The envelope is a COSE_Sign1 (RFC 9052) Signed Statement in the SCITT shape
+(`draft-ietf-scitt-architecture`, `draft-noa-scitt-ai-agent-receipt`), and it carries the registered CWT
+Claims header (RFC 9597, COSE header label 15) with CWT claims (RFC 8392): `iss` (1) = the issuer `kid`,
+`sub` (2) = the `content_hash` (the subject), `iat` (6) = issuance time. They live in the protected header
+only, so they cannot be swapped, and `verify_receipt.py` rejects a statement whose `sub` is not the payload
+hash. A SCITT-aware consumer reads these directly; the richer Concordance claim set (`content_hash`, `kind`,
+`verdict`) rides beside them under the private-use label `-70001`. Mapping the Concordance detail to
+namespaced CWT claims and to AgentLedger proof-of-behavior fields is the remaining interchange work. The
+`spec` field names the version a given receipt was minted under.
+
+## 2b. The in-toto form — Statement v1 in a DSSE envelope
+
+The same verdict is also emitted as an in-toto Statement v1 (`https://in-toto.io/Statement/v1`) wrapped in a
+DSSE envelope, carried at `attest.in_toto`, for in-toto / SLSA consumers. The Statement's `subject` is the
+record (`digest.sha256 = content_hash`); its `predicateType` is this engine's
+(`…/attestations/verdict/v1`); its `predicate` is `{verdict, kind, content_hash, spec}`. The DSSE signature
+is Ed25519 over `PAE(payloadType, body)` with `payloadType = application/vnd.in-toto+json` — the type is
+bound into the signed bytes (the CVE-2022-35929 lesson). Today it is signed with the issuer key; the
+production path is keyless (Fulcio / OIDC) and logged to Rekor, with the same structure.
 
 ## 3. The log entry — Rekor `rekord`
 

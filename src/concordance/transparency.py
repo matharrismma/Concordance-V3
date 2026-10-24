@@ -25,6 +25,7 @@ import base64
 import hashlib
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional, Tuple
@@ -79,6 +80,15 @@ def _record_bytes(record: Dict[str, Any]) -> Tuple[bytes, str]:
 # concordance claim set rides under the private-use label -70001 as a CBOR map.
 ALG_EDDSA = -8
 LABEL_CLAIMS = -70001
+# SCITT signed-statement conformance: the CWT Claims header (RFC 9597, COSE header label 15) carries
+# registered CWT claims (RFC 8392) — iss (1) = issuer kid, sub (2) = content_hash (the subject),
+# iat (6) = issuance time. Protected-header only (RFC 9597 §5, to avoid malleability). The richer
+# concordance claim set stays under the private-use label above, beside it.
+CWT_CLAIMS, CWT_ISS, CWT_SUB, CWT_IAT = 15, 1, 2, 6
+# The same verdict, also emitted as an in-toto Statement v1 in a DSSE envelope (for SLSA / in-toto
+# consumers). The predicateType is this engine's own, versioned.
+PREDICATE_TYPE = "https://github.com/matharrismma/Concordance-V3/attestations/verdict/v1"
+DSSE_PAYLOAD_TYPE = "application/vnd.in-toto+json"
 
 
 def _sig_structure(protected: bytes, payload: bytes) -> bytes:
@@ -99,14 +109,51 @@ def envelope(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     kind = "document" if record.get("kind") == "document" else "seal"
     verdict = record.get("verdict") or record.get("overall")
     protected = cbor2.dumps({1: ALG_EDDSA, 3: CONTENT_TYPE, 4: issuer_kid().encode(),
+                             CWT_CLAIMS: {CWT_ISS: issuer_kid(), CWT_SUB: content_hash, CWT_IAT: int(time.time())},
                              LABEL_CLAIMS: {"content_hash": content_hash, "kind": kind, "verdict": verdict}})
     sig = signing._b64u_decode(signing.sign_bytes(_sig_structure(protected, payload), priv))
     encoded = cbor2.dumps(cbor2.CBORTag(18, [protected, {}, payload, sig]))
     return {"format": "COSE_Sign1", "spec": SPEC_VERSION, "cose_sign1_b64": base64.b64encode(encoded).decode(),
             "content_hash": content_hash, "kid": issuer_kid(), "public_key": signing.public_from_private(priv),
             "means": "payload = canonical record bytes (SHA-256 = content_hash); protected header: alg EdDSA (-8), "
-                     "content type, kid, and the concordance claim set under label -70001; verify with any COSE "
-                     "library or docs/verify_receipt.py"}
+                     "content type, kid, the CWT Claims header (15: iss, sub = content_hash, iat — the SCITT "
+                     "signed-statement shape), and the concordance claim set under label -70001; verify with any "
+                     "COSE library or docs/verify_receipt.py"}
+
+
+def in_toto_statement(record: Dict[str, Any]) -> Dict[str, Any]:
+    """The record as an in-toto Statement v1 (https://in-toto.io/Statement/v1): the subject is the
+    content-addressed record, the predicate is the verdict. Deterministic and key-independent — the
+    same record always yields the same Statement."""
+    _payload, content_hash = _record_bytes(record)
+    kind = "document" if record.get("kind") == "document" else "seal"
+    verdict = record.get("verdict") or record.get("overall")
+    return {"_type": "https://in-toto.io/Statement/v1",
+            "subject": [{"name": f"concordance:{kind}:{content_hash}", "digest": {"sha256": content_hash}}],
+            "predicateType": PREDICATE_TYPE,
+            "predicate": {"verdict": verdict, "kind": kind, "content_hash": content_hash, "spec": SPEC_VERSION}}
+
+
+def _dsse_pae(payload_type: str, body: bytes) -> bytes:
+    """DSSE Pre-Authentication Encoding (secure-systems-lab/dsse): binds the payload type into the
+    signed bytes, so a signature minted for one type cannot be replayed as another (CVE-2022-35929)."""
+    pt = payload_type.encode()
+    return b"DSSEv1 " + str(len(pt)).encode() + b" " + pt + b" " + str(len(body)).encode() + b" " + body
+
+
+def dsse_envelope(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The in-toto Statement in a DSSE envelope, signed with the issuer key; None when no key is set.
+    The signature is Ed25519 over PAE(payloadType, statement bytes)."""
+    priv = issuer_private_key()
+    if not priv:
+        return None
+    body = canonical_json_bytes(in_toto_statement(record))
+    sig_raw = signing._b64u_decode(signing.sign_bytes(_dsse_pae(DSSE_PAYLOAD_TYPE, body), priv))
+    return {"payloadType": DSSE_PAYLOAD_TYPE, "payload": base64.b64encode(body).decode(),
+            "signatures": [{"keyid": issuer_kid(), "sig": base64.b64encode(sig_raw).decode()}],
+            "public_key": signing.public_from_private(priv),
+            "means": "DSSE: verify Ed25519 over PAE(payloadType, base64-decoded payload); the payload is an "
+                     "in-toto Statement v1 whose subject.digest.sha256 is the content_hash"}
 
 
 def verify_envelope(cose_sign1_b64: str, public_key_b64u: str) -> Dict[str, Any]:
@@ -215,7 +262,7 @@ def attest(content_hash: str, *, publish_log: Optional[bool] = None) -> Dict[str
     if side and side.get("log") and not side["log"].get("pending"):
         return side
     env = envelope(rec)
-    out: Dict[str, Any] = {"content_hash": content_hash, "envelope": env}
+    out: Dict[str, Any] = {"content_hash": content_hash, "envelope": env, "in_toto": dsse_envelope(rec)}
     want = (os.environ.get("CONCORDANCE_PUBLISH", "").strip() in ("1", "true", "yes")) if publish_log is None else publish_log
     if env and want:
         out["log"] = publish(content_hash, statement_b64=env["cose_sign1_b64"])
@@ -258,5 +305,5 @@ def _write_sidecar(content_hash: str, data: Dict[str, Any]) -> None:
         pass
 
 
-__all__ = ["envelope", "verify_envelope", "publish", "lookup", "attest", "status", "issuer_public_key",
-           "public_key_pem", "issuer_kid"]
+__all__ = ["envelope", "verify_envelope", "in_toto_statement", "dsse_envelope", "publish", "lookup",
+           "attest", "status", "issuer_public_key", "public_key_pem", "issuer_kid"]

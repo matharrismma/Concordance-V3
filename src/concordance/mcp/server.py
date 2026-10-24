@@ -212,9 +212,11 @@ def _call_tool(name: str, args: dict, config: EngineConfig) -> Any:
         att = _tr.attest(h) if (_tr.status()["issuer_key_configured"] or _tr._sidecar(h)) else None
         if att and "error" not in att:
             return {**rec, "attest": {"envelope": att.get("envelope"), "log": att.get("log"),
+                                      "in_toto": att.get("in_toto"),
                                       "means": "verify with docs/verify_receipt.py: re-hash the record (minus content_hash "
                                                "and attest), check the COSE_Sign1 under the issuer key, check the log entry "
-                                               "and its inclusion proof"}}
+                                               "and its inclusion proof; in_toto is the same verdict as an in-toto Statement "
+                                               "in a DSSE envelope, for in-toto/SLSA consumers"}}
         return rec
     if name == "audit":
         from .. import audit as _audit, text as _text
