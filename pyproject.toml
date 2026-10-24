@@ -7,6 +7,22 @@ name = "concordance"
 version = "3.0.0a0"
 description = "Receipts for numbers: deterministic verification of AI (and human) arithmetic with a re-checkable, content-addressed seal. MCP server + HTTP API."
 license = {text = "MIT"}
+readme = "README.md"
+authors = [{ name = "Matt Harris" }]
+keywords = ["verification", "receipts", "provenance", "attestation", "cose", "scitt", "in-toto", "rekor", "mcp", "deterministic", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Security :: Cryptography",
+]
 requires-python = ">=3.10"
 # Sovereign: ZERO required dependencies — the engine imports, serves, seals, and keeps the
 # corpus on the stdlib alone. Heavy deps are optional + lazy-loaded. NOTE: the derivation
@@ -15,6 +31,12 @@ requires-python = ">=3.10"
 # confirm math. Install `.[math]` for the full moat. The claim is "no required deps," not
 # "the moat runs on the stdlib."
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/matharrismma/Concordance-V3"
+Repository = "https://github.com/matharrismma/Concordance-V3"
+Changelog = "https://github.com/matharrismma/Concordance-V3/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/matharrismma/Concordance-V3/blob/main/docs/RECEIPT_SPEC.md"
 
 [project.scripts]
 concordance = "concordance.__main__:main"

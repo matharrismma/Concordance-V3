@@ -27,3 +27,20 @@ Regenerate docs after a verifier change: `tools/schema_gen.py` (docs/schemas.jso
 
 Rollback: the engine is a stateless process over an append-only ledger; redeploy the previous version and the
 ledger is untouched. Never rewrite `data/ledger/`.
+
+## Publishing and listings (owner only)
+
+The engine is meant to be reached through other people's harnesses, not a site. Everything below is
+prepared in the repo; running it is the owner's (it needs release credentials and authority).
+
+1. **PyPI.** `python -m build` (sdist + wheel), `python -m twine check dist/*`, then `twine upload dist/*`.
+   The package version is `pyproject.toml` `version`; keep it equal to the `v<version>` git tag.
+2. **MCP registry.** `server.json` (repo root) describes the stdio server and its one optional environment
+   variable. Validate and publish with the official publisher —
+   `mcp-publisher validate server.json` then `mcp-publisher publish`
+   (https://github.com/modelcontextprotocol/registry). The `io.github.matharrismma/...` name is proven by a
+   GitHub login.
+3. **Connector catalogs.** Submit the same `server.json`; the one-line pitch is its `description`.
+4. **GitHub Release.** `gh release create v<version>` from `CHANGELOG.md`, attaching the built wheel + sdist.
+
+Keep this list in step with `pyproject.toml` and `server.json`: a bumped version changes all four.

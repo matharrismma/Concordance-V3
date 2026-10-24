@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.matharrismma/concordance",
+  "description": "Receipts for numbers: deterministic verification of a numeric claim, returned as a re-checkable, content-addressed, signed receipt (COSE_Sign1 in the SCITT shape + an in-toto Statement, logged to Rekor).",
+  "version": "3.0.0a0",
+  "repository": {
+    "url": "https://github.com/matharrismma/Concordance-V3",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "concordance",
+      "version": "3.0.0a0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "CONCORDANCE_ISSUER_KEY",
+          "description": "Optional base64url Ed25519 private key. Without it, receipts are self-attested (content-addressed only); with it they are signed and can be logged to Rekor.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
