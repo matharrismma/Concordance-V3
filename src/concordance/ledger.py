@@ -69,6 +69,16 @@ def list_precedents(ledger_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
     return _load_precedents(ledger_dir)
 
 
+def precedent_for_record(record_hash: str, ledger_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """The precedent that chained a given sealed record (its `record_hash`), or None when the record
+    was never ledgered (only a PASS is chained; a sealed non-PASS record exists in the CAS but has no
+    chain node). On-demand only — the interchange view uses it, never the seal hot path."""
+    for p in _load_precedents(ledger_dir):
+        if p.get("record_hash") == record_hash:
+            return p
+    return None
+
+
 # ── Hash chain ─────────────────────────────────────────────────────────
 
 def compute_content_hash(precedent: Dict[str, Any]) -> str:

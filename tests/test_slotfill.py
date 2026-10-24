@@ -104,6 +104,34 @@ def test_force_filler_zero_false_positives():
         assert "force_units" not in _names(t), t
 
 
+# ---- kinematics: d = v0·t + ½·a·t², any order (the four units overlap in text) ----
+
+def test_kinematics_any_order_confirms():
+    # v0=5, a=2, t=3 -> d = 5*3 + 0.5*2*9 = 24; the _x_kinematics regex needs strict v0-a-t-d order
+    for t in ["for 3 s an object starting at 5 m/s and accelerating at 2 m/s^2 covers 24 m",
+              "an object accelerating at 2 m/s^2 from 5 m/s travels 24 m in 3 s"]:
+        assert "kinematics_units" in _names(t), t
+        r = audit(t, CFG, seal=False)
+        assert r["held"] == 1 and r["broken"] == 0, (t, r["results"])
+
+
+def test_kinematics_catches_a_wrong_claim():
+    r = audit("accelerating at 2 m/s^2 from 5 m/s for 3 s it covers 30 m", CFG, seal=False)  # 24, not 30
+    assert r["broken"] == 1 and r["results"][0]["status"] == "MISMATCH"
+
+
+def test_kinematics_in_order_still_reports_the_original_extractor():
+    names = _names("starting at 5 m/s, accelerating at 2 m/s^2 for 3 s, it travels 24 m")
+    assert "kinematics" in names and "kinematics_units" not in names
+
+
+def test_kinematics_filler_zero_false_positives():
+    for t in ["a car accelerating at 2 m/s^2 is fast",         # only acceleration
+              "accelerating at 2 m/s^2 for 3 s",                # no v0, no distance
+              "it travels 24 m after accelerating"]:            # no v0, no a, no t
+        assert "kinematics_units" not in _names(t), t
+
+
 # ---- molar mass by NAME (a found table, never a parsed word) ----
 
 def test_molar_mass_named_confirms():

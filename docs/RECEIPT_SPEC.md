@@ -66,7 +66,7 @@ Claims header (RFC 9597, COSE header label 15) with CWT claims (RFC 8392): `iss`
 only, so they cannot be swapped, and `verify_receipt.py` rejects a statement whose `sub` is not the payload
 hash. A SCITT-aware consumer reads these directly; the richer Concordance claim set (`content_hash`, `kind`,
 `verdict`) rides beside them under the private-use label `-70001`. Mapping the Concordance detail to
-namespaced CWT claims and to AgentLedger proof-of-behavior fields is the remaining interchange work. The
+namespaced CWT claims is the remaining interchange work (the AgentLedger mapping below is done). The
 `spec` field names the version a given receipt was minted under.
 
 ## 2b. The in-toto form — Statement v1 in a DSSE envelope
@@ -78,6 +78,19 @@ record (`digest.sha256 = content_hash`); its `predicateType` is this engine's
 is Ed25519 over `PAE(payloadType, body)` with `payloadType = application/vnd.in-toto+json` — the type is
 bound into the signed bytes (the CVE-2022-35929 lesson). Today it is signed with the issuer key; the
 production path is keyless (Fulcio / OIDC) and logged to Rekor, with the same structure.
+
+## 2c. The AgentLedger form — proof-of-behavior fields
+
+For an [AgentLedger proof-of-behavior](https://datatracker.ietf.org/doc/html/draft-dembowski-agentledger-proof-of-behavior-00)
+consumer, `seal_fetch` also carries `attest.agentledger` (`transparency.agentledger_pob`): the signed,
+hash-chained, per-tool_call shape. It is a **view** of the same receipt, not a second attestation —
+`payload_hash` is the verified input's `spec_hash`, `result_hash` is the record's `content_hash`,
+`prev_hash` is the prior node in this engine's hash-chained ledger (`GENESIS` at the root), `verdict` and
+`iat` come from the record and its ledger node, and the `signature` is the record's own COSE_Sign1 (Ed25519)
+over `result_hash`, which verifies with `verify_receipt.py`/`verify_envelope` under the issuer key. Like
+PoB itself, it records behaviour, not correctness: the verdict says only what was checked. A sealed record
+that was never chained (a non-PASS verdict is sealed but not ledgered) reports `chained: false` and a null
+`prev_hash`.
 
 ## 3. The log entry — Rekor `rekord`
 

@@ -305,5 +305,58 @@ def _write_sidecar(content_hash: str, data: Dict[str, Any]) -> None:
         pass
 
 
-__all__ = ["envelope", "verify_envelope", "in_toto_statement", "dsse_envelope", "publish", "lookup",
-           "attest", "status", "issuer_public_key", "public_key_pem", "issuer_kid"]
+AGENTLEDGER_SPEC = "draft-dembowski-agentledger-proof-of-behavior-00"
+
+
+def _payload_hash(record: Dict[str, Any]) -> Optional[str]:
+    """The hash of the verified input(s): the one `spec_hash` the record bound, or a SHA-256 over the
+    sorted set when a document bound several. None when the record carries no input hash."""
+    import hashlib
+    hashes: list = []
+    for vr in record.get("verifier_results") or []:
+        sh = (vr.get("data") or {}).get("spec_hash")
+        if sh and sh not in hashes:
+            hashes.append(sh)
+    if not hashes:
+        return None
+    if len(hashes) == 1:
+        return hashes[0]
+    return hashlib.sha256(json.dumps(sorted(hashes), separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def agentledger_pob(content_hash: str) -> Optional[Dict[str, Any]]:
+    """Map a sealed receipt to an AgentLedger proof-of-behavior entry (draft-dembowski-…): the signed,
+    hash-chained, per-tool_call shape — `payload_hash` (the verified input), `result_hash` (the sealed
+    verdict record), `prev_hash` (the prior node in this engine's ledger). It is a VIEW of the receipt,
+    not a second attestation: the signature is the record's own COSE_Sign1 (Ed25519) over `result_hash`,
+    and the chain is the engine's ledger (`ledger.precedent_for_record`). PoB records behaviour, not
+    correctness — the `verdict` says what was checked. None when the record is not found."""
+    from . import cas, ledger
+    rec = cas.fetch(content_hash)
+    if rec is None:
+        return None
+    prec = ledger.precedent_for_record(content_hash)
+    env = envelope(rec)
+    sealed_at = prec.get("sealed_at") if prec else None
+    return {
+        "format": "agentledger-pob", "spec": AGENTLEDGER_SPEC, "mapped_from": SPEC_VERSION,
+        "entry_type": "tool_call", "tool": "concordance.verify",
+        "payload_hash": _payload_hash(rec),
+        "result_hash": content_hash,
+        "prev_hash": (prec.get("prev_hash") if prec else None),
+        "ledger_node": (prec.get("content_hash") if prec else None),
+        "chained": prec is not None,
+        "verdict": rec.get("verdict") or rec.get("overall"),
+        "iat": int(sealed_at) if isinstance(sealed_at, (int, float)) else None,
+        "issuer": issuer_kid(),
+        "signature": ({"alg": "ed25519", "cose_sign1_b64": env["cose_sign1_b64"],
+                       "public_key": env["public_key"]} if env else None),
+        "means": ("a view of the receipt in the AgentLedger proof-of-behavior shape: payload_hash is the "
+                  "verified input's spec_hash, result_hash is the sealed record's content_hash, prev_hash is "
+                  "the prior node in this engine's hash-chained ledger (GENESIS at the root); the signature "
+                  "is the record's COSE_Sign1 over result_hash. It records behaviour, not correctness."),
+    }
+
+
+__all__ = ["envelope", "verify_envelope", "in_toto_statement", "dsse_envelope", "agentledger_pob",
+           "publish", "lookup", "attest", "status", "issuer_public_key", "public_key_pem", "issuer_kid"]

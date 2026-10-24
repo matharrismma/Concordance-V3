@@ -167,6 +167,31 @@ def x_force_units(text: str) -> List[Tuple[str, str, Dict[str, Any]]]:
     return out
 
 
+def x_kinematics_units(text: str) -> List[Tuple[str, str, Dict[str, Any]]]:
+    """v0 (m/s), a (m/s²), t (s) and d (m) in ONE clause that says "accelerat…", any order -> physics
+    d = v0·t + ½·a·t². The regex _x_kinematics catches only the in-order "starting at … accelerating
+    at … for … s … travels … m"; this catches the inverted orders. The four units overlap in text
+    (m/s² contains m/s contains m; "s" sits inside "m/s"), so each pattern uses a lookahead to claim
+    only its own unit — m/s not before ²///, bare metres not before / or "per", seconds as a whole
+    number-word. Each slot must be present exactly once or nothing is extracted; a wrong displacement
+    breaks honestly. The verdict value (d) is handed over as the verifier computes it."""
+    out = []
+    for sent in _clauses(text):
+        _kw = re.search(r"\baccelerat\w+\b", sent, re.I)
+        if not _kw:
+            continue
+        v0 = _one(_N + r"\s*(?:m/s(?![\^2²/])|met(?:er|re)s?\s+per\s+second(?!\s+squared))\b", sent)
+        a = _one(_N + r"\s*(?:m/s\^?2|m/s²|m/s/s|met(?:er|re)s?\s+per\s+second\s+squared)\b", sent)
+        t = _one(_N + r"\s*(?:s|sec|seconds?)\b", sent)
+        d = _one(_N + r"\s*(?:m|met(?:er|re)s?)\b(?!/|\s*\^|\s+per)", sent)
+        if not (v0 and a and t and d):
+            continue
+        out.append((_tight(sent, _kw, v0, a, t, d), "physics",
+                    {"PHYS_VERIFY": {"v0": _f(v0.group(1)), "a": _f(a.group(1)), "t": _f(t.group(1)),
+                                     "claimed_displacement": _f(d.group(1))}}))
+    return out
+
+
 _MM_NAMED = re.compile(r"\bmolar\s+mass\s+of\s+(?:the\s+)?([a-z][a-z \-]{1,30}?)\s+(?:is|=|equals)\s*(?:about|approximately|roughly|~|≈)?\s*"
                        + _N + r"\s*(?:g\s*/\s*mol|grams?\s+per\s+mole?)?", re.I)
 
@@ -216,6 +241,7 @@ FILLERS = (
     ("ohms_law", x_ohms_law),
     ("kinetic_energy_units", x_kinetic_energy_units),
     ("force_units", x_force_units),
+    ("kinematics_units", x_kinematics_units),
     ("molar_mass_named", x_molar_mass_named),
     ("escape_velocity", x_escape_velocity),
 )
