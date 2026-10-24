@@ -41,10 +41,18 @@ the field and its nearest valid name, never a silent "not applicable".
 
 ## Read the verdict exactly
 
+This is not a truth engine. Where a value can be computed it is computed, and the claim must fall inside a
+**band** around it — `[actual − tol, actual + tol]`, with the tolerance the verifier sets and a caller may only
+tighten. Everything that cannot be computed is **narrowed**, not proven: the engine attempts refutations and
+reports which the claim survived, which produced a counterexample, and which could not be attempted. A
+counterexample is the strongest thing a receipt can hold; a survival is only the absence of one. Every
+response carries `read` (one sentence saying what the verdict is *not*) and `refutations`
+(`attempted / survived / counterexamples / not_applicable`, with every band); both are sealed into the record.
+
 | verdict | meaning |
 |---|---|
-| `HOLDS` | every checked claim recomputed to the stated value |
-| `BROKEN` | a checked claim did **not** — the only verdict that is a finding about the claim |
+| `HOLDS` | survived every attempted refutation — shown **not false** by these checks, silent on anything they did not test |
+| `BROKEN` | a counterexample: the recomputed value, the band, and how far outside it the claim fell — the only verdict that is a finding about the claim |
 | `PARTIAL` | the checked fragment held; `coverage.unchecked_text` names material text that was **not** checked |
 | `INCOMPLETE` | no verifier applied; says nothing about truth |
 | `SCHEMA_ERROR` | the packet does not match the domain's schema; `problems[].field` says what to fix |

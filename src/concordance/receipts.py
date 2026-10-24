@@ -94,7 +94,10 @@ def record_from_derivation(result: Dict[str, Any], *, domain: str = "mathematics
             # a re-fetcher can rehash the spec they hold to confirm it is the one that was checked.
             data={"claim": redact.redact(str(e.get("claim", "")))[0], "domain": e.get("domain", ""),
                   "uses": e.get("uses", []), "link_ok": e.get("link_ok", True),
-                  "spec_hash": str(e.get("spec_hash", ""))},
+                  "spec_hash": str(e.get("spec_hash", "")),
+                  # the inverted reading is sealed too: which refutations were attempted, the bands, and any
+                  # counterexample — the strongest artifact a receipt can hold travels in the permanent record
+                  **({"refutations": e["refutations"]} if e.get("refutations") else {})},
         )
         for i, e in enumerate(trail)
     )
@@ -102,7 +105,8 @@ def record_from_derivation(result: Dict[str, Any], *, domain: str = "mathematics
         gate="RED",
         status="PASS" if overall == "PASS" else "REJECT",
         reasons=[f"derivation verdict: {verdict}"],
-        details={"verdict": verdict, "steps": result.get("steps"),
+        details={"verdict": verdict, "read": result.get("read"), "refutations": result.get("refutations"),
+                 "steps": result.get("steps"),
                  "confirmed_steps": result.get("confirmed_steps"),
                  # error_at travels with the seal too: for a SYSTEM_ERROR, broken_at is correctly
                  # null, so without this the permanent record would name no step at all and

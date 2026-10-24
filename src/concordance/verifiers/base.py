@@ -57,6 +57,50 @@ def error(name: str, detail: str, data: Optional[Dict[str, Any]] = None) -> Veri
     return VerifierResult(name=name, status="ERROR", detail=detail, data=data)
 
 
+def band(name: str, actual: float, claimed: float, tol: float, what: str = "value",
+         data: Optional[Dict[str, Any]] = None, *, fmt: str = "{:,.6g}", unit: str = "") -> VerifierResult:
+    """The inverted comparison. A check does not find the true value; it names the BAND every true claim must
+    lie in — [actual − tol, actual + tol] — and reports whether the claim is inside. Inside is a survived
+    refutation (CONFIRMED); outside is a COUNTEREXAMPLE (MISMATCH) that carries the recomputed value, the band
+    and the distance, so the refutation itself is re-runnable and stronger than any confirmation. `data.band`
+    is the same shape either way; receipts and pages read it."""
+    tol = abs(float(tol))
+    lo, hi = actual - tol, actual + tol
+    inside = lo <= claimed <= hi
+    off = claimed - actual
+    bd = {"what": what, "low": lo, "high": hi, "actual": actual, "claimed": claimed, "tolerance": tol,
+          "inside": inside, "off_by": off, "unit": unit}
+    d = dict(data or {}, **{f"actual_{what}": actual, f"claimed_{what}": claimed, "band": bd})
+    u = f" {unit}" if unit else ""
+    if inside:
+        return confirm(name, f"{what} = {fmt.format(actual)}{u}; claim inside [{fmt.format(lo)}, {fmt.format(hi)}]", d)
+    d["counterexample"] = {"what": what, "claimed": claimed, "recomputed": actual, "band": [lo, hi], "off_by": off}
+    return mismatch(name, f"{what} = {fmt.format(actual)}{u}; claimed {fmt.format(claimed)} is outside "
+                          f"[{fmt.format(lo)}, {fmt.format(hi)}] (off by {off:+,.6g})", d)
+
+
+def merge_checks(name: str, results: Sequence[VerifierResult], data: Optional[Dict[str, Any]] = None) -> VerifierResult:
+    """Fold several band() results for one check into one VerifierResult without losing any band or
+    counterexample: the first MISMATCH governs (a counterexample outranks any number of survivals), and
+    `data.bands` keeps every band so the receipt can show the whole narrow way."""
+    bands = [r.data["band"] for r in results if r.data and isinstance(r.data.get("band"), dict)]
+    d = dict(data or {})
+    for r in results:
+        if r.data:
+            d.update({k: v for k, v in r.data.items() if k not in ("band", "counterexample")})
+    if bands:
+        d["bands"] = bands
+    bad = [r for r in results if r.status == "MISMATCH"]
+    if bad:
+        d["counterexample"] = (bad[0].data or {}).get("counterexample")
+        d["band"] = (bad[0].data or {}).get("band")
+        return mismatch(name, bad[0].detail, d)
+    errs = [r for r in results if r.status == "ERROR"]
+    if errs:
+        return error(name, errs[0].detail, d)
+    return confirm(name, "; ".join(r.detail for r in results if r.passed), d)
+
+
 def clamp_tol(spec: Dict[str, Any], key: str, default: float) -> float:
     """Caller-supplied tolerance, clamped: a caller may TIGHTEN a tolerance but never LOOSEN
     it past the verifier's default — otherwise an adversarial caller could widen the window to

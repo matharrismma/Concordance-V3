@@ -167,17 +167,48 @@ def _reduce_domain_results(results: List[Any]) -> Dict[str, str]:
     for r in applicable:
         if getattr(r, "data", None):
             merged.update(r.data)
+    ref = refutations(results)
     mism = [r for r in applicable if r.status == "MISMATCH"]
     if mism:
         return {"status": "MISMATCH", "detail": "; ".join(f"{r.name}: {r.detail}" for r in mism)[:300],
-                "data": merged}
+                "data": merged, "refutations": ref}
     errs = [r for r in applicable if r.status == "ERROR"]
     if errs:
         return {"status": "ERROR", "detail": "; ".join(f"{r.name}: {r.detail}" for r in errs)[:300],
-                "data": merged}
+                "data": merged, "refutations": ref}
     return {"status": "CONFIRMED",
             "detail": "; ".join(f"{r.name}: {r.detail}" for r in applicable if r.passed)[:300],
-            "data": merged}
+            "data": merged, "refutations": ref}
+
+
+def refutations(results: List[Any]) -> Dict[str, Any]:
+    """The inverted reading of a check list. A verifier never finds the truth; it ATTEMPTS refutations. This
+    names which were attempted, which the claim survived, which produced a counterexample, which errored, and
+    which could not fire on this packet — plus every band and counterexample, so the strongest artifact (the
+    counterexample) travels first-class."""
+    def _n(r):
+        return getattr(r, "name", None) or (r.get("name") if isinstance(r, dict) else None)
+    def _st(r):
+        return getattr(r, "status", None) or (r.get("status") if isinstance(r, dict) else None)
+    def _d(r):
+        return (getattr(r, "data", None) if not isinstance(r, dict) else r.get("data")) or {}
+    out = {"attempted": [], "survived": [], "counterexamples": [], "errored": [], "not_applicable": [],
+           "bands": []}
+    for r in results:
+        n, st, d = _n(r), _st(r), _d(r)
+        if st in ("CONFIRMED", "MISMATCH"):
+            out["attempted"].append(n)
+            (out["survived"] if st == "CONFIRMED" else out["counterexamples"]).append(
+                n if st == "CONFIRMED" else {"check": n, **(d.get("counterexample") or {"detail": getattr(r, "detail", "")})})
+        elif st == "ERROR":
+            out["errored"].append(n)
+        else:
+            out["not_applicable"].append(n)
+        if isinstance(d.get("bands"), list):
+            out["bands"].extend({"check": n, **b} for b in d["bands"] if isinstance(b, dict))
+        elif isinstance(d.get("band"), dict):
+            out["bands"].append({"check": n, **d["band"]})
+    return out
 
 
 def verify_domain(domain: str, spec: Dict[str, Any]) -> Dict[str, str]:
@@ -215,6 +246,20 @@ def verify_step(domain: str, spec: Dict[str, Any]) -> Dict[str, str]:
         return verify_domain(domain, spec or {})     # a MATH_VERIFY packet routes like any other domain
     except Exception as exc:  # noqa: BLE001 — fail closed
         return {"status": "ERROR", "detail": f"verifier raised: {type(exc).__name__}: {str(exc)[:200]}"}
+
+
+def _read(verdict: str, agg: Dict[str, int]) -> str:
+    """One sentence that says what the verdict is NOT. HOLDS is not truth: it is the set of refutations that
+    failed. BROKEN is a counterexample, which is a finding. The rest are facts about the engine."""
+    a, s, c = agg["attempted"], agg["survived"], agg["counterexamples"]
+    if verdict == "HOLDS":
+        return (f"survived {s} attempted refutation{'s' if s != 1 else ''}; not shown true — shown not false by "
+                f"these checks, and silent on anything they did not test")
+    if verdict == "BROKEN":
+        return f"{c} counterexample{'s' if c != 1 else ''} out of {a} attempted; the claim is outside the band"
+    if verdict == "INCOMPLETE":
+        return f"{s} of {a} attempted refutations survived; at least one step could not be tested — a gap, not a verdict"
+    return "the engine failed, not the claim; nothing here is a finding"
 
 
 def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -314,6 +359,8 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Kind B — surface a verifier's framing (explanation + the question that would let us
         # calculate) so a decline is actionable, not a dead end. Only the curated framing fields
         # travel out, never the verifier's whole internal data dict.
+        if sr.get("refutations"):
+            entry["refutations"] = sr["refutations"]
         _g = sr.get("data") or {}
         _framing = {k: _g[k] for k in ("framing_question", "need", "example", "route") if k in _g}
         if _framing:
@@ -387,8 +434,14 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
     else:
         verdict = "HOLDS"
 
+    agg = {"attempted": 0, "survived": 0, "counterexamples": 0, "errored": 0, "not_applicable": 0}
+    for t in trail:
+        for k in agg:
+            agg[k] += len((t.get("refutations") or {}).get(k) or [])
     out = {
         "verdict": verdict,
+        "read": _read(verdict, agg),
+        "refutations": agg,
         "steps": len(steps),
         "confirmed_steps": len(confirmed_ids),
         "broken_at": broken_at,

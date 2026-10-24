@@ -47,6 +47,39 @@ def _provenance_html(rec: Dict[str, Any]) -> str:
     return f'<p class="muted">{line} Check it yourself with <code>docs/verify_receipt.py</code>.</p>'
 
 
+def _read_of(rec: Dict[str, Any]) -> str:
+    for g in rec.get("gate_results") or []:
+        r = (g.get("details") or {}).get("read")
+        if r:
+            return r
+    return "Not a truth engine: a check computes what can be computed and narrows the rest; HOLDS means survived, never proven."
+
+
+def _narrow_html(ref: Dict[str, Any]) -> str:
+    """The narrow way for one step: the bands every true claim must lie in, the counterexample if there is
+    one, and which refutations were attempted. Empty when the verifier has not yet adopted band()."""
+    from html import escape as esc
+    if not ref:
+        return ""
+    def num(x):
+        try:
+            return f"{float(x):,.6g}"
+        except (TypeError, ValueError):
+            return esc(str(x))
+    rows = "".join(
+        f'<li><code>{esc(str(b.get("what")))}</code> must lie in <code>[{num(b.get("low"))}, {num(b.get("high"))}]</code>'
+        f' — claimed {num(b.get("claimed"))}: <span class="v {"CONFIRMED" if b.get("inside") else "MISMATCH"}">'
+        f'{"inside" if b.get("inside") else "outside, off by " + num(b.get("off_by"))}</span></li>'
+        for b in ref.get("bands") or [])
+    att, sur, cx = len(ref.get("attempted") or []), len(ref.get("survived") or []), ref.get("counterexamples") or []
+    line = f"{att} refutation{'s' if att != 1 else ''} attempted, {sur} survived"
+    if cx:
+        line += f", {len(cx)} counterexample{'s' if len(cx) != 1 else ''}"
+    if ref.get("not_applicable"):
+        line += f"; not attempted on this packet: {esc(', '.join(str(n).rsplit('.', 1)[-1] for n in ref['not_applicable']))}"
+    return f'<p class="muted">{line}.</p>' + (f'<ul class="bands">{rows}</ul>' if rows else "")
+
+
 def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
     """The receipt as a page a person can read — and re-check. Each step's packet (filed beside the seal
     under its spec_hash) is shown as editable inputs; "Re-check" posts the edited packet to /verify with
@@ -62,7 +95,7 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
         d = vr.get("data") or {}
         spec = _cas.fetch_spec(str(d.get("spec_hash") or "")) or {}
         steps.append({"id": vr.get("name"), "status": vr.get("status"), "detail": vr.get("detail", ""),
-                      "domain": d.get("domain"), "spec": spec})
+                      "domain": d.get("domain"), "spec": spec, "refutations": d.get("refutations") or {}})
     blocks = []
     for n, st in enumerate(steps):
         art_key = next((k for k, v in st["spec"].items() if isinstance(v, dict)), None)
@@ -74,6 +107,7 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
 <section class="step" data-domain="{esc(st['domain'] or '')}" data-key="{esc(art_key or '')}" data-wrap="{esc(json.dumps({k: v for k, v in st['spec'].items() if k != art_key}))}">
   <h2>Step {esc(st['id'])} <span class="v {esc(st['status'])}">{esc(st['status'])}</span></h2>
   <p class="detail">{esc(st['detail'])}</p>
+  {_narrow_html(st['refutations'])}
   {('<form class="recheck">' + fields + '<button type="submit">Re-check with these inputs</button><output></output></form>') if art else '<p class="muted">The packet for this step was not kept beside the seal.</p>'}
 </section>""")
     return f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -83,7 +117,7 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
 @media(prefers-color-scheme:dark){{:root{{--bg:#111;--fg:#eee;--mut:#aaa;--line:#333}}}}
 body{{font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0 auto;max-width:52rem;padding:1.5rem 1rem}}
 h1{{font-size:1.4rem;margin:.2rem 0}} h2{{font-size:1.05rem;margin:1.2rem 0 .3rem}}
-code{{word-break:break-all;font-size:.9em}} .muted{{color:var(--mut)}}
+code{{word-break:break-all;font-size:.9em}} .muted{{color:var(--mut)}} ul.bands{{margin:.2rem 0 .6rem;padding-left:1.2rem}}
 .v{{font-weight:600;padding:.05rem .45rem;border-radius:.3rem;border:1px solid var(--line);font-size:.85rem;vertical-align:middle}}
 .v.CONFIRMED,.v.PASS{{color:var(--ok)}} .v.MISMATCH,.v.BROKEN{{color:var(--bad)}}
 .step{{border-top:1px solid var(--line);padding-top:.4rem}}
@@ -95,6 +129,7 @@ output{{grid-column:1/-1;white-space:pre-wrap;font-size:.9rem}}
 @media(max-width:520px){{form{{grid-template-columns:1fr}}}}
 </style>
 <h1>Sealed record <span class="v {overall}">{overall}</span></h1>
+<p class="muted">{esc(_read_of(rec))}</p>
 <p>Content hash <code>{esc(h)}</code>. The JSON at <a href="/s/{esc(h)}">/s/{esc(h)}</a>, hashed canonically with SHA-256, reproduces this hash — that is the whole claim of the seal. Changing inputs below recomputes a fresh verdict; it does not alter this record.</p>
 {_provenance_html(rec)}
 {''.join(blocks)}

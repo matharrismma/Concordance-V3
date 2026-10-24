@@ -24,9 +24,13 @@ REGISTRY: List[ToolSpec] = [
              "Verify numeric claims deterministically. Preferred form: steps=[{id, domain, spec}] where spec is "
              "the domain's packet (find_verifier returns the schema). Also accepts {mode, params} for pure "
              "arithmetic, or a plain-language `claim` (checked only where an extractor recognises a tight "
-             "span; coverage.unchecked_text names the rest). Returns verdict HOLDS | PARTIAL | BROKEN | "
-             "INCOMPLETE | SCHEMA_ERROR | SYSTEM_ERROR, the worked trail, and a content-addressed seal. Only "
-             "BROKEN is a finding about the claim; SYSTEM_ERROR and INCOMPLETE say nothing about its truth.",
+             "span; coverage.unchecked_text names the rest). Not a truth engine: where a value can be "
+             "computed it is, and the claim must fall in a narrow band around it; everything else is "
+             "narrowed, not proven. Returns verdict HOLDS | PARTIAL | BROKEN | INCOMPLETE | SCHEMA_ERROR | "
+             "SYSTEM_ERROR, `read` (one sentence on what the verdict is not), `refutations` (attempted / "
+             "survived / counterexamples / not_applicable, with bands), the worked trail, and a seal. HOLDS "
+             "means survived every attempted refutation — never shown true. BROKEN carries a re-runnable "
+             "counterexample, the strongest finding here. SYSTEM_ERROR and INCOMPLETE say nothing about the claim.",
              {"type": "object", "properties": {
                  "steps": {"type": "array", "items": {"type": "object"}},
                  "mode": {"type": "string", "enum": ["equality", "inequality", "derivative", "integral",

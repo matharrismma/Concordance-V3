@@ -62,20 +62,39 @@ Duplicate publication returns the existing entry (HTTP 409 → same uuid). A fai
 `pending` claim with the error; `tools/publish_seals.py` retries. Pending is a fact about the log, not about
 the record.
 
-## 4. Documents
+## 4. Refutation semantics — what a verdict is not
+
+The engine attempts refutations; it does not establish truth. Each `verifier_results[].data.refutations` is
+
+```
+{ "attempted": [check, ...], "survived": [check, ...],
+  "counterexamples": [{check, what, claimed, recomputed, band: [low, high], off_by}, ...],
+  "errored": [...], "not_applicable": [...],
+  "bands": [{check, what, low, high, actual, claimed, tolerance, inside, off_by, unit}, ...] }
+```
+
+and `gate_results[0].details` carries `read` (one sentence) and the totals. A **band** is the interval every
+true claim must lie in, `[actual − tol, actual + tol]`; `inside` is a survived refutation, `outside` a
+counterexample. `not_applicable` names the checks this verifier owns that could not fire on this packet — the
+honest edge of what was tested. A reader treats HOLDS as "no counterexample among the attempted checks" and
+never as "true"; a counterexample is re-runnable from the sealed packet (`spec_hash`) and outranks any number
+of survivals. Verifiers that have not yet adopted `band()` report status only; their `refutations` lists are
+still correct, their `bands` empty.
+
+## 5. Documents
 
 A `kind: document` record is a root over steps (`spec_hash`, status, `uses`), a `derivation_seal` and
 `parents`. Its attestation covers the root only; each `spec_hash`, the derivation seal and each parent is a
 record of its own with its own attestation. Walk the tree by fetching each one and running the same checks.
 
-## 5. Reference verifier
+## 6. Reference verifier
 
 `docs/verify_receipt.py` (≈190 lines; depends on `cbor2` and `cryptography`, imports nothing from this repo)
 runs the four checks and prints one line per check plus the document tree. Exit 0 iff every check that could
 run passed. `--offline` skips the live log fetch and uses the entry held in the receipt (if any);
 `--public-key` pins a key instead of trusting the one in the envelope.
 
-## 6. What this does and does not establish
+## 7. What this does and does not establish
 
 It establishes that a specific issuer key signed exactly these record bytes, and that a public, append-only
 log witnessed that statement no later than `integrated_time`. It does not establish that the issuer key

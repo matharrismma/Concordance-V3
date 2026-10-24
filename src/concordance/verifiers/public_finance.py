@@ -40,7 +40,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import band, merge_checks, VerifierResult, na, confirm, mismatch, error, clamp_tol
 from .base import dispatch
 
 _D = "public_finance"
@@ -59,10 +59,7 @@ def _check(name, actual, claimed, spec, what, data, tol_key="tolerance", rel=1e-
     forgive display rounding of the FINAL figure, not enough to forgive a rounded intermediate carried into a
     multiplication (the error every writer made in the 2026-10-20 rounds: $42 on $6.2M). A caller may tighten."""
     tol = clamp_tol(spec, tol_key, max(abs_floor, abs(actual) * rel))
-    data = dict(data, **{f"actual_{what}": actual, f"claimed_{what}": claimed})
-    if abs(actual - claimed) <= tol:
-        return confirm(name, f"{what} = {actual:,.2f} (matches claim)", data)
-    return mismatch(name, f"{what} = {actual:,.2f}, claimed {claimed:,.2f} (off by {actual - claimed:+,.2f})", data)
+    return band(name, actual, claimed, tol, what, data, fmt="{:,.2f}")
 
 
 # ── amortization ──────────────────────────────────────────────────────────────────────────────────
@@ -96,10 +93,7 @@ def verify_amortization(spec: Dict[str, Any]) -> VerifierResult:
                 return error(name, f"{key} must be numeric")
     if not results:
         return na(name, "no claimed_monthly_pi / claimed_monthly_io / claimed_total_interest to check")
-    bad = [r for r in results if r.status == "MISMATCH"]
-    if bad:
-        return bad[0]
-    return confirm(name, "; ".join(r.detail for r in results), data)
+    return merge_checks(name, results, data)
 
 
 # ── issuance gross-up ─────────────────────────────────────────────────────────────────────────────
