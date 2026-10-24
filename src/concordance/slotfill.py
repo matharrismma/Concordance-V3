@@ -145,6 +145,28 @@ def x_kinetic_energy_units(text: str) -> List[Tuple[str, str, Dict[str, Any]]]:
     return out
 
 
+def x_force_units(text: str) -> List[Tuple[str, str, Dict[str, Any]]]:
+    """kg, m/s² and N in ONE sentence that says "force" or "accelerat…", any order -> Newton's F = m·a.
+    The regex extractor _x_physics_force catches only "M kg at A m/s² exerts F N"; this catches the
+    inverted orders ("under a force of F N, an M kg mass accelerates at A m/s²"). The three units anchor
+    it and each must appear exactly once, so a wrong force breaks honestly — never a guess, never a false
+    pass. Mirrors x_kinetic_energy_units; no m/s velocity slot, so no m/s-vs-m/s² collision."""
+    out = []
+    for sent in _clauses(text):
+        _kw = re.search(r"\b(?:force|accelerat\w+)\b", sent, re.I)
+        if not _kw:
+            continue
+        m = _one(_N + r"\s*(?:kg|kilograms?)\b", sent)
+        a = _one(_N + r"\s*(?:m/s\^?2|m/s²|m/s/s|met(?:er|re)s?\s+per\s+second\s+squared)\b", sent)
+        f = _one(_N + r"\s*(?:N|newtons?)\b", sent)
+        if not (m and a and f):
+            continue
+        out.append((_tight(sent, _kw, m, a, f), "physics",
+                    {"PHYS_VERIFY": {"mass_kg": _f(m.group(1)), "acceleration_m_per_s2": _f(a.group(1)),
+                                     "claimed_force_N": _f(f.group(1))}}))
+    return out
+
+
 _MM_NAMED = re.compile(r"\bmolar\s+mass\s+of\s+(?:the\s+)?([a-z][a-z \-]{1,30}?)\s+(?:is|=|equals)\s*(?:about|approximately|roughly|~|≈)?\s*"
                        + _N + r"\s*(?:g\s*/\s*mol|grams?\s+per\s+mole?)?", re.I)
 
@@ -193,6 +215,7 @@ def x_escape_velocity(text: str) -> List[Tuple[str, str, Dict[str, Any]]]:
 FILLERS = (
     ("ohms_law", x_ohms_law),
     ("kinetic_energy_units", x_kinetic_energy_units),
+    ("force_units", x_force_units),
     ("molar_mass_named", x_molar_mass_named),
     ("escape_velocity", x_escape_velocity),
 )

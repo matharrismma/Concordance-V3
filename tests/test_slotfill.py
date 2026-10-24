@@ -74,6 +74,36 @@ def test_kinetic_energy_filler_zero_false_positives():
         assert "kinetic_energy_units" not in _names(t), t
 
 
+# ---- force (Newton's second law): force-first / acceleration-first phrasing ----
+
+def test_force_units_any_order_confirms():
+    # the _x_physics_force regex is "M kg at A m/s² exerts F N" only; these inverted orders missed before
+    for t in ["a 10 kg mass under a force of 20 N accelerates at 2 m/s^2",
+              "under a force of 20 N, a 10 kg object accelerates at 2 m/s^2",
+              "a force of 20 N on a 10 kg object produces an acceleration of 2 m/s^2"]:
+        assert "force_units" in _names(t), t
+        r = audit(t, CFG, seal=False)
+        assert r["held"] == 1 and r["broken"] == 0, (t, r["results"])
+
+
+def test_force_units_catches_a_wrong_claim():
+    r = audit("a 10 kg mass under a force of 50 N accelerates at 2 m/s^2", CFG, seal=False)  # 20, not 50
+    assert r["broken"] == 1 and r["results"][0]["status"] == "MISMATCH"
+
+
+def test_force_mass_first_still_reports_the_original_extractor():
+    """Dedup keeps the first (domain, spec): the pinned regex, not the filler."""
+    names = _names("a 10 kg object at 2 m/s^2 exerts 20 N")
+    assert "physics_force" in names and "force_units" not in names
+
+
+def test_force_filler_zero_false_positives():
+    for t in ["the force was strong that day",                 # no units
+              "a 10 kg box accelerates quickly",                # only one unit
+              "20 N of force was applied to the wall"]:         # no mass, no acceleration
+        assert "force_units" not in _names(t), t
+
+
 # ---- molar mass by NAME (a found table, never a parsed word) ----
 
 def test_molar_mass_named_confirms():
