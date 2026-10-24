@@ -27,7 +27,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 
 
 def _window(spec: Dict[str, Any], threshold: float, actual: float) -> float:
@@ -118,18 +118,10 @@ def verify_polygon_angle_sum(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"polygon must have at least 3 sides, got {nf}")
     actual = (nf - 2) * 180.0
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-6)
-    diff = abs(actual - c)
     threshold = max(1e-6, rel_tol * actual)
     threshold = _window(spec, threshold, actual)
-    data = {"n": nf, "actual_sum_deg": actual, "claimed_sum_deg": c,
-            "diff_deg": diff, "rule": "(n-2)·180°"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"{nf}-gon interior angle sum = {actual}° (matches claim)",
-                       data)
-    return mismatch(name,
-                    f"{nf}-gon interior sum = {actual}°, claimed {c}",
-                    data)
+    data = {"n": nf, "rule": "(n-2)·180°"}
+    return band(name, actual, c, threshold, "sum_deg", data, fmt="{:g}", unit="°")
 
 
 def verify_circle_properties(spec: Dict[str, Any]) -> VerifierResult:
@@ -155,34 +147,29 @@ def verify_circle_properties(spec: Dict[str, Any]) -> VerifierResult:
         "actual_circumference": actual_circ,
         "rule": "area = πr², circumference = 2πr",
     }
-    mismatches: List[str] = []
+    results: List[VerifierResult] = []
     if a_claim is not None:
         try:
             ac = float(a_claim)
             data["claimed_area"] = ac
-            diff = abs(actual_area - ac)
             threshold = max(1e-6, rel_tol * actual_area) if actual_area > 0 else 1e-6
             threshold = _window(spec, threshold, actual_area)
-            data["area_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"area: actual {actual_area:.6f}, claimed {ac}")
+            results.append(band(name, actual_area, ac, threshold, "area", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_circle_area must be numeric")
     if c_claim is not None:
         try:
             cc = float(c_claim)
             data["claimed_circumference"] = cc
-            diff = abs(actual_circ - cc)
             threshold = max(1e-6, rel_tol * actual_circ) if actual_circ > 0 else 1e-6
             threshold = _window(spec, threshold, actual_circ)
-            data["circumference_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"circumference: actual {actual_circ:.6f}, claimed {cc}")
+            results.append(band(name, actual_circ, cc, threshold, "circumference", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_circle_circumference must be numeric")
-    if mismatches:
-        return mismatch(name, "; ".join(mismatches), data)
-    return confirm(name, f"r={rf} area={actual_area:.4f} circ={actual_circ:.4f} (matches claims)", data)
+    m = merge_checks(name, results, data)
+    if m.status != "CONFIRMED":
+        return m
+    return confirm(name, f"r={rf} area={actual_area:.4f} circ={actual_circ:.4f}; {m.detail}", m.data)
 
 
 def verify_rectangle_properties(spec: Dict[str, Any]) -> VerifierResult:
@@ -201,7 +188,7 @@ def verify_rectangle_properties(spec: Dict[str, Any]) -> VerifierResult:
     actual_area = lf * wf
     actual_perim = 2.0 * (lf + wf)
     rel_tol = clamp_tol(spec, "rel_tol", 1e-4)
-    mismatches: List[str] = []
+    results: List[VerifierResult] = []
     data: Dict[str, Any] = {
         "l": lf, "w": wf,
         "actual_area": actual_area, "actual_perimeter": actual_perim,
@@ -214,10 +201,7 @@ def verify_rectangle_properties(spec: Dict[str, Any]) -> VerifierResult:
             data["claimed_rect_area"] = caf
             threshold = max(1e-6, rel_tol * actual_area) if actual_area > 0 else 1e-6
             threshold = _window(spec, threshold, actual_area)
-            diff = abs(actual_area - caf)
-            data["area_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"area: actual {actual_area:.6f}, claimed {caf}")
+            results.append(band(name, actual_area, caf, threshold, "area", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_rect_area must be numeric")
     cp = spec.get("claimed_rect_perimeter")
@@ -227,18 +211,16 @@ def verify_rectangle_properties(spec: Dict[str, Any]) -> VerifierResult:
             data["claimed_rect_perimeter"] = cpf
             threshold = max(1e-6, rel_tol * actual_perim) if actual_perim > 0 else 1e-6
             threshold = _window(spec, threshold, actual_perim)
-            diff = abs(actual_perim - cpf)
-            data["perimeter_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"perimeter: actual {actual_perim:.6f}, claimed {cpf}")
+            results.append(band(name, actual_perim, cpf, threshold, "perimeter", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_rect_perimeter must be numeric")
     # Did the caller actually claim anything?
     if ca is None and cp is None:
         return na(name)
-    if mismatches:
-        return mismatch(name, "; ".join(mismatches), data)
-    return confirm(name, f"l={lf} w={wf} area={actual_area:.4f} perim={actual_perim:.4f} (matches claims)", data)
+    m = merge_checks(name, results, data)
+    if m.status != "CONFIRMED":
+        return m
+    return confirm(name, f"l={lf} w={wf} area={actual_area:.4f} perim={actual_perim:.4f}; {m.detail}", m.data)
 
 
 def verify_sphere_properties(spec: Dict[str, Any]) -> VerifierResult:
@@ -257,7 +239,7 @@ def verify_sphere_properties(spec: Dict[str, Any]) -> VerifierResult:
     actual_vol = (4.0 / 3.0) * math.pi * rf**3
     actual_area = 4.0 * math.pi * rf**2
     rel_tol = clamp_tol(spec, "rel_tol", 1e-4)
-    mismatches: List[str] = []
+    results: List[VerifierResult] = []
     data: Dict[str, Any] = {
         "r": rf,
         "actual_volume": actual_vol, "actual_surface_area": actual_area,
@@ -270,10 +252,7 @@ def verify_sphere_properties(spec: Dict[str, Any]) -> VerifierResult:
             data["claimed_sphere_volume"] = cvf
             threshold = max(1e-6, rel_tol * actual_vol) if actual_vol > 0 else 1e-6
             threshold = _window(spec, threshold, actual_vol)
-            diff = abs(actual_vol - cvf)
-            data["volume_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"volume: actual {actual_vol:.6f}, claimed {cvf}")
+            results.append(band(name, actual_vol, cvf, threshold, "volume", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_sphere_volume must be numeric")
     ca = spec.get("claimed_sphere_surface_area")
@@ -283,17 +262,15 @@ def verify_sphere_properties(spec: Dict[str, Any]) -> VerifierResult:
             data["claimed_sphere_surface_area"] = caf
             threshold = max(1e-6, rel_tol * actual_area) if actual_area > 0 else 1e-6
             threshold = _window(spec, threshold, actual_area)
-            diff = abs(actual_area - caf)
-            data["area_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"surface area: actual {actual_area:.6f}, claimed {caf}")
+            results.append(band(name, actual_area, caf, threshold, "surface_area", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_sphere_surface_area must be numeric")
     if cv is None and ca is None:
         return na(name)
-    if mismatches:
-        return mismatch(name, "; ".join(mismatches), data)
-    return confirm(name, f"r={rf} V={actual_vol:.4f} A={actual_area:.4f} (matches claims)", data)
+    m = merge_checks(name, results, data)
+    if m.status != "CONFIRMED":
+        return m
+    return confirm(name, f"r={rf} V={actual_vol:.4f} A={actual_area:.4f}; {m.detail}", m.data)
 
 
 def verify_cylinder_properties(spec: Dict[str, Any]) -> VerifierResult:
@@ -314,7 +291,7 @@ def verify_cylinder_properties(spec: Dict[str, Any]) -> VerifierResult:
     actual_lat = 2.0 * math.pi * rf * hf
     actual_tot = 2.0 * math.pi * rf**2 + actual_lat
     rel_tol = clamp_tol(spec, "rel_tol", 1e-4)
-    mismatches: List[str] = []
+    results: List[VerifierResult] = []
     data: Dict[str, Any] = {
         "r": rf, "h": hf,
         "actual_volume": actual_vol,
@@ -329,17 +306,15 @@ def verify_cylinder_properties(spec: Dict[str, Any]) -> VerifierResult:
             data["claimed_cyl_volume"] = cvf
             threshold = max(1e-6, rel_tol * actual_vol) if actual_vol > 0 else 1e-6
             threshold = _window(spec, threshold, actual_vol)
-            diff = abs(actual_vol - cvf)
-            data["volume_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"volume: actual {actual_vol:.6f}, claimed {cvf}")
+            results.append(band(name, actual_vol, cvf, threshold, "volume", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_cyl_volume must be numeric")
     if cv is None:
         return na(name)
-    if mismatches:
-        return mismatch(name, "; ".join(mismatches), data)
-    return confirm(name, f"r={rf} h={hf} V={actual_vol:.4f} (matches claims)", data)
+    m = merge_checks(name, results, data)
+    if m.status != "CONFIRMED":
+        return m
+    return confirm(name, f"r={rf} h={hf} V={actual_vol:.4f}; {m.detail}", m.data)
 
 
 def verify_cube_properties(spec: Dict[str, Any]) -> VerifierResult:
@@ -357,7 +332,7 @@ def verify_cube_properties(spec: Dict[str, Any]) -> VerifierResult:
     actual_vol = sf**3
     actual_area = 6.0 * sf**2
     rel_tol = clamp_tol(spec, "rel_tol", 1e-4)
-    mismatches: List[str] = []
+    results: List[VerifierResult] = []
     data: Dict[str, Any] = {
         "s": sf,
         "actual_volume": actual_vol, "actual_surface_area": actual_area,
@@ -370,10 +345,7 @@ def verify_cube_properties(spec: Dict[str, Any]) -> VerifierResult:
             data["claimed_cube_volume"] = cvf
             threshold = max(1e-6, rel_tol * actual_vol) if actual_vol > 0 else 1e-6
             threshold = _window(spec, threshold, actual_vol)
-            diff = abs(actual_vol - cvf)
-            data["volume_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"volume: actual {actual_vol:.6f}, claimed {cvf}")
+            results.append(band(name, actual_vol, cvf, threshold, "volume", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_cube_volume must be numeric")
     ca = spec.get("claimed_cube_surface_area")
@@ -383,17 +355,15 @@ def verify_cube_properties(spec: Dict[str, Any]) -> VerifierResult:
             data["claimed_cube_surface_area"] = caf
             threshold = max(1e-6, rel_tol * actual_area) if actual_area > 0 else 1e-6
             threshold = _window(spec, threshold, actual_area)
-            diff = abs(actual_area - caf)
-            data["area_diff"] = diff
-            if diff > threshold:
-                mismatches.append(f"surface area: actual {actual_area:.6f}, claimed {caf}")
+            results.append(band(name, actual_area, caf, threshold, "surface_area", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_cube_surface_area must be numeric")
     if cv is None and ca is None:
         return na(name)
-    if mismatches:
-        return mismatch(name, "; ".join(mismatches), data)
-    return confirm(name, f"s={sf} V={actual_vol:.4f} A={actual_area:.4f} (matches claims)", data)
+    m = merge_checks(name, results, data)
+    if m.status != "CONFIRMED":
+        return m
+    return confirm(name, f"s={sf} V={actual_vol:.4f} A={actual_area:.4f}; {m.detail}", m.data)
 
 
 # Ideal central (bond) angles of regular spatial arrangements — pure geometry,
@@ -424,11 +394,8 @@ def verify_coordination_geometry(spec: Dict[str, Any]) -> VerifierResult:
         c = float(claimed)
     except (TypeError, ValueError):
         return error(name, "claimed_central_angle_deg must be numeric")
-    if abs(c - ideal) <= 0.1:
-        return confirm(name, f"{key} central angle = {ideal:.4f} deg (matches claim)",
-                       {"ideal_central_angle_deg": ideal})
-    return mismatch(name, f"{key} central angle = {ideal:.4f} deg, not {c}",
-                    {"ideal_central_angle_deg": ideal})
+    return band(name, ideal, c, 0.1, "central_angle_deg", {"ideal_central_angle_deg": ideal, "geometry": key},
+                fmt="{:.4f}", unit="deg")
 
 
 _RULES = [

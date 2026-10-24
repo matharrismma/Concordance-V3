@@ -15,7 +15,7 @@ import ast as _ast
 import re as _re
 from typing import Any, Dict, List
 
-from .base import VerifierResult, clamp_tol, confirm, error, mismatch, na
+from .base import VerifierResult, band, clamp_tol, confirm, error, mismatch, na
 from .base import stated_precision, stated_tolerance_abs, stated_window, window_for
 from .base import dispatch  # declarative run() driver
 
@@ -290,12 +290,16 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
                     fa, fb = float(ea.evalf()), float(eb.evalf())
                 except Exception:
                     fa = fb = None
-                if fa is not None and abs(fa - fb) <= tol:
+                if fa is not None:
                     sig = (stated_precision(lit) or (0, 0.0))[0]
-                    return confirm("mathematics.equality",
-                                   f"{a} = {fa:.10g} agrees with {b} at the stated precision of {sig} significant "
-                                   f"figure(s) (half a unit in the last place = ±{tol:g})",
-                                   {"actual": fa, "claimed": fb, "stated_sigfigs": sig, "stated_tolerance_abs": tol})
+                    # the stated-precision band: b must lie within ±tol of a's value
+                    bd = band("mathematics.equality", fa, fb, tol, "value",
+                              {"actual": fa, "claimed": fb, "stated_sigfigs": sig, "stated_tolerance_abs": tol},
+                              fmt="{:.10g}")
+                    if bd.passed:
+                        return confirm("mathematics.equality",
+                                       f"{a} = {fa:.10g} agrees with {b} at the stated precision of {sig} significant "
+                                       f"figure(s) (half a unit in the last place = ±{tol:g})", bd.data)
         return mismatch("mathematics.equality", f"{a} - ({b}) simplifies to {diff_}")
     except _PARSE_ERRORS as e:
         return na("mathematics.equality", f"cannot parse expression: {e}")
@@ -761,7 +765,10 @@ def verify_numeric(spec: Dict[str, Any]) -> VerifierResult:
         data.update(info)
         data["stated_tolerance"] = threshold
         stated_used = True
-    if diff <= threshold:
+    # the band: the claim must lie in [computed − threshold, computed + threshold]
+    bd = band(name, fv, cv, threshold, "value", data, fmt="{:.10g}")
+    data = bd.data
+    if bd.passed:
         # EXPLAIN WHY IT IS WHAT IT IS (2026-10-09): a certification must say whether the claim is EXACT or only
         # correct to the precision stated. A bare "holds" on "sqrt(150) is 12" reads as an equality; it is not
         # (sqrt(150) = 12.2474). So when the claim holds only through the stated-precision window, the verdict names
@@ -782,7 +789,7 @@ def verify_numeric(spec: Dict[str, Any]) -> VerifierResult:
             return confirm(name, f"{expr} = {fv:.10g}, which the claim {cv} matches within {rel_tol:.0e} "
                                  f"(display rounding; the exact value is {fv:.10g}).", data)
         return confirm(name, f"{expr} = {fv:.10g} — the claim {cv} is exact.", data)
-    return mismatch(name, f"{expr} = {fv:.10g}, claimed {cv} — off by {diff:.4g}.", data)
+    return mismatch(name, f"{expr} = {fv:.10g}, claimed {cv} — off by {diff:.4g}; {bd.detail}", data)
 
 
 def verify_number_theory(spec: Dict[str, Any]) -> VerifierResult:

@@ -41,7 +41,7 @@ LIN_VERIFY shape (any subset; each check fires when its keys are present):
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band, merge_checks
 
 # numpy is the optional `math` extra. Load it lazily so THIS MODULE IMPORTS on a stdlib-only box
 # (a top-level `import numpy` would crash the import and take the whole verifier registry with it).
@@ -100,6 +100,28 @@ def _arrays_close(a: np.ndarray, b: np.ndarray,
     return bool(np.allclose(a, b, rtol=rel, atol=abs_))
 
 
+def _band(name: str, actual: float, claimed: float, what: str, data: Dict[str, Any],
+          rel: float = 1e-6, abs_: float = 1e-9, fmt: str = "{:.6g}") -> VerifierResult:
+    """The _close window as a band: the same tolerance, max(abs_, rel·max(|actual|, |claimed|))."""
+    tol = max(abs_, rel * max(abs(actual), abs(claimed)))
+    return band(name, actual, claimed, tol, what, data, fmt=fmt)
+
+
+def _array_bands(name: str, actual: np.ndarray, claimed: np.ndarray, what: str, data: Dict[str, Any],
+                 rel: float = 1e-6, abs_: float = 1e-9, detail: str = "") -> VerifierResult:
+    """The _arrays_close window element by element: np.allclose's |a − b| ≤ abs_ + rel·|b| becomes one band per
+    entry, centred on the recomputed entry with that same width, folded by merge_checks so no entry is lost."""
+    results = []
+    for idx in np.ndindex(claimed.shape):
+        a = float(actual[idx]); c = float(claimed[idx])
+        key = what + "[" + ",".join(str(i) for i in idx) + "]"
+        results.append(band(name, a, c, abs_ + rel * abs(c), key, None))
+    m = merge_checks(name, results, data)
+    if m.status == "CONFIRMED" and detail:
+        return confirm(name, detail + "; " + m.detail, m.data)
+    return m
+
+
 # ── Vector checks ──────────────────────────────────────────────────────
 
 def verify_vector_dot(spec: Dict[str, Any]) -> VerifierResult:
@@ -119,9 +141,7 @@ def verify_vector_dot(spec: Dict[str, Any]) -> VerifierResult:
     data = {"vec_a": a.tolist(), "vec_b": b.tolist(),
             "actual_dot": actual, "claimed_dot": cl,
             "formula": "a · b = Σ aᵢ bᵢ"}
-    if _close(actual, cl):
-        return confirm(name, f"{a.tolist()} · {b.tolist()} = {actual}", data)
-    return mismatch(name, f"{a.tolist()} · {b.tolist()} = {actual}, claimed {cl}", data)
+    return _band(name, actual, cl, "dot", data, fmt="{}")
 
 
 def verify_vector_cross(spec: Dict[str, Any]) -> VerifierResult:
@@ -140,9 +160,7 @@ def verify_vector_cross(spec: Dict[str, Any]) -> VerifierResult:
     data = {"vec_a": a.tolist(), "vec_b": b.tolist(),
             "actual_cross": actual.tolist(), "claimed_cross": cl.tolist(),
             "formula": "a × b (right-hand rule)"}
-    if _arrays_close(actual, cl):
-        return confirm(name, f"{a.tolist()} × {b.tolist()} = {actual.tolist()}", data)
-    return mismatch(name, f"{a.tolist()} × {b.tolist()} = {actual.tolist()}, claimed {cl.tolist()}", data)
+    return _array_bands(name, actual, cl, "cross", data, detail=f"{a.tolist()} × {b.tolist()} = {actual.tolist()}")
 
 
 def verify_vector_magnitude(spec: Dict[str, Any]) -> VerifierResult:
@@ -159,9 +177,7 @@ def verify_vector_magnitude(spec: Dict[str, Any]) -> VerifierResult:
     data = {"vec": v.tolist(),
             "actual_magnitude": actual, "claimed_magnitude": cl,
             "formula": "|v| = √(Σ vᵢ²)"}
-    if _close(actual, cl):
-        return confirm(name, f"|{v.tolist()}| = {actual}", data)
-    return mismatch(name, f"|{v.tolist()}| = {actual}, claimed {cl}", data)
+    return _band(name, actual, cl, "magnitude", data, fmt="{}")
 
 
 def verify_vector_angle(spec: Dict[str, Any]) -> VerifierResult:
@@ -187,9 +203,7 @@ def verify_vector_angle(spec: Dict[str, Any]) -> VerifierResult:
     data = {"vec_a": a.tolist(), "vec_b": b.tolist(),
             "actual_angle_deg": actual_deg, "claimed_angle_deg": cl,
             "formula": "θ = arccos((a·b) / (|a| |b|))"}
-    if abs(actual_deg - cl) <= 0.5:  # half-degree tolerance
-        return confirm(name, f"angle = {actual_deg:.3f}° between vectors", data)
-    return mismatch(name, f"actual angle {actual_deg:.3f}°, claimed {cl}°", data)
+    return band(name, actual_deg, cl, 0.5, "angle_deg", data, fmt="{:.3f}", unit="deg")  # half-degree tolerance
 
 
 # ── Matrix checks ──────────────────────────────────────────────────────
@@ -210,9 +224,7 @@ def verify_matrix_addition(spec: Dict[str, Any]) -> VerifierResult:
     data = {"A": A.tolist(), "B": B.tolist(),
             "actual_sum": actual.tolist(), "claimed_sum": cl.tolist(),
             "formula": "(A+B)ᵢⱼ = Aᵢⱼ + Bᵢⱼ"}
-    if _arrays_close(actual, cl):
-        return confirm(name, f"A + B computed; matches claimed {A.shape}", data)
-    return mismatch(name, f"actual A+B = {actual.tolist()}, claimed {cl.tolist()}", data)
+    return _array_bands(name, actual, cl, "sum", data, detail=f"A + B computed; matches claimed {A.shape}")
 
 
 def verify_matrix_multiplication(spec: Dict[str, Any]) -> VerifierResult:
@@ -231,9 +243,7 @@ def verify_matrix_multiplication(spec: Dict[str, Any]) -> VerifierResult:
     data = {"A": A.tolist(), "B": B.tolist(),
             "actual_product": actual.tolist(), "claimed_product": cl.tolist(),
             "formula": "(AB)ᵢⱼ = Σₖ Aᵢₖ Bₖⱼ"}
-    if _arrays_close(actual, cl):
-        return confirm(name, f"A·B = {actual.tolist()}", data)
-    return mismatch(name, f"actual A·B = {actual.tolist()}, claimed {cl.tolist()}", data)
+    return _array_bands(name, actual, cl, "product", data, detail=f"A·B = {actual.tolist()}")
 
 
 def verify_matrix_determinant(spec: Dict[str, Any]) -> VerifierResult:
@@ -252,9 +262,7 @@ def verify_matrix_determinant(spec: Dict[str, Any]) -> VerifierResult:
     data = {"matrix": A.tolist(),
             "actual_determinant": actual, "claimed_determinant": cl,
             "formula": "det A (Laplace expansion or LU)"}
-    if _close(actual, cl, rel=1e-5, abs_=1e-9):
-        return confirm(name, f"det = {actual:.6g}", data)
-    return mismatch(name, f"actual det = {actual:.6g}, claimed {cl}", data)
+    return _band(name, actual, cl, "determinant", data, rel=1e-5, abs_=1e-9, fmt="{:.6g}")
 
 
 def verify_matrix_trace(spec: Dict[str, Any]) -> VerifierResult:
@@ -273,9 +281,7 @@ def verify_matrix_trace(spec: Dict[str, Any]) -> VerifierResult:
     data = {"matrix": A.tolist(),
             "actual_trace": actual, "claimed_trace": cl,
             "formula": "tr(A) = Σᵢ Aᵢᵢ"}
-    if _close(actual, cl):
-        return confirm(name, f"tr = {actual}", data)
-    return mismatch(name, f"actual tr = {actual}, claimed {cl}", data)
+    return _band(name, actual, cl, "trace", data, fmt="{}")
 
 
 def verify_matrix_eigenvalues(spec: Dict[str, Any]) -> VerifierResult:
@@ -320,9 +326,9 @@ def verify_matrix_inverse(spec: Dict[str, Any]) -> VerifierResult:
     data = {"matrix": A.tolist(), "claimed_inverse": cl.tolist(),
             "A_times_claimed": product.tolist(),
             "formula": "A · A⁻¹ = I"}
-    if _arrays_close(product, identity, rel=1e-5, abs_=1e-7):
-        return confirm(name, f"A · claimed_inverse = I (within tolerance)", data)
-    return mismatch(name, f"A · claimed_inverse ≠ I; got {product.tolist()}", data)
+    # A·A⁻¹ must land on I: each entry of the product inside the band around the identity entry
+    return _array_bands(name, identity, product, "A_times_inverse", data, rel=1e-5, abs_=1e-7,
+                        detail="A · claimed_inverse = I (within tolerance)")
 
 
 def verify_linear_system(spec: Dict[str, Any]) -> VerifierResult:
@@ -338,9 +344,9 @@ def verify_linear_system(spec: Dict[str, Any]) -> VerifierResult:
     data = {"matrix": A.tolist(), "claimed_solution": x.tolist(),
             "b_target": b.tolist(), "A_times_x": actual_b.tolist(),
             "formula": "A x = b"}
-    if _arrays_close(actual_b, b, rel=1e-5, abs_=1e-7):
-        return confirm(name, f"A x = b verified ({b.tolist()})", data)
-    return mismatch(name, f"A·x = {actual_b.tolist()}, claimed solution gives wrong b (target {b.tolist()})", data)
+    # A·x must land on b: each entry of A·x inside the band around the target entry
+    return _array_bands(name, b, actual_b, "A_times_x", data, rel=1e-5, abs_=1e-7,
+                        detail=f"A x = b verified ({b.tolist()})")
 
 
 # ── Dispatcher ─────────────────────────────────────────────────────────

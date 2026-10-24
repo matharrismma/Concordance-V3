@@ -28,7 +28,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, clamp_tol, confirm, dispatch, error, mismatch, na
+from .base import VerifierResult, band, clamp_tol, confirm, dispatch, error, mismatch, na
 
 
 def _primes(n: int) -> List[int]:
@@ -180,9 +180,10 @@ def verify_l_value(spec: Dict[str, Any]) -> VerifierResult:
             cl = float(spec["claimed_L1"])
         except (TypeError, ValueError):
             return error(name, "claimed_L1 must be numeric")
-        data["claimed_L1"] = cl
-        if abs(L1 - cl) > max(1e-6, tol * abs(L1)):
-            problems.append(f"L(E,1) = {L1:.6f}, claimed {cl:.6f}")
+        b = band(name, L1, cl, max(1e-6, tol * abs(L1)), "L1", None, fmt="{:.6f}")
+        data.update(b.data)                      # actual_L1, claimed_L1, band (+ counterexample when outside)
+        if b.status == "MISMATCH":
+            problems.append(b.detail)
     if spec.get("claimed_analytic_rank") is not None:
         try:
             cr = int(spec["claimed_analytic_rank"])

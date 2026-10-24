@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import math
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 
 # numpy + scipy.stats are heavy imports (scipy.stats ~1.5s). They load on
 # first use (via _ensure_stats) so the engine's cold start stays fast.
@@ -272,10 +272,14 @@ def verify_pvalue_calibration(spec: Dict[str, Any]) -> VerifierResult:
     else:
         ratio = 1.0
         ratio_ok = True
-    if diff <= tol and ratio_ok:
+    # two refutations, both must be survived: the claimed p inside [p − tol, p + tol], and the ratio bounded
+    checks = [band("statistics.pvalue_calibration", float(p), claimed_p, tol, "p", None, fmt="{:.6g}"),
+              bound("statistics.pvalue_calibration", ratio, ratio_threshold, "max", "p_ratio", None, fmt="{:.2f}")]
+    m = merge_checks("statistics.pvalue_calibration", checks, data)
+    if m.status == "CONFIRMED":
         return confirm("statistics.pvalue_calibration",
                        f"claimed p={claimed_p}, recomputed p={p:.6g} "
-                       f"(diff {diff:.2e}, ratio {ratio:.2f})", data)
+                       f"(diff {diff:.2e}, ratio {ratio:.2f}); {m.detail}", m.data)
     failures = []
     if diff > tol:
         failures.append(f"diff {diff:.2e} > tol {tol}")
@@ -283,7 +287,7 @@ def verify_pvalue_calibration(spec: Dict[str, Any]) -> VerifierResult:
         failures.append(f"ratio {ratio:.2f} > {ratio_threshold}")
     return mismatch("statistics.pvalue_calibration",
                     f"claimed p={claimed_p}, recomputed p={p:.6g}: " + "; ".join(failures),
-                    data)
+                    m.data)
 
 
 def verify_significance_consistency(spec: Dict[str, Any]) -> VerifierResult:
@@ -295,11 +299,13 @@ def verify_significance_consistency(spec: Dict[str, Any]) -> VerifierResult:
         return na("statistics.significance_consistency")
     is_sig = p <= alpha
     if claimed_significance.lower() in ("significant", "sig", "yes", "true"):
+        # the one-sided band: a significant claim needs p <= alpha
+        b = bound("statistics.significance_consistency", p, alpha, "max", "p_value", None, fmt="{}")
         if is_sig:
             return confirm("statistics.significance_consistency",
-                           f"p={p} <= alpha={alpha}, claim of significance is consistent")
+                           f"p={p} <= alpha={alpha}, claim of significance is consistent", b.data)
         return mismatch("statistics.significance_consistency",
-                        f"claimed significant but p={p} > alpha={alpha}")
+                        f"claimed significant but p={p} > alpha={alpha}", b.data)
     else:
         if not is_sig:
             return confirm("statistics.significance_consistency",
@@ -404,16 +410,21 @@ def verify_confidence_interval(spec: Dict[str, Any]) -> VerifierResult:
             data = {"recomputed_ci_low": recompute_lo,
                     "recomputed_ci_high": recompute_hi,
                     "conf_level": conf, "df": df, "tcrit": tcrit}
-            if abs(recompute_lo - lo) > tol or abs(recompute_hi - hi) > tol:
+            m = merge_checks("statistics.confidence_interval", [
+                band("statistics.confidence_interval", recompute_lo, lo, tol, "ci_low", None, fmt="{:.6g}"),
+                band("statistics.confidence_interval", recompute_hi, hi, tol, "ci_high", None, fmt="{:.6g}"),
+            ], data)
+            if m.status != "CONFIRMED":
                 return mismatch(
                     "statistics.confidence_interval",
-                    f"claimed CI [{lo}, {hi}] != recomputed [{recompute_lo:.6g}, {recompute_hi:.6g}] (tol {tol})",
-                    data,
+                    f"claimed CI [{lo}, {hi}] != recomputed [{recompute_lo:.6g}, {recompute_hi:.6g}] (tol {tol}); "
+                    f"{m.detail}",
+                    m.data,
                 )
             return confirm(
                 "statistics.confidence_interval",
-                f"recomputed CI matches: [{recompute_lo:.6g}, {recompute_hi:.6g}]",
-                data,
+                f"recomputed CI matches: [{recompute_lo:.6g}, {recompute_hi:.6g}]; {m.detail}",
+                m.data,
             )
         except Exception as e:
             return error("statistics.confidence_interval", f"recompute failed: {e}")
@@ -569,20 +580,25 @@ def verify_measurement_consistency(spec: Dict[str, Any]) -> VerifierResult:
             loc += f"; removing {located} reconciles the set to {tension_thr:g}sigma"
 
     if claim in ("consistent", "consistency", "agree", "concordant"):
-        if worst_t <= tension_thr and (dof == 0 or birge <= birge_thr):
+        # one-sided bands: worst tension <= threshold, and (with dof) Birge ratio <= its ceiling
+        checks = [bound(name, worst_t, tension_thr, "max", "max_tension_sigma", None, fmt="{:.2f}", unit="sigma")]
+        if dof > 0:
+            checks.append(bound(name, birge, birge_thr, "max", "birge_ratio", None, fmt="{:.2f}"))
+        m = merge_checks(name, checks, data)
+        if m.status == "CONFIRMED":
             return confirm(
                 name,
                 f"{n} determinations consistent: worst tension {worst_t:.2f}sigma <= "
                 f"{tension_thr:g}, Birge {birge:.2f} <= {birge_thr:g}; weighted mean "
                 f"{xbar:.12g} +/- {sigma_mean:.2g}",
-                data,
+                m.data,
             )
         why = []
         if worst_t > tension_thr and worst_pair:
             why.append(f"{worst_pair[0]} vs {worst_pair[1]} at {worst_t:.2f}sigma > {tension_thr:g}")
         if dof > 0 and birge > birge_thr:
             why.append(f"Birge {birge:.2f} > {birge_thr:g} (over-dispersed)")
-        return mismatch(name, "not consistent: " + "; ".join(why) + "." + loc, data)
+        return mismatch(name, "not consistent: " + "; ".join(why) + "." + loc, m.data)
 
     if claim in ("discordant", "disagree", "tension", "inconsistent"):
         if worst_t > tension_thr and worst_pair:
@@ -608,14 +624,15 @@ def verify_measurement_consistency(spec: Dict[str, Any]) -> VerifierResult:
         except (TypeError, ValueError):
             return error(name, "rel_level is not a number")
         data["rel_level"] = rel_level
-        if rel_spread <= rel_level:
+        b = bound(name, rel_spread, rel_level, "max", "relative_spread", data, fmt="{:.2e}")
+        if b.status == "CONFIRMED":
             return confirm(
                 name,
                 f"{n} determinations agree to relative {rel_spread:.2e} <= {rel_level:g} "
                 f"(weighted mean {xbar:.12g})",
-                data,
+                b.data,
             )
-        return mismatch(name, f"relative spread {rel_spread:.2e} > {rel_level:g}", data)
+        return mismatch(name, f"relative spread {rel_spread:.2e} > {rel_level:g}", b.data)
 
     return error(name, f"unknown claim {claim!r}; use consistent | discordant | agree_to_relative")
 
@@ -648,10 +665,11 @@ def verify_trajectory(spec: Dict[str, Any]) -> VerifierResult:
         cl = float(claimed)
     except (TypeError, ValueError):
         return error(name, "claimed_floor must be numeric")
-    if abs(cl - lb) > 1e-4:
-        return mismatch(name, f"Wilson floor for {s}/{n} at {conf:g} is {lb:.4f}, claimed {cl:.4f}", data)
+    b = band(name, lb, cl, 1e-4, "floor", data, fmt="{:.4f}")
+    if b.status != "CONFIRMED":
+        return mismatch(name, f"Wilson floor for {s}/{n} at {conf:g} is {lb:.4f}, claimed {cl:.4f}; {b.detail}", b.data)
     return confirm(name, f"Wilson floor for {s}/{n} at {conf:g} is {lb:.4f} (rate {s/n:.4f}); the conservative "
-                         f"success rate, earned by evidence — matches the claim", data)
+                         f"success rate, earned by evidence — matches the claim", b.data)
 
 
 def _wigner_gue_variance() -> float:

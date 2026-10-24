@@ -21,7 +21,7 @@ import os
 import time
 from typing import Any, Callable, Dict, List, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 
 
 # ----- Static checks (AST-based) -------------------------------------------
@@ -395,11 +395,13 @@ def verify_runtime_complexity(spec: Dict[str, Any]) -> VerifierResult:
     if expected is None:
         return error("cs.runtime_complexity", f"unrecognized claimed_class {claimed!r}", data)
     verdict = _slope_verdict(slope, expected, tol, sorted(set(expected_slopes.values())))
+    # the band: the claimed class's slope must lie within tol of the measured log-log slope
+    b = band("cs.runtime_complexity", slope, expected, tol, "log_log_slope", data, fmt="{:.2f}")
     if verdict == "confirm":
         return confirm(
             "cs.runtime_complexity",
-            f"measured log-log slope {slope:.2f}, expected ~{expected:.1f} for {claimed} (tol {tol})",
-            data,
+            f"measured log-log slope {slope:.2f}, expected ~{expected:.1f} for {claimed} (tol {tol}); {b.detail}",
+            b.data,
         )
     if verdict == "inconclusive":
         # Runtime is measured on a wall clock, which is NOT deterministic — a loaded machine can
@@ -414,8 +416,8 @@ def verify_runtime_complexity(spec: Dict[str, Any]) -> VerifierResult:
     return mismatch(
         "cs.runtime_complexity",
         f"measured log-log slope {slope:.2f} fits a DIFFERENT class, not the claimed {claimed} "
-        f"(expected ~{expected:.1f}, tol {tol})",
-        data,
+        f"(expected ~{expected:.1f}, tol {tol}); {b.detail}",
+        b.data,
     )
 
 
@@ -553,13 +555,8 @@ def verify_space_complexity(spec):
             "claimed_space_class": claimed, "tolerance": tol}
     if expected is None:
         return error("cs.space_complexity", f"unrecognized claimed_space_class {claimed!r}", data)
-    if abs(slope - expected) <= tol:
-        return confirm("cs.space_complexity",
-                       f"measured slope {slope:.2f} ~ expected {expected:.1f} for {claimed}",
-                       data)
-    return mismatch("cs.space_complexity",
-                    f"measured slope {slope:.2f} != expected {expected:.1f} for {claimed}",
-                    data)
+    # the band: the claimed class's slope must lie within tol of the measured log-log slope
+    return band("cs.space_complexity", slope, expected, tol, "log_log_slope", data, fmt="{:.2f}")
 
 
 def verify_determinism(spec):

@@ -58,11 +58,18 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band
 
 
 def _close(a: float, b: float, rel: float = 1e-4, abs_: float = 1e-6) -> bool:
     return abs(a - b) <= max(abs_, rel * max(abs(a), abs(b)))
+
+
+def _band(name: str, actual: float, claimed: float, what: str, data: Dict[str, Any],
+          rel: float = 1e-4, abs_: float = 1e-6, fmt: str = "{:.6g}") -> VerifierResult:
+    """The _close window as a band: the same tolerance, max(abs_, rel·max(|actual|, |claimed|))."""
+    tol = max(abs_, rel * max(abs(actual), abs(claimed)))
+    return band(name, actual, claimed, tol, what, data, fmt=fmt)
 
 
 # ── Discrete distribution checks ────────────────────────────────────────
@@ -105,9 +112,7 @@ def verify_expected_value(spec: Dict[str, Any]) -> VerifierResult:
     data = {"outcomes": outcomes, "probabilities": probs,
             "actual_expected_value": actual, "claimed_expected_value": cl,
             "formula": "E[X] = Σ pᵢ xᵢ"}
-    if _close(actual, cl):
-        return confirm(name, f"E[X] = {actual:.6g}", data)
-    return mismatch(name, f"E[X] = {actual:.6g}, claimed {cl}", data)
+    return _band(name, actual, cl, "expected_value", data, fmt="{:.6g}")
 
 
 def verify_variance(spec: Dict[str, Any]) -> VerifierResult:
@@ -130,9 +135,7 @@ def verify_variance(spec: Dict[str, Any]) -> VerifierResult:
             "mean": mean,
             "actual_variance": actual, "claimed_variance": cl,
             "formula": "Var(X) = Σ pᵢ (xᵢ - μ)²"}
-    if _close(actual, cl):
-        return confirm(name, f"Var(X) = {actual:.6g}", data)
-    return mismatch(name, f"Var(X) = {actual:.6g}, claimed {cl}", data)
+    return _band(name, actual, cl, "variance", data, fmt="{:.6g}")
 
 
 # ── Binomial ────────────────────────────────────────────────────────────
@@ -158,9 +161,7 @@ def verify_binomial_probability(spec: Dict[str, Any]) -> VerifierResult:
     data = {"n": nf, "p": pf, "k": kf,
             "actual_probability": actual, "claimed_probability": cl,
             "formula": "P(X=k) = C(n,k) pᵏ (1-p)ⁿ⁻ᵏ"}
-    if _close(actual, cl, rel=1e-3, abs_=1e-6):
-        return confirm(name, f"P(X={kf} | n={nf}, p={pf}) = {actual:.6g}", data)
-    return mismatch(name, f"actual {actual:.6g}, claimed {cl}", data)
+    return _band(name, actual, cl, "probability", data, rel=1e-3, abs_=1e-6, fmt="{:.6g}")
 
 
 def verify_binomial_mean(spec: Dict[str, Any]) -> VerifierResult:
@@ -178,9 +179,7 @@ def verify_binomial_mean(spec: Dict[str, Any]) -> VerifierResult:
     data = {"n": nf, "p": pf,
             "actual_mean": actual, "claimed_mean": cl,
             "formula": "E[Binom(n,p)] = n p"}
-    if _close(actual, cl):
-        return confirm(name, f"E[Binom({nf},{pf})] = {actual}", data)
-    return mismatch(name, f"actual {actual}, claimed {cl}", data)
+    return _band(name, actual, cl, "mean", data, fmt="{}")
 
 
 # ── Normal distribution ────────────────────────────────────────────────
@@ -211,9 +210,7 @@ def verify_normal_cdf(spec: Dict[str, Any]) -> VerifierResult:
     data = {"mu": muf, "sigma": sf, "x": xf,
             "actual_cdf": actual, "claimed_cdf": cl,
             "formula": "Φ((x-μ)/σ) — standard normal CDF via erf"}
-    if _close(actual, cl, rel=1e-3, abs_=1e-4):
-        return confirm(name, f"P(X≤{xf} | N({muf},{sf})) = {actual:.6f}", data)
-    return mismatch(name, f"actual {actual:.6f}, claimed {cl}", data)
+    return _band(name, actual, cl, "cdf", data, rel=1e-3, abs_=1e-4, fmt="{:.6f}")
 
 
 def verify_normal_within_std(spec: Dict[str, Any]) -> VerifierResult:
@@ -234,9 +231,7 @@ def verify_normal_within_std(spec: Dict[str, Any]) -> VerifierResult:
             "actual_fraction": actual, "claimed_fraction": cl,
             "formula": "P(|Z| ≤ k) = Φ(k) - Φ(-k)"}
     # Allow looser tolerance because users often quote "68%" / "95%" / "99.7%" rounded
-    if _close(actual, cl, rel=5e-3, abs_=5e-3):
-        return confirm(name, f"P(|X-μ| ≤ {kf}σ) = {actual:.4f}", data)
-    return mismatch(name, f"actual {actual:.4f}, claimed {cl}", data)
+    return _band(name, actual, cl, "fraction", data, rel=5e-3, abs_=5e-3, fmt="{:.4f}")
 
 
 # ── Poisson ─────────────────────────────────────────────────────────────
@@ -260,9 +255,7 @@ def verify_poisson_probability(spec: Dict[str, Any]) -> VerifierResult:
     data = {"lambda": lf, "k": kf,
             "actual_probability": actual, "claimed_probability": cl,
             "formula": "P(X=k) = e^(-λ) λᵏ / k!"}
-    if _close(actual, cl, rel=1e-3, abs_=1e-5):
-        return confirm(name, f"P(X={kf} | λ={lf}) = {actual:.6g}", data)
-    return mismatch(name, f"actual {actual:.6g}, claimed {cl}", data)
+    return _band(name, actual, cl, "probability", data, rel=1e-3, abs_=1e-5, fmt="{:.6g}")
 
 
 # ── Bayes ───────────────────────────────────────────────────────────────
@@ -290,9 +283,7 @@ def verify_bayes(spec: Dict[str, Any]) -> VerifierResult:
             "p_b": p_b,
             "actual_p_a_given_b": actual, "claimed_p_a_given_b": cl,
             "formula": "P(A|B) = P(B|A) P(A) / (P(B|A) P(A) + P(B|¬A) P(¬A))"}
-    if _close(actual, cl, rel=1e-3, abs_=1e-4):
-        return confirm(name, f"P(A|B) = {actual:.6f}", data)
-    return mismatch(name, f"actual {actual:.6f}, claimed {cl}", data)
+    return _band(name, actual, cl, "p_a_given_b", data, rel=1e-3, abs_=1e-4, fmt="{:.6f}")
 
 
 def verify_conditional_probability(spec: Dict[str, Any]) -> VerifierResult:
@@ -316,9 +307,7 @@ def verify_conditional_probability(spec: Dict[str, Any]) -> VerifierResult:
     data = {"p_a_and_b": pab, "p_b": pb,
             "actual_p_a_given_b": actual, "claimed_p_a_given_b": cl,
             "formula": "P(A|B) = P(A∩B) / P(B)"}
-    if _close(actual, cl, rel=1e-3, abs_=1e-4):
-        return confirm(name, f"P(A|B) = {actual:.6f}", data)
-    return mismatch(name, f"actual {actual:.6f}, claimed {cl}", data)
+    return _band(name, actual, cl, "p_a_given_b", data, rel=1e-3, abs_=1e-4, fmt="{:.6f}")
 
 
 def verify_independence(spec: Dict[str, Any]) -> VerifierResult:

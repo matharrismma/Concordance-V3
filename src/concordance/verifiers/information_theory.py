@@ -26,7 +26,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -58,18 +58,9 @@ def verify_shannon_entropy(spec: Dict[str, Any]) -> VerifierResult:
     actual = -sum(p * math.log2(p) for p in ps if p > 0)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-6)
-    diff = abs(actual - c)
     threshold = max(abs_tol, rel_tol * abs(actual))
-    data = {"probabilities": ps, "actual_entropy_bits": actual,
-            "claimed_entropy_bits": c, "diff": diff,
-            "formula": "H(X) = −Σ p·log₂(p)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"H = {actual:.6f} bits (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"H = {actual:.6f} bits, claimed {c} (diff {diff:.6f})",
-                    data)
+    data = {"probabilities": ps, "formula": "H(X) = −Σ p·log₂(p)"}
+    return band(name, actual, c, threshold, "entropy_bits", data, fmt="{:.6f}", unit="bits")
 
 
 def verify_bsc_capacity(spec: Dict[str, Any]) -> VerifierResult:
@@ -89,18 +80,9 @@ def verify_bsc_capacity(spec: Dict[str, Any]) -> VerifierResult:
     actual = 1.0 - _h2(pf)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-3)
-    diff = abs(actual - c)
     threshold = max(abs_tol, rel_tol * abs(actual))
-    data = {"bsc_error_rate": pf, "actual_capacity_bits": actual,
-            "claimed_capacity_bits": c, "diff": diff,
-            "formula": "C = 1 − H₂(p)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"C = 1 − H₂({pf}) = {actual:.4f} bits/use (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"C = {actual:.4f} bits/use, claimed {c} (diff {diff:.4f})",
-                    data)
+    data = {"bsc_error_rate": pf, "formula": "C = 1 − H₂(p)"}
+    return band(name, actual, c, threshold, "capacity_bits", data, fmt="{:.4f}", unit="bits/use")
 
 
 def verify_hamming_distance(spec: Dict[str, Any]) -> VerifierResult:

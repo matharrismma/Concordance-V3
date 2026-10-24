@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .base import VerifierResult, confirm, dispatch, error, mismatch, na
+from .base import VerifierResult, band, confirm, dispatch, error, merge_checks, mismatch, na
 
 _EPS = 1e-12
 
@@ -115,12 +115,16 @@ def verify_get_close(a: Dict[str, Any]) -> VerifierResult:
     lo, hi = est - err, est + err
     data: Dict[str, Any] = {"estimate": est, "error_bound": err, "lo": lo, "hi": hi, "order": order,
                             "anchor": x0, "target": x, "step": h, "actual": est}
+    results = []
     if true is not None:
         actual = abs(true - est)
         data["true_value"] = true; data["actual_error"] = actual
-        if actual > err + _EPS * (1.0 + abs(err)):
+        # the bound is the band: the true value must lie in [est − err, est + err] (float slack only)
+        b = band(name, est, true, err + _EPS * (1.0 + abs(err)), "true_value", data, fmt="{:.12g}")
+        if b.status == "MISMATCH":
             return mismatch(name, f"the bound does NOT hold: |true - estimate| = {actual:.3e} > {err:.3e} — the "
-                                  f"supplied curvature/Lipschitz bound is too small for this interval", data)
+                                  f"supplied curvature/Lipschitz bound is too small for this interval", b.data)
+        results.append(b)
     # a stated closeness CLAIM, checked (0 false positives): "f(x) is within claimed_error of claimed_value"
     if "claimed_value" in a and "claimed_error" in a:
         try:
@@ -131,13 +135,20 @@ def verify_get_close(a: Dict[str, Any]) -> VerifierResult:
             return error(name, "claimed_error must be non-negative")
         ref = true if true is not None else est
         what = "true value" if true is not None else "bounded estimate"
-        gap = abs(ref - cv)
-        if gap > ce + _EPS * (1.0 + abs(ce)):
+        # the claim names its own band: ref must lie in [cv − ce, cv + ce]; band() is centred on the recomputed
+        # value, so the same test reads as cv inside [ref − ce, ref + ce] (float slack only)
+        b = band(name, ref, cv, ce + _EPS * (1.0 + abs(ce)), "value", data, fmt="{:.10g}")
+        if b.status == "MISMATCH":
+            gap = abs(ref - cv)
             return mismatch(name, f"NOT within the claimed bound: |{what} {ref:.10g} − {cv:g}| = {gap:.3e} > "
-                                  f"claimed {ce:.3e}", data)
-        return confirm(name, f"within bound: {cv:g} ± {ce:g} contains the {what} {ref:.10g} (gap {gap:.3e}); "
-                             f"get close gave {est:.10g} ± {err:.3e}, anchored at f({x0:g})", data)
+                                  f"claimed {ce:.3e}", b.data)
+        results.append(b)
+        m = merge_checks(name, results, data)
+        return confirm(name, f"within bound: {cv:g} ± {ce:g} contains the {what} {ref:.10g}; "
+                             f"get close gave {est:.10g} ± {err:.3e}, anchored at f({x0:g}); {m.detail}", m.data)
     inside = f"; true f(x) = {true:.12g}, inside by {err - abs(true - est):.3e}" if true is not None else ""
+    if results:
+        data = merge_checks(name, results, data).data
     return confirm(name, f"get close: f({x:g}) ≈ {est:.12g} ± {err:.3e} (order {order}), interval "
                          f"[{lo:.12g}, {hi:.12g}], anchored at f({x0:g}) = {f0:.12g}. {guarantee}{inside}", data)
 
