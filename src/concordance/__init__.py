@@ -8,4 +8,4 @@ from __future__ import annotations
 from .config import SURFACES, EngineConfig
 
 __all__ = ["EngineConfig", "SURFACES", "__version__"]
-__version__ = "3.0.0a0"
+__version__ = "3.0.0a1"

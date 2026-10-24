@@ -4,6 +4,8 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+
+## 3.0.0a1 — 2026-10-24
 - Receipt format named and pinned as an open standard, `concordance-receipt/3.0` (the version rides
   in the attestation's `spec`). The COSE_Sign1 statement now carries the registered CWT Claims
   header (RFC 9597, label 15) with CWT claims (RFC 8392: `iss` = kid, `sub` = content_hash, `iat`),
@@ -27,6 +29,12 @@ and the receipt format. See `docs/VERSIONING.md`.
 - Governance: `docs/VERSIONING.md` (semver across the three surfaces, deprecation policy) and
   `tests/test_public_api.py` (pins the tool set, the receipt spec id, the semver shape of the
   version, and the public exports; fails if the current version has no changelog entry).
+- Recall: unit-anchored slot-fillers for Newton's second law (`x_force_units`) and kinematics
+  (`x_kinematics_units`, with m/s-vs-m/s² lookaheads) reach claims the word-order regexes miss, any
+  order, each slot exactly once — recall grows, 0 false positives unchanged.
+- Interchange: `transparency.agentledger_pob` maps a receipt to the AgentLedger proof-of-behavior
+  shape (`payload_hash`/`result_hash`/`prev_hash`, signed by the record's COSE_Sign1, chained on the
+  engine's ledger); `seal_fetch` carries it at `attest.agentledger`. RECEIPT_SPEC §2c.
 
 ## 3.0.0a0 — 2026-10-23
 - Core carved from v2 (`concordance-2`): 32 top-level modules, 8 MCP tools, stdlib HTTP API; the .org
