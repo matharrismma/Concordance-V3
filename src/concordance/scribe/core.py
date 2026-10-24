@@ -277,18 +277,26 @@ def run(writers: List[Writer], spec: str, packets: Dict[str, List[Dict[str, Any]
     and the eliminated values forward (`report["stages"]`), and feeds every writer its own counterexamples plus
     the stage constraints. Stops early on CONVERGED or UNDERDETERMINED. Context is the caller's business: pass a
     de-identified spec and reapply afterwards."""
+    # in-door: writers work on the de-identified skeleton; the held context goes back into the drafts at the end
+    from .. import airlock
+    passage = airlock.through(spec, lambda skel: skel, minimal=False)
+    skeleton = passage.checked if passage.ok else spec
     reports: List[Dict[str, Any]] = []
     fb: Dict[str, Optional[str]] = {w.name: None for w in writers}
     carry: Optional[Dict[str, Any]] = None
     for _ in range(passes):
         drafts = []
         for w in writers:
-            d = w.write(spec, fb.get(w.name))
+            d = w.write(skeleton, fb.get(w.name))
             drafts.append({"writer": w.name, **d})
         rep = score_pass(drafts, packets, claim_ids, value_key)
-        rep["drafts"] = drafts
+        rep["drafts"] = drafts                              # as written: stripped, what the verifier scored
         carry = _carry(carry, rep)
         rep["stages"] = carry
+        # out-door: the same drafts with the held context put back, for the user — never for the next writer
+        revealed, paths = airlock.reveal_deep(drafts, passage.stripped) if passage.ok else (drafts, [])
+        rep["drafts_revealed"] = revealed
+        rep["context"] = airlock.passage_note(passage, paths) if passage.ok else {"stripped": False}
         reports.append(rep)
         if rep["status"] in ("CONVERGED", "UNDERDETERMINED"):
             break

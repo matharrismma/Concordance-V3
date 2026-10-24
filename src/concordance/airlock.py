@@ -151,6 +151,102 @@ class Airlock:
         return self.stripped.reveal(text)
 
 
+# keys whose values are sealed/hashed/structural and must NEVER be rewritten on the way out — the seal binds to
+# the de-identified form, and a hash is not text.
+_NO_REVEAL = frozenset({"seal", "content_hash", "spec_hash", "root", "cite_url", "derivation_seal", "checked",
+                        "checked_text", "text_hash", "attest", "kid", "cose_sign1_b64", "public_key"})
+
+
+def reveal_deep(obj: Any, stripped: Any, *, _path: str = "") -> Tuple[Any, List[str]]:
+    """The out-door for a structured result: walk dicts/lists and put the held context back into every string
+    by pure lookup (redact.restore), skipping sealed keys. Returns (revealed_copy, paths_reapplied). The sealed
+    record in the CAS is untouched — this only rewrites what goes back to the user."""
+    if not stripped or not getattr(stripped, "pii_map", None):
+        return obj, []
+    paths: List[str] = []
+    if isinstance(obj, str):
+        out = stripped.reveal(obj)
+        return out, ([_path or "$"] if out != obj else [])
+    if isinstance(obj, list):
+        items = []
+        for i, v in enumerate(obj):
+            rv, ps = reveal_deep(v, stripped, _path=f"{_path}[{i}]")
+            items.append(rv)
+            paths.extend(ps)
+        return items, paths
+    if isinstance(obj, dict):
+        d = {}
+        for k, v in obj.items():
+            if k in _NO_REVEAL:
+                d[k] = v
+                continue
+            rv, ps = reveal_deep(v, stripped, _path=f"{_path}.{k}" if _path else str(k))
+            d[k] = rv
+            paths.extend(ps)
+        return d, paths
+    return obj, []
+
+
+def passage_note(a: "Airlock", reapplied: List[str]) -> Dict[str, Any]:
+    """What the user is told about the loop: what travelled, what stayed home, where context was put back."""
+    return {"stripped": True, "travelled": a.checked, "held_placeholders": len(a.held_pii),
+            "framing_held": bool((a.framing or "").strip()), "framing": (a.framing or "").strip() or None,
+            "reapplied_at": reapplied,
+            "means": "only `travelled` reached the verifier and the seal binds to it; personal details and framing "
+                     "stayed on this side and were put back into the response by lookup, never regenerated"}
+
+
+class Held:
+    """The holder for a structured strip: one stable placeholder map for the whole request."""
+    def __init__(self, pii_map: Dict[str, str]):
+        self.pii_map = pii_map
+
+    def reveal(self, text: str) -> str:
+        from . import redact
+        return redact.restore(text, self.pii_map)
+
+
+_TEXT_KEYS = frozenset({"claim", "label", "title", "text", "note", "summary", "description"})
+
+
+def strip_fields(obj: Any, keys: frozenset = _TEXT_KEYS) -> Tuple[Any, Held]:
+    """In-door for packets and documents: de-identify every free-text field (by key) anywhere in the structure
+    with ONE stable placeholder map, so the same email in a step label and the document title becomes the same
+    token. Numbers and spec values are untouched — they are what gets checked. Returns (stripped_copy, holder)."""
+    from . import redact
+    texts: List[str] = []
+
+    def collect(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k in keys and isinstance(v, str):
+                    texts.append(v)
+                else:
+                    collect(v)
+        elif isinstance(o, list):
+            for v in o:
+                collect(v)
+    collect(obj)
+    if not texts:
+        return obj, Held({})
+    _, mapping = redact.redact("\n".join(texts))        # one pass → stable tokens across all fields
+    inverse = {v: k for k, v in mapping.items()}       # original value → placeholder
+
+    def apply(o):
+        if isinstance(o, dict):
+            return {k: (_sub(v, inverse) if (k in keys and isinstance(v, str)) else apply(v)) for k, v in o.items()}
+        if isinstance(o, list):
+            return [apply(v) for v in o]
+        return o
+    return apply(obj), Held(mapping)
+
+
+def _sub(text: str, inverse: Dict[str, str]) -> str:
+    for original in sorted(inverse, key=len, reverse=True):
+        text = text.replace(original, inverse[original])
+    return text
+
+
 def through(text: str, operate: Callable[[str], Any], *, minimal: bool = True) -> Airlock:
     """The CONTEXT airlock: remove context at the in-door, run `operate` on ONLY the de-identified
     necessity-only skeleton in the clean zone, reapply context at the out-door.
@@ -181,4 +277,4 @@ def through(text: str, operate: Callable[[str], Any], *, minimal: bool = True) -
                    held_pii=held_pii, leaked=False, stripped=s)
 
 
-__all__ = ["ingest", "through", "Airlock"]
+__all__ = ["ingest", "through", "Airlock", "Held", "strip_fields", "reveal_deep", "passage_note"]

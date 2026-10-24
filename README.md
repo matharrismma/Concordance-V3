@@ -89,6 +89,16 @@ Change the gross-up and the par step breaks; the steps that rested on it refuse 
 stale HOLDS; the root changes. `GET /s/<root>?html=1` shows the tree and re-checks the whole chain from
 edited inputs. One hash covers the memo — the chain, not the number.
 
+## Context is stripped, checked, and put back
+
+Every door runs the same loop. **In:** personal details in free text (claim text, step labels, document title
+and prose, a scribe spec) become stable placeholders — one map per request, so the same email is the same token
+everywhere; numbers are never touched, they are what gets checked. **Check:** the verifier and the seal see only
+the stripped form; the record in the CAS and the public log never hold the original. **Out:** the response is
+walked and the originals put back by lookup — never regenerated — everywhere except the sealed parts, and
+`context` says exactly what travelled, how many placeholders were held, and where they were reapplied.
+The scribe's writers only ever see the skeleton; `drafts_revealed` is the user's copy.
+
 ## Receipts anyone can check — signed and publicly logged
 
 With an issuer key configured (`python -m concordance keygen`), every record served at `/s/<hash>` carries,

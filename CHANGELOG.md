@@ -22,4 +22,8 @@
   `read` sentence per verdict, sealed into the record; counterexamples (recomputed value, band, off_by) first-class;
   receipt page shows bands; scribe `narrow_way` (eliminated / surviving / [min, max] bracket). 68 verifier
   modules converted (260 checks), verdicts and tolerances unchanged; benchmark reports band coverage (50.6%).
+- Context loop closed on every door: `airlock.strip_fields` de-identifies free-text fields in packets and
+  documents with one stable map; `reveal_deep` puts context back into the response (never the seal);
+  `context` in every verify/discern/scribe result names what travelled and where it was reapplied. Scribe
+  writers see only the skeleton; `drafts_revealed` is the user's copy. compose strips title/labels/prose.
 - `CLAUDE.md`: working notes and the non-negotiables for anyone (or any agent) working in this repo.

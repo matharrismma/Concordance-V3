@@ -49,20 +49,23 @@ def seal_document(doc: Dict[str, Any], config: Optional[EngineConfig] = None, *,
     dom = str(steps[0].get("domain") or "mathematics")
     sealed = receipts.attach(res, config=config, domain=dom, enabled=seal)
     tree = _tree(sealed.get("trail") or [])
-    text = doc.get("text") or ""
+    # defensive: the MCP/HTTP door strips free text before this point; a direct caller gets the same floor
+    from . import redact
+    text = redact.redact(str(doc.get("text") or ""))[0]
+    title = redact.redact(str(doc.get("title") or ""))[0][:200]
     root_record = {
         "kind": KIND, "schema_version": "3.0",
-        "title": str(doc.get("title") or "")[:200],
+        "title": title,
         "verdict": sealed.get("verdict"),
         "derivation_seal": (sealed.get("seal") or {}).get("content_hash"),
         "steps": tree,
         "parents": parents,
         "text_hash": sha256_bytes(canonical_json_bytes({"text": text})) if text else None,
-        "labels": {str(s.get("id")): str(s.get("label") or "") for s in steps if s.get("label")},
+        "labels": {str(s.get("id")): redact.redact(str(s.get("label") or ""))[0] for s in steps if s.get("label")},
         # the bindings, so a reader (or the receipt page) can re-run the chain and feel an upstream change
         "binds": {str(s.get("id")): dict(s["bind"]) for s in steps if isinstance(s.get("bind"), dict) and s["bind"]},
     }
-    out: Dict[str, Any] = {"verdict": sealed.get("verdict"), "steps": tree,
+    out: Dict[str, Any] = {"verdict": sealed.get("verdict"), "title": title, "steps": tree,
                            "derivation_seal": sealed.get("seal"), "parents": parents, "generated": False}
     if seal:
         root = cas.store(root_record, index=False, card=False)

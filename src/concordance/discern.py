@@ -26,6 +26,9 @@ def discern(text: str) -> Dict[str, Any]:
 
     # de-identify: the extractor and the verifier see only the skeleton
     skeleton, held = _strip(t)
+    base["context"] = {"stripped": True, "travelled": skeleton, "held_placeholders": held,
+                       "means": "the proposal is built on the de-identified text; send `claims` to verify as they "
+                                "are — the seal binds to this form and verify puts your context back in its answer"}
     steps = audit.extract(skeleton)
     try:
         audit.compose_uses(steps, skeleton)   # "A, so B": B carries a `uses` edge to A; the gate checks the link
@@ -51,7 +54,8 @@ def discern(text: str) -> Dict[str, Any]:
 
 def _strip(t: str):
     """De-identify through the airlock; return (skeleton, count of held items). Falls back to the raw
-    text if the airlock is unavailable — the extractor only reads numbers and units anyway."""
+    text if the airlock is unavailable — the extractor only reads numbers and units anyway. The proposal
+    keeps the skeleton on purpose: it is what you send to verify, and what the seal will bind to."""
     try:
         from . import airlock
         a = airlock.through(t, lambda s: s)

@@ -92,6 +92,22 @@ def list_tools() -> List[dict]:
 
 
 # ── the plain-claim door ─────────────────────────────────────────────────────────────────────────
+def _with_context(out: Dict[str, Any], held: Any) -> Dict[str, Any]:
+    """Out-door for packet and document results: put held context back into the response (never the seal)
+    and say so. With nothing held, say that too — the loop ran, there was nothing to strip."""
+    from .. import airlock as _airlock
+    if not getattr(held, "pii_map", None):
+        out["context"] = {"stripped": True, "held_placeholders": 0, "reapplied_at": [],
+                          "means": "free-text fields were scanned; nothing personal found; numbers are never stripped"}
+        return out
+    revealed, paths = _airlock.reveal_deep(out, held)
+    revealed["context"] = {"stripped": True, "held_placeholders": len(held.pii_map), "reapplied_at": paths,
+                           "means": "free-text fields (title, labels, claim text, prose) were de-identified before "
+                                    "checking; the seal binds to the stripped form; the originals were put back "
+                                    "here by lookup, never regenerated"}
+    return revealed
+
+
 def _verify_plain(claim: str, config: EngineConfig, seal_on: bool, hint: Optional[str]) -> Dict[str, Any]:
     from .. import airlock as _airlock, audit as _audit, text as _text
     if _text.is_crisis(claim):
@@ -118,6 +134,9 @@ def _verify_plain(claim: str, config: EngineConfig, seal_on: bool, hint: Optiona
            "coverage": ar.get("coverage"), "generated": False, "note": ar.get("note", "")}
     if hint:
         out["domain_hint"] = str(hint)
+    # out-door: the user gets their context back everywhere except the sealed parts; the record stays stripped
+    out, reapplied = _airlock.reveal_deep(out, passage.stripped)
+    out["context"] = _airlock.passage_note(passage, reapplied)
     governed = ((ar.get("coverage") or {}).get("governed") or []) if isinstance(ar.get("coverage"), dict) else []
     if out["verdict"] == "INCOMPLETE":
         out["gap_at"] = claim
@@ -141,18 +160,24 @@ def _call_tool(name: str, args: dict, config: EngineConfig) -> Any:
     if name == "verify":
         from .. import receipts, schema as _schema
         seal_on = args.get("seal", True) is not False
+        from .. import airlock as _airlock
         if isinstance(args.get("document"), dict):
             from .. import compose as _compose, schema as _schema2
-            bad = _schema2.validate_steps(args["document"].get("steps") or [])
+            # in-door: titles, labels, prose and claim text are de-identified before anything is checked or
+            # sealed; numbers are untouched. The root record binds to the stripped form.
+            doc, held = _airlock.strip_fields(args["document"])
+            bad = _schema2.validate_steps(doc.get("steps") or [])
             if bad:
                 return {"verdict": "SCHEMA_ERROR", "root": None, "problems": bad,
                         "means": "a step's packet did not match its domain's schema; nothing was sealed"}
-            return _compose.seal_document(args["document"], config, seal=seal_on)
+            out = _compose.seal_document(doc, config, seal=seal_on)
+            return _with_context(out, held)
         claim = str(args.get("claim") or "").strip()
         if claim and not isinstance(args.get("steps"), list) and not args.get("mode"):
             return _verify_plain(claim, config, seal_on, args.get("domain"))
+        held = _airlock.Held({})
         if isinstance(args.get("steps"), list):
-            steps = args["steps"]
+            steps, held = _airlock.strip_fields(args["steps"])
             bad = _schema.validate_steps(steps)
             if bad:
                 return {"verdict": "SCHEMA_ERROR", "trail": [], "seal": None, "problems": bad,
@@ -164,7 +189,7 @@ def _call_tool(name: str, args: dict, config: EngineConfig) -> Any:
             res = verify_derivation([{"id": "b", "domain": "mathematics",
                                       "spec": {"mode": args.get("mode"), "params": args.get("params", {})}}])
             dom = "mathematics"
-        return receipts.attach(res, config=config, domain=dom, enabled=seal_on)
+        return _with_context(receipts.attach(res, config=config, domain=dom, enabled=seal_on), held)
     if name == "discern":
         from .. import discern as _d
         return _d.discern(str(args.get("text") or ""))
