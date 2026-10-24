@@ -43,7 +43,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 
 
 def verify_concrete_volume(spec: Dict[str, Any]) -> VerifierResult:
@@ -66,9 +66,7 @@ def verify_concrete_volume(spec: Dict[str, Any]) -> VerifierResult:
     data = {"length_m": Lf, "width_m": Wf, "depth_m": Df,
             "actual_volume_m3": round(actual, 4), "claimed_volume_m3": c,
             "formula": "V = L × W × D"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"V = {actual:.4f} m³ (matches claim)", data)
-    return mismatch(name, f"V = {actual:.4f} m³, claimed {c} m³", data)
+    return band(name, actual, c, tol, "volume_m3", data, fmt="{:,.4f}", unit="m³")
 
 
 def verify_rectangular_area(spec: Dict[str, Any]) -> VerifierResult:
@@ -88,9 +86,7 @@ def verify_rectangular_area(spec: Dict[str, Any]) -> VerifierResult:
     data = {"length_m": Lf, "width_m": Wf,
             "actual_area_m2": round(actual, 4), "claimed_area_m2": c,
             "formula": "A = L × W"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"A = {actual:.4f} m² (matches claim)", data)
-    return mismatch(name, f"A = {actual:.4f} m², claimed {c} m²", data)
+    return band(name, actual, c, tol, "area_m2", data, fmt="{:,.4f}", unit="m²")
 
 
 def verify_circular_area(spec: Dict[str, Any]) -> VerifierResult:
@@ -110,9 +106,7 @@ def verify_circular_area(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_m2", max(0.001, actual * 0.005))
     data = {"radius_m": rf, "actual_area_m2": round(actual, 4), "claimed_area_m2": c,
             "formula": "A = π × r²"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"A = {actual:.4f} m² (matches claim)", data)
-    return mismatch(name, f"A = {actual:.4f} m², claimed {c} m²", data)
+    return band(name, actual, c, tol, "area_m2", data, fmt="{:,.4f}", unit="m²")
 
 
 def verify_rebar_weight(spec: Dict[str, Any]) -> VerifierResult:
@@ -132,9 +126,7 @@ def verify_rebar_weight(spec: Dict[str, Any]) -> VerifierResult:
     data = {"rebar_length_m": lf, "unit_weight_kg_per_m": uwf,
             "actual_weight_kg": round(actual, 3), "claimed_weight_kg": c,
             "formula": "W = length × unit_weight"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"rebar weight = {actual:.3f} kg (matches claim)", data)
-    return mismatch(name, f"rebar weight = {actual:.3f} kg, claimed {c} kg", data)
+    return band(name, actual, c, tol, "weight_kg", data, fmt="{:,.3f}", unit="kg")
 
 
 def verify_wall_area(spec: Dict[str, Any]) -> VerifierResult:
@@ -155,9 +147,7 @@ def verify_wall_area(spec: Dict[str, Any]) -> VerifierResult:
     data = {"perimeter_m": pf, "wall_height_m": hf, "openings_m2": of,
             "actual_wall_area_m2": round(actual, 4), "claimed_wall_area_m2": c,
             "formula": "wall_area = perimeter × height − openings"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"wall area = {actual:.4f} m² (matches claim)", data)
-    return mismatch(name, f"wall area = {actual:.4f} m², claimed {c} m²", data)
+    return band(name, actual, c, tol, "wall_area_m2", data, fmt="{:,.4f}", unit="m²")
 
 
 def verify_paint_coverage(spec: Dict[str, Any]) -> VerifierResult:
@@ -235,9 +225,7 @@ def verify_beam_load(spec: Dict[str, Any]) -> VerifierResult:
     data = {"total_load_kn": lf, "span_m": sf,
             "actual_intensity_kn_per_m": round(actual, 4), "claimed_intensity": c,
             "formula": "intensity = total_load / span"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"load intensity = {actual:.4f} kN/m (matches claim)", data)
-    return mismatch(name, f"load intensity = {actual:.4f} kN/m, claimed {c}", data)
+    return band(name, actual, c, tol, "intensity_kn_per_m", data, fmt="{:,.4f}", unit="kN/m")
 
 
 def run(packet: Dict[str, Any]) -> List[VerifierResult]:

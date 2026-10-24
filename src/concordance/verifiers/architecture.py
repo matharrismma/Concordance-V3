@@ -38,7 +38,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -66,9 +66,7 @@ def verify_floor_area_ratio(spec: Dict[str, Any]) -> VerifierResult:
     data = {"formula": "FAR = total_floor_area / lot_area",
             "total_floor_area_m2": tfaf, "lot_area_m2": lotf,
             "actual_far": actual, "claimed_far": c, "diff": diff}
-    if diff <= threshold:
-        return confirm(name, f"FAR = {tfaf}/{lotf} = {actual:.6g} (matches claim {c})", data)
-    return mismatch(name, f"actual FAR {actual:.6g}, claimed {c} (diff {diff:.6g})", data)
+    return band(name, actual, c, threshold, "far", data)
 
 
 def verify_occupant_load(spec: Dict[str, Any]) -> VerifierResult:
@@ -161,9 +159,7 @@ def verify_window_wall_ratio(spec: Dict[str, Any]) -> VerifierResult:
     data = {"formula": "WWR = window_area / gross_wall_area",
             "window_area_m2": winf, "gross_wall_area_m2": wallf,
             "actual_wwr": actual, "claimed_wwr": c, "diff": diff}
-    if diff <= threshold:
-        return confirm(name, f"WWR = {winf}/{wallf} = {actual:.6g} (matches claim {c})", data)
-    return mismatch(name, f"actual WWR {actual:.6g}, claimed {c} (diff {diff:.6g})", data)
+    return band(name, actual, c, threshold, "wwr", data)
 
 
 def verify_structural_load(spec: Dict[str, Any]) -> VerifierResult:
@@ -191,13 +187,7 @@ def verify_structural_load(spec: Dict[str, Any]) -> VerifierResult:
     data = {"formula": "total = dead + live + snow",
             "dead_load_kPa": df, "live_load_kPa": lf, "snow_load_kPa": sf,
             "actual_total_load_kPa": actual, "claimed_total_load_kPa": c, "diff": diff}
-    if diff <= threshold:
-        return confirm(name,
-                       f"total = {df} + {lf} + {sf} = {actual:.6g} kPa (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"actual total {actual:.6g} kPa, claimed {c} kPa (diff {diff:.6g})",
-                    data)
+    return band(name, actual, c, threshold, "total_load_kPa", data, unit="kPa")
 
 
 _RULES = [

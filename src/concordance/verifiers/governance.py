@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
-from .base import VerifierResult, confirm, error, mismatch, na
+from .base import VerifierResult, confirm, error, mismatch, na, bound
 
 # Golden: a complete, valid decision packet confirms; perturbing the scope to an invalid value is
 # the falsehood the shape check must refuse.
@@ -144,9 +144,7 @@ def verify_decision_timing(packet: Dict[str, Any]) -> VerifierResult:
             "scope": scope, "elapsed_seconds": elapsed, "required_seconds": floor}
     if elapsed < 0:
         return mismatch(name, f"acted before created (elapsed={elapsed}s)", data)
-    if elapsed >= floor:
-        return confirm(name, f"scope={scope} wait satisfied: {elapsed}s >= {floor}s", data)
-    return mismatch(name, f"scope={scope} wait NOT satisfied: {elapsed}s < {floor}s", data)
+    return bound(name, elapsed, floor, "min", "elapsed_seconds", data, fmt="{:,.0f}", unit="s")
 
 
 def verify_rationale_alignment(spec: Dict[str, Any]) -> VerifierResult:

@@ -33,7 +33,7 @@ LABOR_VERIFY packet shape (any subset):
 from __future__ import annotations
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 # US federal minimum wage (effective 2009, public law)
@@ -60,9 +60,7 @@ def verify_gross_pay(spec: Dict[str, Any]) -> VerifierResult:
     data = {"hourly_rate": rf, "hours_worked": hf,
             "actual_gross_pay": round(actual, 2), "claimed_gross_pay": c,
             "formula": "gross = hourly_rate * hours_worked"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"gross pay = ${actual:.2f} (matches claim)", data)
-    return mismatch(name, f"gross pay = ${actual:.2f}, claimed ${c:.2f}", data)
+    return band(name, actual, c, tol, "gross_pay", data, fmt="{:,.2f}", unit="$")
 
 
 def verify_overtime_pay(spec: Dict[str, Any]) -> VerifierResult:
@@ -87,9 +85,7 @@ def verify_overtime_pay(spec: Dict[str, Any]) -> VerifierResult:
             "actual_total_pay": round(actual, 2), "claimed_total_pay": c,
             "formula": "pay = rate * reg_hours + rate * 1.5 * ot_hours (FLSA)",
             "standard": "FLSA 29 USC §207"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"FLSA pay = ${actual:.2f} (matches claim)", data)
-    return mismatch(name, f"FLSA pay = ${actual:.2f}, claimed ${c:.2f}", data)
+    return band(name, actual, c, tol, "total_pay", data, fmt="{:,.2f}", unit="$")
 
 
 def verify_annual_to_hourly(spec: Dict[str, Any]) -> VerifierResult:
@@ -116,9 +112,7 @@ def verify_annual_to_hourly(spec: Dict[str, Any]) -> VerifierResult:
         lit_num, factor = literal_scale(spec["claimed_hourly_as_written"])
         tol, info = window_for({**spec, "_lit": lit_num}, "_lit", tol, factor, actual)
         data.update(info)
-    if abs(actual - c) <= tol:
-        return confirm(name, f"hourly = ${actual:.4f} (matches claim)", data)
-    return mismatch(name, f"hourly = ${actual:.4f}, claimed ${c:.4f}", data)
+    return band(name, actual, c, tol, "hourly", data, fmt="{:,.4f}", unit="$")
 
 
 def verify_hourly_to_annual(spec: Dict[str, Any]) -> VerifierResult:
@@ -147,9 +141,7 @@ def verify_hourly_to_annual(spec: Dict[str, Any]) -> VerifierResult:
         lit_num, factor = literal_scale(lit)
         tol, info = window_for({**spec, "_lit": lit_num}, "_lit", tol, factor, actual)
         data.update(info)
-    if abs(actual - c) <= tol:
-        return confirm(name, f"annual = ${rf:g} x {annual_hours:g} h = ${actual:,.2f} (matches claim ${c:,.2f})", data)
-    return mismatch(name, f"annual = ${rf:g} x {annual_hours:g} h = ${actual:,.2f}, claimed ${c:,.2f}", data)
+    return band(name, actual, c, tol, "annual", data, fmt="{:,.2f}", unit="$")
 
 
 def verify_take_home_pay(spec: Dict[str, Any]) -> VerifierResult:
@@ -171,9 +163,7 @@ def verify_take_home_pay(spec: Dict[str, Any]) -> VerifierResult:
     data = {"gross_pay": gf, "total_tax_rate": tf,
             "actual_take_home": round(actual, 2), "claimed_take_home": c,
             "formula": "take_home = gross * (1 - total_tax_rate)"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"take-home = ${actual:.2f} (matches claim)", data)
-    return mismatch(name, f"take-home = ${actual:.2f}, claimed ${c:.2f}", data)
+    return band(name, actual, c, tol, "take_home", data, fmt="{:,.2f}", unit="$")
 
 
 def verify_minimum_wage_check(spec: Dict[str, Any]) -> VerifierResult:

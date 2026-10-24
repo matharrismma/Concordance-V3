@@ -43,7 +43,7 @@ OR_VERIFY packet shape (any subset):
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -207,9 +207,7 @@ def verify_critical_path(spec: Dict[str, Any]) -> VerifierResult:
     except (TypeError, ValueError):
         return error(name, f"claimed_makespan must be numeric, got {claimed!r}")
 
-    if abs(actual_makespan - claimed_f) <= tol:
-        return confirm(name, f"makespan={actual_makespan} (matches claim)", data)
-    return mismatch(name, f"makespan={actual_makespan}, claimed {claimed_f}", data)
+    return band(name, actual_makespan, claimed_f, tol, "makespan", data, fmt="{:g}")
 
 
 # ---------------------------------------------------------------------------
@@ -278,9 +276,7 @@ def verify_knapsack_01(spec: Dict[str, Any]) -> VerifierResult:
     except (TypeError, ValueError):
         return error(name, f"claimed_optimal_value must be numeric, got {claimed!r}")
 
-    if abs(actual_val - claimed_f) <= tol:
-        return confirm(name, f"optimal_value={actual_val} (matches claim)", data)
-    return mismatch(name, f"optimal_value={actual_val}, claimed {claimed_f}", data)
+    return band(name, actual_val, claimed_f, tol, "optimal_value", data, fmt="{:g}")
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +318,7 @@ def verify_assignment_cost(spec: Dict[str, Any]) -> VerifierResult:
         "claimed_total_cost": claimed_f,
         "rule": "total_cost = Σ cost_matrix[i][j] for each [i,j] in assignment",
     }
-    if abs(total - claimed_f) <= tol:
-        return confirm(name, f"total_cost={total} (matches claim)", data)
-    return mismatch(name, f"total_cost={total}, claimed {claimed_f}", data)
+    return band(name, total, claimed_f, tol, "total_cost", data, fmt="{:g}")
 
 
 # ---------------------------------------------------------------------------

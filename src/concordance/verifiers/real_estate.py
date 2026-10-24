@@ -37,7 +37,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -63,9 +63,7 @@ def verify_monthly_mortgage(spec: Dict[str, Any]) -> VerifierResult:
             "loan_term_months": nf,
             "actual_monthly_payment": round(actual, 2), "claimed_monthly_payment": c,
             "formula": "M = P * [r(1+r)^n] / [(1+r)^n - 1]"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"M = ${actual:.2f}/mo (matches claim)", data)
-    return mismatch(name, f"M = ${actual:.2f}/mo, claimed ${c:.2f}", data)
+    return band(name, actual, c, tol, "monthly_payment", data, fmt="{:,.2f}", unit="$/mo")
 
 
 def verify_cap_rate(spec: Dict[str, Any]) -> VerifierResult:
@@ -87,9 +85,7 @@ def verify_cap_rate(spec: Dict[str, Any]) -> VerifierResult:
     data = {"noi": nf, "property_value": pvf,
             "actual_cap_rate": round(actual, 6), "claimed_cap_rate": c,
             "formula": "cap_rate = NOI / property_value"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"cap rate = {actual:.4f} ({actual*100:.2f}%) (matches claim)", data)
-    return mismatch(name, f"cap rate = {actual:.4f}, claimed {c:.4f}", data)
+    return band(name, actual, c, tol, "cap_rate", data, fmt="{:.4f}")
 
 
 def verify_gross_rent_multiplier(spec: Dict[str, Any]) -> VerifierResult:
@@ -111,9 +107,7 @@ def verify_gross_rent_multiplier(spec: Dict[str, Any]) -> VerifierResult:
     data = {"property_price": pf, "annual_gross_rent": rf,
             "actual_grm": round(actual, 4), "claimed_grm": c,
             "formula": "GRM = property_price / annual_gross_rent"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"GRM = {actual:.2f} (matches claim)", data)
-    return mismatch(name, f"GRM = {actual:.2f}, claimed {c:.2f}", data)
+    return band(name, actual, c, tol, "grm", data, fmt="{:.2f}")
 
 
 def verify_loan_to_value(spec: Dict[str, Any]) -> VerifierResult:
@@ -137,9 +131,7 @@ def verify_loan_to_value(spec: Dict[str, Any]) -> VerifierResult:
             "actual_ltv": round(actual, 6), "claimed_ltv": c,
             "pmi_likely_required": pmi_required,
             "formula": "LTV = loan_amount / appraised_value"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"LTV = {actual:.4f} ({actual*100:.1f}%) (matches claim)", data)
-    return mismatch(name, f"LTV = {actual:.4f}, claimed {c:.4f}", data)
+    return band(name, actual, c, tol, "ltv", data, fmt="{:.4f}")
 
 
 def verify_dscr(spec: Dict[str, Any]) -> VerifierResult:
@@ -163,9 +155,7 @@ def verify_dscr(spec: Dict[str, Any]) -> VerifierResult:
             "lender_threshold": 1.25,
             "meets_lender_threshold": actual >= 1.25,
             "formula": "DSCR = NOI / annual_debt_service"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"DSCR = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"DSCR = {actual:.4f}, claimed {c:.4f}", data)
+    return band(name, actual, c, tol, "dscr", data, fmt="{:.4f}")
 
 
 def verify_rental_yield(spec: Dict[str, Any]) -> VerifierResult:
@@ -187,9 +177,7 @@ def verify_rental_yield(spec: Dict[str, Any]) -> VerifierResult:
     data = {"annual_rent": rf, "property_value": pvf,
             "actual_yield": round(actual, 6), "claimed_yield": c,
             "formula": "yield = annual_rent / property_value"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"rental yield = {actual:.4f} ({actual*100:.2f}%) (matches claim)", data)
-    return mismatch(name, f"rental yield = {actual:.4f}, claimed {c:.4f}", data)
+    return band(name, actual, c, tol, "yield", data, fmt="{:.4f}")
 
 
 _RULES = [

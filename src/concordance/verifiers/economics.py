@@ -46,7 +46,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 
 
 def verify_simple_interest(spec: Dict[str, Any]) -> VerifierResult:
@@ -67,9 +67,7 @@ def verify_simple_interest(spec: Dict[str, Any]) -> VerifierResult:
     data = {"principal": Pf, "rate": rf, "time_years": tf,
             "actual_interest": round(actual, 4), "claimed_interest": c,
             "formula": "I = P * r * t"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"I = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"I = {actual:.4f}, claimed {c}", data)
+    return band(name, actual, c, tol, "interest", data, fmt="{:,.4f}")
 
 
 def verify_compound_interest(spec: Dict[str, Any]) -> VerifierResult:
@@ -94,9 +92,7 @@ def verify_compound_interest(spec: Dict[str, Any]) -> VerifierResult:
             "compounding_periods": nf,
             "actual_amount": round(actual, 4), "claimed_amount": c,
             "formula": "A = P * (1 + r/n)^(n*t)"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"A = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"A = {actual:.4f}, claimed {c}", data)
+    return band(name, actual, c, tol, "amount", data, fmt="{:,.4f}")
 
 
 def verify_present_value(spec: Dict[str, Any]) -> VerifierResult:
@@ -119,9 +115,7 @@ def verify_present_value(spec: Dict[str, Any]) -> VerifierResult:
     data = {"future_value": FVf, "discount_rate": rf, "time_years": tf,
             "actual_pv": round(actual, 4), "claimed_pv": c,
             "formula": "PV = FV / (1 + r)^t"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"PV = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"PV = {actual:.4f}, claimed {c}", data)
+    return band(name, actual, c, tol, "pv", data, fmt="{:,.4f}")
 
 
 def verify_future_value(spec: Dict[str, Any]) -> VerifierResult:
@@ -142,9 +136,7 @@ def verify_future_value(spec: Dict[str, Any]) -> VerifierResult:
     data = {"present_value": PVf, "growth_rate": rf, "time_years": tf,
             "actual_fv": round(actual, 4), "claimed_fv": c,
             "formula": "FV = PV * (1 + r)^t"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"FV = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"FV = {actual:.4f}, claimed {c}", data)
+    return band(name, actual, c, tol, "fv", data, fmt="{:,.4f}")
 
 
 def verify_rule_of_72(spec: Dict[str, Any]) -> VerifierResult:
@@ -170,12 +162,13 @@ def verify_rule_of_72(spec: Dict[str, Any]) -> VerifierResult:
         from .base import window_for
         tol, info = window_for(spec, "claimed_doubling_years_as_written", tol, 1.0, actual)
         data.update(info)
-    if abs(actual - c) <= tol:
-        return confirm(name, f"72 / {rp}% = {actual:.2f} years (matches claim {c:g} within {tol:g})", data)
+    r = band(name, actual, c, tol, "doubling_years", data, fmt="{:.2f}", unit="years")
+    if r.passed:
+        return r
     how = ((f" — '{spec['claimed_doubling_years_as_written']}' states one figure and no hedge, so it is judged "
             f"exactly; 'about {c:g} years' or '{actual:.1f} years' would hold")
            if spec.get("claimed_doubling_years_as_written") and tol < 0.5 else "")
-    return mismatch(name, f"doubling time = 72 / {rp}% = {actual:.2f} years, claimed {c:g}{how}", data)
+    return mismatch(name, r.detail + how, r.data)
 
 
 def verify_inflation_adjusted(spec: Dict[str, Any]) -> VerifierResult:
@@ -196,9 +189,7 @@ def verify_inflation_adjusted(spec: Dict[str, Any]) -> VerifierResult:
     data = {"nominal_value": nf, "inflation_rate": rf, "years": yf,
             "actual_real_value": round(actual, 4), "claimed_real_value": c,
             "formula": "real = nominal / (1 + inflation_rate)^years"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"real value = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"real value = {actual:.4f}, claimed {c}", data)
+    return band(name, actual, c, tol, "real_value", data, fmt="{:,.4f}")
 
 
 def verify_inflation_rate(spec: Dict[str, Any]) -> VerifierResult:
@@ -227,15 +218,16 @@ def verify_inflation_rate(spec: Dict[str, Any]) -> VerifierResult:
     actual_pct = actual_frac * 100.0
     tol_frac = clamp_tol(spec, "tolerance", 0.0005)
     tol_pct = tol_frac * 100.0
-    matched = abs(actual_frac - c) <= tol_frac or abs(actual_pct - c) <= tol_pct
     data = {"cpi_current": ct, "cpi_previous": cp,
             "actual_rate_fraction": round(actual_frac, 6),
             "actual_rate_percent": round(actual_pct, 4),
             "claimed_inflation_rate": c,
             "formula": "inflation = (CPI_t - CPI_prev) / CPI_prev"}
-    if matched:
-        return confirm(name, f"inflation = {actual_pct:.4f}% (matches claim {c})", data)
-    return mismatch(name, f"inflation = {actual_pct:.4f}% / {actual_frac:.6f}, claimed {c}", data)
+    # The claim may be a fraction or a percent: judge it in whichever reading it lies nearer to.
+    as_pct = abs(actual_pct - c) <= tol_pct or (abs(actual_frac - c) > tol_frac and abs(actual_pct - c) < abs(actual_frac - c))
+    if as_pct:
+        return band(name, actual_pct, c, tol_pct, "rate_percent", data, fmt="{:.4f}", unit="%")
+    return band(name, actual_frac, c, tol_frac, "rate_fraction", data, fmt="{:.6f}")
 
 
 def verify_gdp_per_capita(spec: Dict[str, Any]) -> VerifierResult:
@@ -257,9 +249,7 @@ def verify_gdp_per_capita(spec: Dict[str, Any]) -> VerifierResult:
     data = {"gdp": gf, "population": pf,
             "actual_gdp_per_capita": round(actual, 2), "claimed_gdp_per_capita": c,
             "formula": "GDP per capita = GDP / population"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"GDP per capita = {actual:.2f} (matches claim)", data)
-    return mismatch(name, f"GDP per capita = {actual:.2f}, claimed {c}", data)
+    return band(name, actual, c, tol, "gdp_per_capita", data, fmt="{:,.2f}")
 
 
 def verify_price_elasticity(spec: Dict[str, Any]) -> VerifierResult:
@@ -282,9 +272,7 @@ def verify_price_elasticity(spec: Dict[str, Any]) -> VerifierResult:
             "actual_ped": round(actual, 4), "claimed_ped": c,
             "interpretation": "elastic" if abs(actual) > 1 else "inelastic",
             "formula": "PED = (%Δquantity) / (%Δprice)"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"PED = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"PED = {actual:.4f}, claimed {c}", data)
+    return band(name, actual, c, tol, "ped", data, fmt="{:.4f}")
 
 
 def run(packet: Dict[str, Any]) -> List[VerifierResult]:

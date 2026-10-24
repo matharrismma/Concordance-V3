@@ -34,7 +34,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -85,14 +85,11 @@ def verify_year_arithmetic(spec: Dict[str, Any]) -> VerifierResult:
         "tolerance": tol,
         "note": "sign convention: positive=CE, negative=BCE; no year 0",
     }
-    if diff <= tol:
-        return confirm(name,
-                       f"elapsed {actual} years ({fy} → {ty}) matches claim {cl} (diff {diff})",
-                       data)
+    r = band(name, actual, cl, tol, "elapsed_years", data, fmt="{:g}", unit="years")
+    if r.passed:
+        return r
     why = " — an inclusive count or a no-year-0 slip is a different number" if diff == 1 else ""
-    return mismatch(name,
-                    f"actual elapsed {actual} years ({fy} → {ty}), claimed {cl} (diff {diff}; judged exactly{why})",
-                    data)
+    return mismatch(name, f"{r.detail}; judged exactly{why}", r.data)
 
 
 # ---------------------------------------------------------------------------
@@ -236,13 +233,7 @@ def verify_elapsed_years_bce_to_ce(spec: Dict[str, Any]) -> VerifierResult:
         "tolerance": tol,
         "formula": "elapsed = from_BCE + to_CE - 1  (no year 0)",
     }
-    if diff <= tol:
-        return confirm(name,
-                       f"{fb} BCE → {tc} CE = {actual} years (matches claim {cl}, diff {diff})",
-                       data)
-    return mismatch(name,
-                    f"{fb} BCE → {tc} CE = {actual} years, claimed {cl} (diff {diff} > tol {tol})",
-                    data)
+    return band(name, actual, cl, tol, "elapsed", data, fmt="{:g}", unit="years")
 
 
 # ---------------------------------------------------------------------------

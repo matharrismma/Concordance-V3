@@ -52,7 +52,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -110,13 +110,7 @@ def verify_sigma_level(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     data = {"dpmo": d, "actual_sigma": actual, "claimed_sigma": c,
             "diff_sigma": diff, "tolerance_sigma": tol}
-    if diff <= tol:
-        return confirm(name,
-                       f"DPMO={d:.0f} → ~{actual:.2f}σ (matches claim {c}, diff {diff:.2f} ≤ {tol})",
-                       data)
-    return mismatch(name,
-                    f"DPMO={d:.0f} → {actual:.2f}σ, claimed {c} (diff {diff:.2f} > tol {tol})",
-                    data)
+    return band(name, actual, c, tol, "sigma", data, fmt="{:.2f}", unit="σ")
 
 
 def verify_spc_control_limits(spec: Dict[str, Any]) -> VerifierResult:
@@ -150,13 +144,8 @@ def verify_spc_control_limits(spec: Dict[str, Any]) -> VerifierResult:
             "diff_ucl": diff_u, "diff_lcl": diff_l, "tolerance": tol}
     threshold_u = max(tol, rel_tol * abs(actual_ucl))
     threshold_l = max(tol, rel_tol * abs(actual_lcl))
-    if diff_u <= threshold_u and diff_l <= threshold_l:
-        return confirm(name,
-                       f"UCL={actual_ucl}, LCL={actual_lcl} (k={k}, matches claim)",
-                       data)
-    return mismatch(name,
-                    f"actual UCL={actual_ucl}, LCL={actual_lcl}; claimed UCL={u}, LCL={l}",
-                    data)
+    return merge_checks(name, [band(name, actual_ucl, u, threshold_u, "ucl", data, fmt="{:g}"),
+                               band(name, actual_lcl, l, threshold_l, "lcl", data, fmt="{:g}")], data)
 
 
 def verify_process_capability(spec: Dict[str, Any]) -> VerifierResult:
@@ -224,13 +213,7 @@ def verify_tolerance_stack_rss(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     data = {"tolerances": ts, "actual_rss": actual, "claimed_rss": c,
             "diff": diff, "worst_case_sum": sum(ts)}
-    if diff <= max(abs_tol, rel_tol * actual):
-        return confirm(name,
-                       f"RSS = sqrt(Σt²) = {actual:.6f} (matches claim {c}, diff {diff:.6f})",
-                       data)
-    return mismatch(name,
-                    f"RSS = {actual:.6f}, claimed {c} (diff {diff:.6f})",
-                    data)
+    return band(name, actual, c, max(abs_tol, rel_tol * actual), "rss", data, fmt="{:.6f}")
 
 
 _RULES = [

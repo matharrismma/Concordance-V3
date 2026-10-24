@@ -31,7 +31,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -60,9 +60,7 @@ def verify_pythagorean_expectation(spec: Dict[str, Any]) -> VerifierResult:
             "actual_winning_pct": actual, "claimed_winning_pct": c,
             "diff": diff, "tolerance_pct": tol,
             "formula": "W% = RS^k / (RS^k + RA^k)  (Bill James)"}
-    if diff <= tol:
-        return confirm(name, f"W% = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"W% = {actual:.4f}, claimed {c} (diff {diff:.4f})", data)
+    return band(name, actual, c, tol, "winning_pct", data, fmt="{:.4f}")
 
 
 def verify_elo_expected_score(spec: Dict[str, Any]) -> VerifierResult:
@@ -83,9 +81,7 @@ def verify_elo_expected_score(spec: Dict[str, Any]) -> VerifierResult:
             "actual_expected": actual, "claimed_expected": c, "diff": diff,
             "tolerance": tol,
             "formula": "E_a = 1 / (1 + 10^((R_b − R_a)/400))"}
-    if diff <= tol:
-        return confirm(name, f"E_a = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"E_a = {actual:.4f}, claimed {c} (diff {diff:.4f})", data)
+    return band(name, actual, c, tol, "expected", data, fmt="{:.4f}")
 
 
 def verify_elo_rating_update(spec: Dict[str, Any]) -> VerifierResult:
@@ -115,9 +111,7 @@ def verify_elo_rating_update(spec: Dict[str, Any]) -> VerifierResult:
             "actual_post": actual, "claimed_post": c, "diff": diff,
             "tolerance_rating": tol,
             "formula": "R'_a = R_a + K·(S_a − E_a)"}
-    if diff <= tol:
-        return confirm(name, f"R'_a = {actual:.3f} (matches claim)", data)
-    return mismatch(name, f"R'_a = {actual:.3f}, claimed {c} (diff {diff:.3f})", data)
+    return band(name, actual, c, tol, "post", data, fmt="{:.3f}")
 
 
 def verify_games_behind(spec: Dict[str, Any]) -> VerifierResult:
@@ -145,9 +139,7 @@ def verify_games_behind(spec: Dict[str, Any]) -> VerifierResult:
             "actual_games_behind": actual, "claimed_games_behind": c,
             "diff": diff, "tolerance_games": tol,
             "formula": "GB = ((W_leader − W_team) + (L_team − L_leader)) / 2"}
-    if diff <= tol:
-        return confirm(name, f"GB = {actual} (matches claim)", data)
-    return mismatch(name, f"GB = {actual}, claimed {c} (diff {diff})", data)
+    return band(name, actual, c, tol, "games_behind", data, fmt="{:g}")
 
 
 _RULES = [

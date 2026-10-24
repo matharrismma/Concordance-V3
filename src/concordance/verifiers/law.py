@@ -33,7 +33,7 @@ Grid axes: authority/trust (constitutional text as canonical source),
 from __future__ import annotations
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band
 
 
 # ---------------------------------------------------------------------------
@@ -193,15 +193,7 @@ def verify_flsa_overtime(spec: Dict[str, Any]) -> VerifierResult:
         "tolerance": _FLSA_TOLERANCE,
         "formula": "OT_pay = max(0, hours - 40) × rate × 1.5",
     }
-    if diff <= _FLSA_TOLERANCE:
-        return confirm(name,
-                       f"OT = {overtime_hours}h × {r} × 1.5 = {actual_ot_pay:.2f} "
-                       f"(matches claim {c:.2f}, diff {diff:.4f})",
-                       data)
-    return mismatch(name,
-                    f"actual OT pay = {actual_ot_pay:.2f}, claimed {c:.2f} "
-                    f"(diff {diff:.4f} > tol {_FLSA_TOLERANCE})",
-                    data)
+    return band(name, actual_ot_pay, c, _FLSA_TOLERANCE, "overtime_pay", data, fmt="{:,.2f}")
 
 
 # ---------------------------------------------------------------------------

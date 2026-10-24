@@ -45,7 +45,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band, merge_checks
 from .base import dispatch
 
 
@@ -115,9 +115,7 @@ def verify_expected_payoff(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "mixed strategies must each sum to 1")
     actual = sum(pf[i] * Af[i][j] * qf[j] for i in range(len(pf)) for j in range(len(qf)))
     data = {"expected_payoff": actual, "claimed": cl, "formula": "u = p^T A q"}
-    if abs(actual - cl) <= max(1e-6, 1e-3 * abs(actual)):
-        return confirm(name, f"expected payoff = {actual:.4f} (matches {cl})", data)
-    return mismatch(name, f"expected payoff = {actual:.4f}, claimed {cl}", data)
+    return band(name, actual, cl, max(1e-6, 1e-3 * abs(actual)), "payoff", data, fmt="{:.4f}")
 
 
 def verify_nash_pure(spec: Dict[str, Any]) -> VerifierResult:
@@ -213,14 +211,19 @@ def verify_iterated(spec: Dict[str, Any]) -> VerifierResult:
         bad.append(f"is_dilemma is {dilemma}, claim said {bool(spec['claimed_is_dilemma'])}")
     if "claimed_tft_stable" in spec and bool(spec["claimed_tft_stable"]) != tft_stable:
         bad.append(f"TIT FOR TAT {'is' if tft_stable else 'is NOT'} stable at w={w:g} (threshold {thr:.4g}); claim said {bool(spec['claimed_tft_stable'])}")
+    bands = []
     for key, val in (("claimed_cooperate_forever_payoff", coop), ("claimed_defect_then_punished_payoff", defect_once)):
         if key in spec:
             try:
                 cl = float(spec[key])
             except (TypeError, ValueError):
                 return error(name, f"{key} must be numeric")
-            if abs(val - cl) > max(1e-6, 1e-3 * abs(val)):
-                bad.append(f"{key.replace('claimed_', '')} = {val:.6g}, claimed {cl:.6g}")
+            bands.append(band(name, val, cl, max(1e-6, 1e-3 * abs(val)), key.replace("claimed_", ""), data, fmt="{:.6g}"))
+    merged = merge_checks(name, bands, data) if bands else None
+    if merged is not None:
+        data = merged.data
+        if merged.status == "MISMATCH":
+            bad.append(merged.detail)
     if bad:
         return mismatch(name, "; ".join(bad), data)
     return confirm(name, f"dilemma={dilemma}; TFT {'stable' if tft_stable else 'invadable'} at w={w:g} (threshold {thr:.4g}); "
@@ -271,8 +274,10 @@ def verify_population(spec: Dict[str, Any]) -> VerifierResult:
             cl = float(spec["claimed_threshold_share"])
         except (TypeError, ValueError):
             return error(name, "claimed_threshold_share must be numeric")
-        if abs(thr - cl) > max(1e-4, 1e-3 * thr):
-            bad.append(f"threshold share x* = {thr:.4g}, claimed {cl:.4g}")
+        b = band(name, thr, cl, max(1e-4, 1e-3 * thr), "threshold_share", data, fmt="{:.4g}")
+        data = b.data
+        if b.status == "MISMATCH":
+            bad.append(b.detail)
     if bad:
         return mismatch(name, "; ".join(bad), data)
     return confirm(name, f"at x={x:g}, w={w:g} cooperation {direction} (f_TFT {f_tft:.4g} vs f_D {f_d:.4g}); "

@@ -45,7 +45,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -231,17 +231,7 @@ def verify_utc_offset(spec: Dict[str, Any]) -> VerifierResult:
         "diff_hours": abs(actual_offset - co),
         "source": "Python stdlib zoneinfo (IANA tz database)",
     }
-    if abs(actual_offset - co) <= tol:
-        return confirm(
-            name,
-            f"{tz} at {iso}: UTC offset {actual_offset:+.2f} h (matches claim)",
-            data,
-        )
-    return mismatch(
-        name,
-        f"{tz} at {iso}: actual UTC offset {actual_offset:+.2f} h, claimed {co:+.2f}",
-        data,
-    )
+    return band(name, actual_offset, co, tol, "offset_hours", data, fmt="{:+.2f}", unit="h")
 
 
 _RULES = [

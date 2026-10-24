@@ -42,7 +42,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
@@ -64,13 +64,7 @@ def verify_accounting_identity(spec: Dict[str, Any]) -> VerifierResult:
     data = {"assets": af, "liabilities": lf, "equity": ef,
             "liab_plus_equity": actual_le, "diff": diff, "tolerance": tol,
             "reference": "Balance Sheet Identity (GAAP / IFRS)"}
-    if diff <= tol:
-        return confirm(name,
-                       f"{af} = {lf} + {ef} = {actual_le} (diff {diff:.4f} ≤ {tol})",
-                       data)
-    return mismatch(name,
-                    f"{af} ≠ {lf} + {ef} = {actual_le} (diff {diff:.4f} > tol {tol})",
-                    data)
+    return band(name, actual_le, af, tol, "assets", data, fmt="{:,.4f}")
 
 
 def verify_compound_interest(spec: Dict[str, Any]) -> VerifierResult:
@@ -115,13 +109,7 @@ def verify_compound_interest(spec: Dict[str, Any]) -> VerifierResult:
         lit_num, factor = literal_scale(lit)
         threshold, info = window_for({**spec, "_lit": lit_num}, "_lit", threshold, factor, actual)
         data.update(info)
-    if diff <= threshold:
-        return confirm(name,
-                       f"FV = {pf}·(1+{rf}/{nf})^({nf}·{tf}) = {actual:.4f} (matches claim {cf}, diff {diff:.4f})",
-                       data)
-    return mismatch(name,
-                    f"FV = {actual:.4f}, claimed {cf} (diff {diff:.4f} > tol {threshold:.4f})",
-                    data)
+    return band(name, actual, cf, threshold, "future_value", data, fmt="{:,.4f}")
 
 
 def verify_npv(spec: Dict[str, Any]) -> VerifierResult:
@@ -151,13 +139,7 @@ def verify_npv(spec: Dict[str, Any]) -> VerifierResult:
             "actual_npv": actual, "claimed_npv": c, "diff": diff,
             "n_periods": len(cfs_f),
             "formula": "NPV = Σ CF_t / (1+r)^t"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"NPV @ {r:.2%} over {len(cfs_f)} periods = {actual:.4f} (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"NPV = {actual:.4f}, claimed {c} (diff {diff:.4f} > tol {threshold:.4f})",
-                    data)
+    return band(name, actual, c, threshold, "npv", data, fmt="{:,.4f}")
 
 
 def verify_present_value(spec: Dict[str, Any]) -> VerifierResult:
@@ -188,13 +170,7 @@ def verify_present_value(spec: Dict[str, Any]) -> VerifierResult:
     data = {"future_value": fvf, "discount_rate": rf, "periods": tf,
             "actual_present_value": actual, "claimed_present_value": cf,
             "diff": diff, "formula": "PV = FV / (1+r)^t"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"PV = {fvf}/(1+{rf})^{tf} = {actual:.4f} (matches claim {cf})",
-                       data)
-    return mismatch(name,
-                    f"PV = {actual:.4f}, claimed {cf} (diff {diff:.4f} > tol {threshold:.4f})",
-                    data)
+    return band(name, actual, cf, threshold, "present_value", data, fmt="{:,.4f}")
 
 
 _RULES = [
