@@ -16,4 +16,6 @@
   on Rekor as `rekord` entries (Rekor re-verifies the signature on admission); `attest` rides beside the record
   in `seal_fetch` / `/s/<hash>` and the receipt and tree pages; `python -m concordance keygen`;
   `tools/publish_seals.py` flushes pending entries; `docs/verify_receipt.py` checks hash, signature, log entry
-  and Merkle inclusion with no Concordance import; `docs/RECEIPT_SPEC.md`.
+  and Merkle inclusion with no Concordance import; `docs/RECEIPT_SPEC.md`. The v2 in-toto/DSSE `envelope.py`
+  and `tools/publish_seal.py` are removed — one statement format, not two.
+- `CLAUDE.md`: working notes and the non-negotiables for anyone (or any agent) working in this repo.
