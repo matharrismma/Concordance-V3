@@ -1,5 +1,33 @@
 # Changelog
 
+This project versions three surfaces together under semver — the Python library, the MCP tool set,
+and the receipt format. See `docs/VERSIONING.md`.
+
+## Unreleased
+- Receipt format named and pinned as an open standard, `concordance-receipt/3.0` (the version rides
+  in the attestation's `spec`). The COSE_Sign1 statement now carries the registered CWT Claims
+  header (RFC 9597, label 15) with CWT claims (RFC 8392: `iss` = kid, `sub` = content_hash, `iat`),
+  so a SCITT-aware consumer reads it directly; the same verdict is also emitted as an in-toto
+  Statement v1 in a DSSE envelope (`attest.in_toto`) for in-toto/SLSA consumers. The record's
+  `content_hash` is unchanged. `tools/mint_golden_receipt.py` + `tests/test_receipt_conformance.py`
+  validate the committed golden and reject tampered copies with the no-import `docs/verify_receipt.py`.
+- Packaging and listings prepared (owner publishes): PyPI metadata and `[project.urls]`;
+  `server.json` MCP-registry manifest; `docs/RUNBOOK.md` "Publishing and listings (owner only)".
+- Harness adapters under `integrations/` (`concordance-integrations`, outside the lean core): a
+  DeepEval metric + an autoevals/Braintrust scorer, a LangGraph/AutoGen verify node, and a
+  Guardrails validator. One rule — `HOLDS` passes, `BROKEN` fails, everything else abstains (a claim
+  the engine could not test is never scored a failure).
+- Monte-Carlo fuzz (`tools/mc_fuzz.py`, seeded) over the engine invariants: no false certify, every
+  seal re-verifies, bounded time and memory per verify, adversarial text never crashes or seals
+  garbage. It found and this fixes a ReDoS: a long digit run made several extractor patterns
+  backtrack for tens of seconds. `audit._clamp_digits` collapses any run longer than `MAX_DIGITS`
+  (40) before recognition — removing only numbers the engine would never check, so the
+  zero-false-positive guarantee is untouched. Pinned by `tests/test_redos_guard.py` and
+  `tests/test_mc_fuzz.py`.
+- Governance: `docs/VERSIONING.md` (semver across the three surfaces, deprecation policy) and
+  `tests/test_public_api.py` (pins the tool set, the receipt spec id, the semver shape of the
+  version, and the public exports; fails if the current version has no changelog entry).
+
 ## 3.0.0a0 — 2026-10-23
 - Core carved from v2 (`concordance-2`): 32 top-level modules, 8 MCP tools, stdlib HTTP API; the .org
   application (`witness`) calls it over HTTP and registers its own verifiers via entry points.
