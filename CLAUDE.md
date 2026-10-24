@@ -21,7 +21,7 @@ or vocabulary) enters this repo, its fixtures, its docs, or its examples. The fi
 - **Lean core.** The lazy import closure from the 8 tools must stay ⊆ `CORE_MODULES.txt` (`tools/closure.py`;
   the CI job diffs it). Adding a module means adding it to the entrypoints line in `.github/workflows/ci.yml`
   *and* regenerating `CORE_MODULES.txt` — and being able to say why it belongs in the core rather than in the
-  .org application. Target ≤ 40 top-level modules; currently 33.
+  .org application. Target ≤ 40 top-level modules; currently 34 (incl. __init__ and __main__).
 - **Eight tools.** `tool_registry.py` is the single source of truth. Anything else is an application's
   business and registers on its own server in front of this one. Do not add a ninth.
 - **One canonical form, one hash.** `validate.canonical_json_bytes` is the only serialisation that is hashed.
