@@ -26,6 +26,9 @@ or vocabulary) enters this repo, its fixtures, its docs, or its examples. The fi
   business and registers on its own server in front of this one. Do not add a ninth.
 - **One canonical form, one hash.** `validate.canonical_json_bytes` is the only serialisation that is hashed.
   Provenance (`attest`) rides *beside* a record, never inside the hashed bytes. Never rewrite `data/ledger/`.
+- **Not a truth engine.** A numeric check names the band (`band()`) or bound (`bound()`) a true claim must
+  respect; HOLDS is a survived refutation, BROKEN a re-runnable counterexample. New checks use these, never a bare
+  `confirm`/`mismatch` on a numeric comparison. `read` and `refutations` travel with every verdict and into the seal.
 - **Benchmark 0 false positives.** `tools/benchmark.py --check` (1,796 cases, four tiers). A verifier change
   that drops a case must be explained in `MEASURED.md`, not deleted from the data.
 - **Coverage gate.** `tools/unreached.py`: every `verify_*` function either executes under the benchmark or
@@ -93,6 +96,8 @@ Changing a receipt field: `docs/SEAL_SPEC.md` / `RECEIPT_SPEC.md` first, then co
 ## State (keep this section current)
 
 - v3.0.0a0 tagged. CI green. 790 tests. Benchmark v2.2.0: 1,796 / 0 FP. Closure 54 modules.
+- Inverted reading landed: band()/bound(), refutations manifest, counterexamples, scribe narrow_way. Band
+  coverage 50.6% of attempted refutations (benchmark BANDS line); the rest are exact/boolean/symbolic by nature.
 - Transparency layer live-proven against the public Rekor log (index 3428399704); production has no issuer
   key yet, so its receipts say "self-attested".
 - Next per PRODUCT_PLAN M1/M2: listings (PyPI, MCP registries), scribe benchmark with non-Claude writers,

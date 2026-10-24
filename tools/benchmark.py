@@ -240,7 +240,7 @@ def _missing_goldens():
     return sorted(registered - have)
 
 
-def emit_json(results, false_pos, false_neg):
+def emit_json(results, false_pos, false_neg, banded=None):
     """Machine-readable package (task #126): every case with its expectation and outcome, FP/FN
     reported separately, versioned — so the claim "0 FP on the published benchmark for release X"
     is reproducible by anyone with `python tools/benchmark.py --json`."""
@@ -251,7 +251,8 @@ def emit_json(results, false_pos, false_neg):
                     "false_negatives": [{"case": d, "verdict": v} for d, v in false_neg],
                     "totals": {"cases": len(results),
                                "false_positives": len(false_pos),
-                               "false_negatives": len(false_neg)}},
+                               "false_negatives": len(false_neg)},
+                    "bands": banded or {}},
                    ensure_ascii=False, indent=1))
 
 
@@ -267,9 +268,21 @@ def run(verbose: bool = True, as_json: bool = False):
     all_cases = ([(l, s_, d, s_["mode"]) for l, s_, d in CLAIMS] + [(l, s_, d, "domain") for l, s_, d in _domain_cases()]
                  + [(l, s_, d, "lighthouse") for l, s_, d in _lighthouse_cases()]
                  + [(l, s_, d, "check") for l, s_, d in _check_cases()])
+    banded = {"attempted": 0, "with_band": 0, "counterexamples_with_band": 0, "counterexamples": 0}
     for label, spec, desc, mode in all_cases:
         try:
-            verdict = (_vd(spec) if mode in ("domain", "lighthouse", "check") else verify(spec)).get("verdict")
+            res = (_vd(spec) if mode in ("domain", "lighthouse", "check") else verify(spec))
+            verdict = res.get("verdict")
+            # the inverted reading: how many attempted refutations name a band, and how many counterexamples do
+            for t in res.get("trail") or []:
+                ref = t.get("refutations") or {}
+                att = len(ref.get("attempted") or [])
+                if att:
+                    banded["attempted"] += att
+                    banded["with_band"] += min(att, len(ref.get("bands") or []))
+                    cx = ref.get("counterexamples") or []
+                    banded["counterexamples"] += len(cx)
+                    banded["counterexamples_with_band"] += sum(1 for c in cx if c.get("band"))
         except Exception as e:  # noqa: BLE001
             verdict = "ERROR:" + str(e)[:40]
         holds = (verdict == "HOLDS")
@@ -291,7 +304,7 @@ def run(verbose: bool = True, as_json: bool = False):
     fp = sum(c[2] for c in cats.values())
     fn = sum(c[3] for c in cats.values())
     if as_json:
-        emit_json(rows, false_pos, false_neg)
+        emit_json(rows, false_pos, false_neg, banded)
         return 1 if false_pos else 0
     if verbose:
         print("LOCAL derivation-moat benchmark  (concordance 2.0)")
@@ -301,6 +314,10 @@ def run(verbose: bool = True, as_json: bool = False):
             print(f"{m:12s} {c[0]:3d} {c[1]:8d} {acc:6.1f}% {c[2]:10d} {c[3]:10d}")
         print(f"{'OVERALL':12s} {n:3d} {corr:8d} {100.0 * corr / n:6.1f}% {fp:10d} {fn:10d}")
         print(f"(lighthouse rows skipped by policy — require executing caller code: {getattr(_lighthouse_cases, 'skipped', 0)})")
+        ba = banded
+        print(f"BANDS: {ba['with_band']}/{ba['attempted']} attempted refutations name a band "
+              f"({100.0 * ba['with_band'] / max(1, ba['attempted']):.1f}%); "
+              f"{ba['counterexamples_with_band']}/{ba['counterexamples']} counterexamples carry recomputed value + band + off_by")
         print(f"\nFALSE-POSITIVES (sealed a falsehood -- CRITICAL): {len(false_pos)}")
         for d in false_pos:
             print("  !!", d)

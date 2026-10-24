@@ -32,6 +32,17 @@ holding nothing but itself, reported HASH ok · SIGNATURE ok · LOG ok · INCLUS
 reproduced), FAILed HASH on a one-field tamper, and FAILed SIGNATURE under a random key. Duplicate publication
 resolved to the same entry (409 path). 8 tests; Rekor is stubbed in the suite. Closure grows by one module (54).
 
+Inverted reading (2026-10-23, commits 3d52faa…b5fb79d): every numeric check that compares a recomputed value
+to a claim now names the BAND the claim must lie in (`band()`), or the one-sided bound it must respect
+(`bound()`); a miss is a counterexample carrying recomputed value, band and off_by, sealed into the record.
+Measured by `tools/benchmark.py` (BANDS line): **1,433 of 2,830 attempted refutations (50.6%) name a band; 414 of
+892 counterexamples carry one.** The other half are exact-integer, boolean, string or symbolic checks (number
+theory, combinatorics, logic, symbolic equality/derivative modes) where a band is not the shape — they report
+attempted/survived/counterexample without an interval. Verdicts and tolerances unchanged across the conversion:
+benchmark per-case diff 0. Done in parallel by five agents over disjoint verifier families; the suite and
+benchmark were the convergence test. Scribe reports `narrow_way` per claim (band, eliminated, surviving,
+[min, max] bracket); the receipt page shows the bands. 797 tests.
+
 Not done: PyPI publish and the GitHub Release (both need the owner's credentials — artifacts are in dist/);
 an issuer key on the production box (`python -m concordance keygen`, see RUNBOOK) — until then production
 receipts say "self-attested"; 

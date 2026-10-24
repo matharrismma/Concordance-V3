@@ -18,4 +18,8 @@
   `tools/publish_seals.py` flushes pending entries; `docs/verify_receipt.py` checks hash, signature, log entry
   and Merkle inclusion with no Concordance import; `docs/RECEIPT_SPEC.md`. The v2 in-toto/DSSE `envelope.py`
   and `tools/publish_seal.py` are removed — one statement format, not two.
+- Inverted reading — not a truth engine: `band()` / `bound()` in verifiers.base; `refutations` manifest and
+  `read` sentence per verdict, sealed into the record; counterexamples (recomputed value, band, off_by) first-class;
+  receipt page shows bands; scribe `narrow_way` (eliminated / surviving / [min, max] bracket). 68 verifier
+  modules converted (260 checks), verdicts and tolerances unchanged; benchmark reports band coverage (50.6%).
 - `CLAUDE.md`: working notes and the non-negotiables for anyone (or any agent) working in this repo.
