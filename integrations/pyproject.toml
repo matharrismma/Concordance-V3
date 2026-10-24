@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "concordance-integrations"
+version = "0.1.0a0"
+description = "Adapters that put the Concordance verifier inside DeepEval, autoevals, LangGraph, AutoGen, and Guardrails — each returns a re-checkable receipt."
+license = {text = "MIT"}
+readme = "README.md"
+authors = [{ name = "Matt Harris" }]
+keywords = ["concordance", "verification", "receipts", "deepeval", "autoevals", "langgraph", "guardrails", "eval", "scorer", "validator"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+requires-python = ">=3.10"
+# The engine is the only hard dependency. The derivation moat needs its `math` extra
+# (concordance[math]); without it the adapters still run but math claims come back
+# not-checked (abstain), never a false pass.
+dependencies = ["concordance>=3.0.0a0"]
+
+[project.optional-dependencies]
+deepeval = ["deepeval>=1.0"]
+langgraph = ["langgraph>=0.2"]
+guardrails = ["guardrails-ai>=0.4"]
+all = ["deepeval>=1.0", "langgraph>=0.2", "guardrails-ai>=0.4"]
+dev = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/matharrismma/Concordance-V3"
+Repository = "https://github.com/matharrismma/Concordance-V3"
+Documentation = "https://github.com/matharrismma/Concordance-V3/blob/main/integrations/README.md"
+
+[project.entry-points."guardrails.validators"]
+# Guardrails Hub discovers the validator by this entry point once the package is installed.
+"concordance/numbers" = "concordance_integrations.guardrails:ConcordanceNumbers"
+
+[tool.setuptools]
+packages = ["concordance_integrations"]
