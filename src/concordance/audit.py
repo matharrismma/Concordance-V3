@@ -23,6 +23,22 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 MAX_TEXT = 20_000     # characters of input scanned (DoS bound; each claim is pool-bounded anyway)
 MAX_CLAIMS = 40       # claims verified per report
+MAX_DIGITS = 40       # longest digit run any real claim carries; longer runs are a ReDoS, not a number
+
+_OVERLONG_DIGITS = re.compile(r"\d{%d,}" % (MAX_DIGITS + 1))
+
+
+def _clamp_digits(text: str) -> str:
+    """Collapse any digit run longer than MAX_DIGITS to a non-numeric marker before extraction.
+
+    Several extractor patterns embed an unbounded number (``\\d[\\d,]*``) among optional groups and
+    backtrack catastrophically on a long digit run — a crafted 5000-digit input is ~60 s of CPU
+    across the pass, every extractor returning no claim (a ReDoS the per-verify timeout can't shed,
+    since the cost is in recognition). No real claim carries a 40-digit number, and the number-theory
+    recognisers already cap their operands well below that, so clamping removes only numbers the
+    engine would never check: it can never turn a false claim into a true one (no new HOLDS), so the
+    zero-false-positive guarantee is untouched. Fixes the path, not each pattern."""
+    return _OVERLONG_DIGITS.sub(" (large number) ", text)
 
 _MONTHS = {"january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
            "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12}
@@ -2561,7 +2577,7 @@ def extract(text: str) -> List[Dict[str, Any]]:
     a request extracts a claim once in from_prose and again in the blind route() (which reads only
     raw_text, by design), and both now share the one computed recognition. Callers get fresh deep copies
     so the cache is read-only and can never be corrupted; the key is bounded by MAX_TEXT."""
-    return [copy.deepcopy(s) for s in _extract_memo((text or "")[:MAX_TEXT])]
+    return [copy.deepcopy(s) for s in _extract_memo(_clamp_digits((text or "")[:MAX_TEXT]))]
 
 
 # ── THE STRUCTURED HINT (2026-10-08, the failure report H7) ──────────────────────────────────────
@@ -2603,7 +2619,7 @@ def looks_arithmetic(text: str) -> bool:
 
 def structured_hint(text: str) -> Optional[Dict[str, Any]]:
     """The template for the structured form, built from the words — or None when they carry no number."""
-    t = re.sub(r"\s+", " ", (text or "")).strip()
+    t = re.sub(r"\s+", " ", _clamp_digits(text or "")).strip()
     nums = _HINT_NUM.findall(t)
     if not nums:
         return None
