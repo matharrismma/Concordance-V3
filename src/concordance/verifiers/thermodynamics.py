@@ -45,7 +45,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import thermal_scale as _thermal  # k_B-anchored Boltzmann entropy
 from . import molar_scale as _molar  # N_A-anchored gas constant R = N_A k_B
@@ -82,17 +82,7 @@ def verify_carnot_efficiency(spec: Dict[str, Any]) -> VerifierResult:
         "diff": diff,
         "formula": "η = 1 − T_cold / T_hot",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"1 − {Tc}/{Th} = {actual:.6g} (matches claim {c})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual efficiency {actual:.6g}, claimed {c} (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, c, threshold, "efficiency", data)
 
 
 def verify_ideal_gas_law(spec: Dict[str, Any]) -> VerifierResult:
@@ -165,17 +155,8 @@ def verify_ideal_gas_law(spec: Dict[str, Any]) -> VerifierResult:
         "formula": formula,
         "PV_equals_nRT": True,
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"PV=nRT ({mode}): computed {actual:.6g} matches claim {claimed_f}",
-            data,
-        )
-    return mismatch(
-        name,
-        f"PV=nRT ({mode}): actual {actual:.6g}, claimed {claimed_f} (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, claimed_f, threshold, mode, data,
+                unit={"pressure": "Pa", "volume": "m3", "temperature": "K"}[mode])
 
 
 def verify_specific_heat(spec: Dict[str, Any]) -> VerifierResult:
@@ -207,17 +188,7 @@ def verify_specific_heat(spec: Dict[str, Any]) -> VerifierResult:
         "diff": diff,
         "formula": "Q = m × c × ΔT",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"{mf} × {cf} × {dTf} = {actual:.6g} J (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual Q = {actual:.6g} J, claimed {cl} J (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "heat_J", data, unit="J")
 
 
 def verify_entropy_change(spec: Dict[str, Any]) -> VerifierResult:
@@ -248,17 +219,7 @@ def verify_entropy_change(spec: Dict[str, Any]) -> VerifierResult:
         "formula": "ΔS = Q / T",
         "process": "reversible",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"{Qf} / {Tf} = {actual:.6g} J/K (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual ΔS = {actual:.6g} J/K, claimed {cl} J/K (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "entropy_change_J_per_K", data, unit="J/K")
 
 
 def verify_clausius_clapeyron(spec: Dict[str, Any]) -> VerifierResult:
@@ -302,9 +263,7 @@ def verify_clausius_clapeyron(spec: Dict[str, Any]) -> VerifierResult:
         "claimed_boiling_point_K": cT2, "diff_K": round(diff, 3),
         "formula": "ln(P2/P1) = (L/R)(1/T1 − 1/T2)",
     }
-    if diff <= threshold:
-        return confirm(name, f"predicted boiling point {T2_pred:.2f} K matches claim {cT2} K (Δ {diff:.2f} K)", data)
-    return mismatch(name, f"predicted {T2_pred:.2f} K, claimed {cT2} K (Δ {diff:.2f} K)", data)
+    return band(name, T2_pred, cT2, threshold, "boiling_point_K", data, fmt="{:.2f}", unit="K")
 
 
 def verify_boltzmann_entropy(spec: Dict[str, Any]) -> VerifierResult:
@@ -323,9 +282,7 @@ def verify_boltzmann_entropy(spec: Dict[str, Any]) -> VerifierResult:
         except (KeyError, TypeError, ValueError):
             return error(name, "claimed_entropy_J_per_K must be numeric")
         dat = {"formula": "S = k_B ln W", "actual": 0.0, "claimed": cl}
-        if abs(cl) <= 1e-30:
-            return confirm(name, "W = 1: S = k_B ln 1 = 0, matches claim", dat)
-        return mismatch(name, f"W = 1 gives S = 0, claimed {cl:.4g} J/K", dat)
+        return band(name, 0.0, cl, 1e-30, "entropy_J_per_K", dat, fmt="{:.4g}", unit="J/K")
     return _thermal.compare(name, _thermal.boltzmann_entropy_J_per_K(W),
                             spec["claimed_entropy_J_per_K"], 1e-3, {"formula": "S = k_B ln W"})
 

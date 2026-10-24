@@ -36,7 +36,7 @@ def test_the_identities_hold_exactly():
 
 def test_one_wrong_value_among_right_ones_is_a_mismatch():
     r = physics.verify_planck_units({"claimed_planck_length_m": L_P, "claimed_planck_mass_kg": 2.176434e-7})
-    assert r.status == "MISMATCH" and "m_P" in r.detail and "l_P" not in r.detail, r
+    assert r.status == "MISMATCH" and "planck_mass_kg" in r.detail and "planck_length" not in r.detail, r
 
 
 def test_tolerance_can_only_tighten():

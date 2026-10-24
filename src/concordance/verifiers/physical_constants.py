@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, stated_precision, stated_tolerance_abs, window_for
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, stated_precision, stated_tolerance_abs, window_for, band
 
 
 # Each entry: (canonical_value, unit, is_exact, source_note)
@@ -259,24 +259,11 @@ def verify_physical_constant(spec: Dict[str, Any]) -> VerifierResult:
         data.update(info)
         data["stated_tolerance"] = threshold
         stated_used = True
-    if diff <= threshold:
-        if stated_used:
-            return confirm(
-                name,
-                f"{canonical} = {actual} {record['unit']} — the claim {claim} matches to the "
-                f"{data.get('stated_sigfigs')} significant figure(s) stated (exact {actual})",
-                data,
-            )
-        return confirm(
-            name,
-            f"{canonical} = {actual} {record['unit']} (claim {claim} within {rel_tol:.0e})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"{canonical} actual {actual} {record['unit']}, claimed {claim}",
-        data,
-    )
+    r = band(name, actual, claim, threshold, "value", data, fmt="{:.10g}", unit=record["unit"])
+    detail = f"{canonical}: {r.detail}"
+    if stated_used and r.passed:
+        detail += f" — to the {data.get('stated_sigfigs')} significant figure(s) stated"
+    return VerifierResult(name=name, status=r.status, detail=detail, data=r.data)
 
 
 def list_constants() -> List[Dict[str, Any]]:
@@ -380,19 +367,13 @@ def verify_constant_relation(spec: Dict[str, Any]) -> VerifierResult:
         "rel_tol": rel_tol,
         "source": "CODATA 2018 / NIST",
     }
-    if rel_diff <= rel_tol:
-        return confirm(
-            name,
-            f"{record['formula']}: computed {computed:.10g} matches {target_key} "
-            f"{actual:.10g} (rel {rel_diff:.1e} <= {rel_tol:.0e})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"{record['formula']}: computed {computed:.10g} != {target_key} {actual:.10g} "
-        f"(rel {rel_diff:.1e} > {rel_tol:.0e})",
-        data,
-    )
+    # the table value is the anchor; the relation's output must land inside rel_tol of it
+    if not actual:
+        return mismatch(name, f"{record['formula']}: target {target_key} is zero; no relative band exists", data)
+    r = band(name, actual, computed, rel_tol * abs(actual), "value", data, fmt="{:.10g}",
+             unit=_CONSTANTS[target_key]["unit"])
+    return VerifierResult(name=name, status=r.status, detail=f"{record['formula']} -> {target_key}: {r.detail}",
+                          data=r.data)
 
 
 def list_relations() -> List[Dict[str, Any]]:

@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band
 from .base import dispatch  # declarative run() driver
 from . import alpha_scale as _ascale  # alpha-anchored energy levels / spectral lines
 
@@ -170,9 +170,7 @@ def verify_shell_capacity(spec: Dict[str, Any]) -> VerifierResult:
         if n < 1:
             return error(name, f"shell_n={n} must be >= 1")
         actual = 2 * n * n
-        if actual == claimed:
-            return confirm(name, f"shell n={n} holds 2n² = {actual} electrons")
-        return mismatch(name, f"shell n={n} holds 2n² = {actual}, not {claimed}")
+        return band(name, actual, claimed, 0, "shell_capacity", {"shell_n": n, "formula": "2n²"}, fmt="{:.0f}")
     if "subshell_l" in spec and "claimed_subshell_capacity" in spec:
         try:
             l = int(spec["subshell_l"]); claimed = int(spec["claimed_subshell_capacity"])
@@ -181,9 +179,8 @@ def verify_shell_capacity(spec: Dict[str, Any]) -> VerifierResult:
         if l < 0:
             return error(name, f"subshell_l={l} must be >= 0")
         actual = 2 * (2 * l + 1)
-        if actual == claimed:
-            return confirm(name, f"subshell l={l} ({_LSYM.get(l, '?')}) holds 2(2l+1) = {actual}")
-        return mismatch(name, f"subshell l={l} holds 2(2l+1) = {actual}, not {claimed}")
+        return band(name, actual, claimed, 0, "subshell_capacity",
+                    {"subshell_l": l, "subshell": _LSYM.get(l, "?"), "formula": "2(2l+1)"}, fmt="{:.0f}")
     return na(name)
 
 

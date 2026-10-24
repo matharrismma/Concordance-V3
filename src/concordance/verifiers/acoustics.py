@@ -23,12 +23,13 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 
 
-def _close(actual, claimed, rel_tol=1e-3, abs_tol=1e-6):
-    return abs(actual - claimed) <= max(abs_tol, rel_tol * abs(actual))
+def _band(name, actual, claimed, what, data, rel_tol=1e-3, abs_tol=1e-6, unit=""):
+    """The band every true claim must lie in: ±max(abs_tol, rel_tol·|actual|) around the recomputed value."""
+    return band(name, actual, claimed, max(abs_tol, rel_tol * abs(actual)), what, data, unit=unit)
 
 
 def verify_wave_relation(spec: Dict[str, Any]) -> VerifierResult:
@@ -51,9 +52,7 @@ def verify_wave_relation(spec: Dict[str, Any]) -> VerifierResult:
     data = {"speed": cf, "frequency": ff, "wavelength": lf,
             "f_times_lambda": actual, "diff": diff,
             "formula": "c = f · λ"}
-    if _close(actual, cf, rel_tol=rel_tol):
-        return confirm(name, f"f·λ = {ff}·{lf} = {actual} (matches c={cf})", data)
-    return mismatch(name, f"f·λ = {actual}, c = {cf} (diff {diff})", data)
+    return _band(name, actual, cf, "speed", data, rel_tol=rel_tol)
 
 
 def verify_decibel_ratio(spec: Dict[str, Any]) -> VerifierResult:
@@ -82,13 +81,7 @@ def verify_decibel_ratio(spec: Dict[str, Any]) -> VerifierResult:
     data = {"value": v, "reference": rf, "kind": kind,
             "actual_db": actual, "claimed_db": c, "diff_db": diff,
             "formula": f"dB = {multiplier:.0f}·log10(value/reference)"}
-    if diff <= tol:
-        return confirm(name,
-                       f"{multiplier:.0f}·log10({v}/{rf}) = {actual:.2f} dB (matches claim {c}, diff {diff:.2f})",
-                       data)
-    return mismatch(name,
-                    f"actual {actual:.2f} dB, claimed {c} dB (diff {diff:.2f} > tol {tol})",
-                    data)
+    return band(name, actual, c, tol, "db", data, fmt="{:.2f}", unit="dB")
 
 
 def verify_doppler_shift(spec: Dict[str, Any]) -> VerifierResult:
@@ -126,13 +119,7 @@ def verify_doppler_shift(spec: Dict[str, Any]) -> VerifierResult:
             "speed_medium": c, "actual_f_observed": actual,
             "claimed_f_observed": fo_c, "diff_hz": diff,
             "formula": "f_obs = f_src · (c + v_obs) / (c − v_src)  (v > 0 = closing)"}
-    if _close(actual, fo_c, rel_tol=rel_tol):
-        return confirm(name,
-                       f"f_obs = {fs}·({c}+{vo})/({c}−{vs}) = {actual:.3f} Hz (matches claim {fo_c})",
-                       data)
-    return mismatch(name,
-                    f"f_obs = {actual:.3f} Hz, claimed {fo_c} (diff {diff:.3f})",
-                    data)
+    return _band(name, actual, fo_c, "f_observed", data, rel_tol=rel_tol, unit="Hz")
 
 
 def verify_harmonic_frequency(spec: Dict[str, Any]) -> VerifierResult:
@@ -159,13 +146,7 @@ def verify_harmonic_frequency(spec: Dict[str, Any]) -> VerifierResult:
     data = {"fundamental": f1f, "n": nf, "actual_harmonic": actual,
             "claimed_harmonic": c, "diff": diff,
             "formula": "f_n = n · f_1"}
-    if _close(actual, c, rel_tol=rel_tol):
-        return confirm(name,
-                       f"f_{nf} = {nf}·{f1f} = {actual} Hz (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"f_{nf} = {actual} Hz, claimed {c} (diff {diff})",
-                    data)
+    return _band(name, actual, c, "harmonic", data, rel_tol=rel_tol, unit="Hz")
 
 
 _RULES = [

@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from .base import VerifierResult, confirm, dispatch, error, mismatch, na
+from .base import VerifierResult, bound, confirm, dispatch, error, mismatch, na
 
 _TOL = 1e-7
 
@@ -118,8 +118,14 @@ def verify_diagonalize(a: Dict[str, Any]) -> VerifierResult:
         data["eigenbasis_vs_direct_gap"] = gap
         if "claimed_result" in a:
             claimed = np.array(a["claimed_result"], dtype=float)
-            if claimed.shape != np.array(res_real).shape or float(np.linalg.norm(claimed - res_real)) > 1e-6 * (1 + float(np.linalg.norm(res_real))):
-                return mismatch(name, f"claimed result != A^{k} computed through the eigenbasis", data)
+            if claimed.shape != np.array(res_real).shape:
+                return mismatch(name, f"claimed result != A^{k} computed through the eigenbasis (shape differs)", data)
+            # the gap ‖claimed − A^k‖ must sit under the one-sided bound 1e-6·(1 + ‖A^k‖)
+            b = bound(name, float(np.linalg.norm(claimed - res_real)), 1e-6 * (1 + float(np.linalg.norm(res_real))),
+                      "max", "claimed_result_gap", data)
+            data = b.data
+            if b.status == "MISMATCH":
+                return mismatch(name, f"claimed result != A^{k} computed through the eigenbasis; " + b.detail, data)
         return confirm(name, f"change of domain confirmed: A diagonalizes (max residual {max_resid:.1e}), and A^{k} "
                              f"through the eigenbasis (independent scalar powers of the eigenvalues) equals the direct "
                              f"computation to {gap:.1e}. The flip is valid.", data)
@@ -149,8 +155,14 @@ def verify_fourier_convolution(a: Dict[str, Any]) -> VerifierResult:
                             "theorem_gap": gap}
     if "claimed_convolution" in a:
         claimed = np.array(a["claimed_convolution"], dtype=float)
-        if claimed.shape != direct.shape or float(np.linalg.norm(claimed - direct)) > 1e-6 * (1 + float(np.linalg.norm(direct))):
-            return mismatch(name, "claimed convolution != a * b", data)
+        if claimed.shape != direct.shape:
+            return mismatch(name, "claimed convolution != a * b (shape differs)", data)
+        # the gap ‖claimed − a*b‖ must sit under the one-sided bound 1e-6·(1 + ‖a*b‖)
+        b = bound(name, float(np.linalg.norm(claimed - direct)), 1e-6 * (1 + float(np.linalg.norm(direct))),
+                  "max", "claimed_convolution_gap", data)
+        data = b.data
+        if b.status == "MISMATCH":
+            return mismatch(name, "claimed convolution != a * b; " + b.detail, data)
     return confirm(name, f"Fourier flip confirmed: a * b computed in the frequency basis (ifft of fft·fft) equals the "
                          f"direct convolution to {gap:.1e} — the convolution theorem. Convolution is multiplication "
                          f"in the frequency domain.", data)

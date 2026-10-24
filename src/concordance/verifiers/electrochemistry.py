@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch
 from . import alpha_scale as _ascale  # alpha-anchored Faraday / Nernst scale
 
@@ -28,8 +28,10 @@ _R = 8.314462618   # J/(mol·K)
 _F = 96485.33212   # C/mol
 
 
-def _close(actual: float, claimed: float, rel_tol: float = 1e-2, abs_tol: float = 1e-3) -> bool:
-    return abs(actual - claimed) <= max(abs_tol, rel_tol * abs(actual))
+def _band(name: str, actual: float, claimed: float, what: str, data: Dict[str, Any],
+          rel_tol: float = 1e-2, abs_tol: float = 1e-3, fmt: str = "{:.4f}", unit: str = ""):
+    """The band every true claim must lie in: ±max(abs_tol, rel_tol·|actual|) around the recomputed value."""
+    return band(name, actual, claimed, max(abs_tol, rel_tol * abs(actual)), what, data, fmt=fmt, unit=unit)
 
 
 def verify_nernst(spec: Dict[str, Any]) -> VerifierResult:
@@ -49,9 +51,7 @@ def verify_nernst(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"E0": e0f, "n": nf, "Q": Qf, "T_K": T, "E_V": actual, "claimed_V": cl,
             "formula": "E = E0 - (RT/nF) ln(Q)"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"E = {e0f} - (RT/{nf:g}F)ln({Qf}) = {actual:.4f} V (matches {cl})", data)
-    return mismatch(name, f"E = {actual:.4f} V, claimed {cl} (diff {abs(actual-cl):.4f})", data)
+    return _band(name, actual, cl, "E_V", data, rel_tol=rel_tol, unit="V")
 
 
 def verify_cell_potential(spec: Dict[str, Any]) -> VerifierResult:
@@ -68,9 +68,7 @@ def verify_cell_potential(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"E_cathode": ecf, "E_anode": eaf, "E_cell": actual, "claimed_V": cl,
             "formula": "E_cell = E_cathode - E_anode"}
-    if _close(actual, cl, rel_tol=rel_tol, abs_tol=1e-3):
-        return confirm(name, f"E_cell = {ecf} - ({eaf}) = {actual:.3f} V (matches {cl})", data)
-    return mismatch(name, f"E_cell = {actual:.3f} V, claimed {cl}", data)
+    return _band(name, actual, cl, "cell_V", data, rel_tol=rel_tol, abs_tol=1e-3, fmt="{:.3f}", unit="V")
 
 
 def verify_faraday(spec: Dict[str, Any]) -> VerifierResult:
@@ -89,9 +87,7 @@ def verify_faraday(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"charge_C": Qf, "molar_mass": Mf, "n": nf, "mass_g": actual, "claimed_g": cl,
             "formula": "m = QM/(nF)"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"m = ({Qf}·{Mf})/({nf}·F) = {actual:.4f} g (matches {cl})", data)
-    return mismatch(name, f"m = {actual:.4f} g, claimed {cl} (diff {abs(actual-cl):.4f})", data)
+    return _band(name, actual, cl, "mass_g", data, rel_tol=rel_tol, unit="g")
 
 
 def verify_faraday_constant(spec: Dict[str, Any]) -> VerifierResult:

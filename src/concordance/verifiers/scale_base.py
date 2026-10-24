@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Optional, Tuple
 
-from .base import VerifierResult, confirm, mismatch, error, stated_precision, stated_tolerance_abs, stated_window
+from .base import VerifierResult, band, error, stated_precision, stated_tolerance_abs, stated_window
 
 
 def compare(name: str, actual: float, claimed: Any, rel_tol: float, data: Dict[str, Any],
@@ -39,7 +39,6 @@ def compare(name: str, actual: float, claimed: Any, rel_tol: float, data: Dict[s
     d = {**data, "computed": actual, "claimed": cl, "rel_tol": rel_tol, "rel_diff": rel}
     if anchor:
         d[anchor[0]] = anchor[1]
-    label = data.get("formula", name)
     if as_written:
         # THE ONE RULE (2026-10-08, H6): a stated literal sets the window — doubled by a hedge, exact for a
         # one-figure claim without one — and the flat rel_tol no longer passes a prose claim first.
@@ -48,13 +47,6 @@ def compare(name: str, actual: float, claimed: Any, rel_tol: float, data: Dict[s
         d["stated_sigfigs"] = sp[0] if sp else None
         d["hedged"] = bool(hedged)
         d["stated_tolerance"] = tol if tol is not None else 0.0
-        if tol is not None and abs(actual - cl) <= tol:
-            return confirm(name, f"{label} = {actual:.6g} — matches {as_written} to the {sp[0] if sp else '?'} "
-                                 f"significant figure(s) stated{' (hedged)' if hedged else ''} (exact {actual:.6g})", d)
-        if tol is None and abs(actual - cl) <= 1e-9 * abs(actual):
-            return confirm(name, f"{label} = {actual:.6g} (matches {cl} exactly)", d)
-        return mismatch(name, f"{label} = {actual:.6g}, claimed {cl} (stated to {sp[0] if sp else '?'} figure(s)"
-                              f"{' with a hedge' if hedged else ''}: window ±{tol if tol is not None else 0:g})", d)
-    if rel <= rel_tol:
-        return confirm(name, f"{label} = {actual:.6g} (matches {cl}, rel {rel:.1e})", d)
-    return mismatch(name, f"{label} = {actual:.6g}, claimed {cl} (rel {rel:.1e} > {rel_tol:.0e})", d)
+        # the band is the stated window, or float noise only (1e-9 relative) when the claim earned none
+        return band(name, actual, cl, tol if tol is not None else 1e-9 * abs(actual), "value", d)
+    return band(name, actual, cl, rel_tol * abs(actual), "value", d)

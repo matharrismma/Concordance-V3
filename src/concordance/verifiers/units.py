@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from ..compute import _UNITS, _TEMP, _to_celsius, _from_celsius, _fmt
-from .base import VerifierResult, na, confirm, mismatch, clamp_tol, dispatch
+from .base import VerifierResult, na, band, clamp_tol, dispatch
 
 
 def _u(s: Any) -> str:
@@ -68,9 +68,7 @@ def verify_conversion(spec: Dict[str, Any]) -> VerifierResult:
     data = {"from_value": fv, "from_unit": fu, "to_unit": tu,
             "actual_value": actual, "claimed_value": tv, "rel_tol": rel_tol, **data_extra,
             "source": "SI / US customary conversion factors"}
-    if abs(actual - tv) <= threshold:
-        return confirm(name, f"{_fmt(fv)} {fu} = {_fmt(actual)} {tu} (claim {_fmt(tv)} within {rel_tol:.0e})", data)
-    return mismatch(name, f"{_fmt(fv)} {fu} = {_fmt(actual)} {tu}, not {_fmt(tv)} {tu}", data)
+    return band(name, actual, tv, threshold, "value", data, unit=tu)
 
 
 _RULES = [

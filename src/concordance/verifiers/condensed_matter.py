@@ -27,7 +27,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch
 from . import physical_constants as _pc
 
@@ -37,8 +37,10 @@ _ME = 9.1093837015e-31    # kg
 _C = {c["constant"]: c["value"] for c in _pc.list_constants()}
 
 
-def _close(actual: float, claimed: float, rel_tol: float = 1e-2, abs_tol: float = 0.0) -> bool:
-    return abs(actual - claimed) <= max(abs_tol, rel_tol * abs(actual))
+def _band(name: str, actual: float, claimed: float, what: str, data: Dict[str, Any],
+          rel_tol: float = 1e-2, abs_tol: float = 0.0, fmt: str = "{:.4g}", unit: str = ""):
+    """The band every true claim must lie in: ±max(abs_tol, rel_tol·|actual|) around the recomputed value."""
+    return band(name, actual, claimed, max(abs_tol, rel_tol * abs(actual)), what, data, fmt=fmt, unit=unit)
 
 
 def verify_phonon_dispersion(spec: Dict[str, Any]) -> VerifierResult:
@@ -57,9 +59,7 @@ def verify_phonon_dispersion(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"K": Kf, "m": mf, "k": kf, "a": af, "omega": actual, "claimed": cl,
             "formula": "omega = 2 sqrt(K/m) |sin(ka/2)|"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"omega = {actual:.4g} rad/s (matches {cl})", data)
-    return mismatch(name, f"omega = {actual:.4g} rad/s, claimed {cl}", data)
+    return _band(name, actual, cl, "omega", data, rel_tol=rel_tol, unit="rad/s")
 
 
 def verify_fermi_energy(spec: Dict[str, Any]) -> VerifierResult:
@@ -78,9 +78,7 @@ def verify_fermi_energy(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"n": nf, "E_F_J": actual, "E_F_eV": actual / 1.602176634e-19, "claimed_J": cl,
             "formula": "E_F = (hbar^2/2m)(3 pi^2 n)^(2/3)"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"E_F = {actual:.4g} J ({data['E_F_eV']:.3f} eV) (matches {cl})", data)
-    return mismatch(name, f"E_F = {actual:.4g} J, claimed {cl}", data)
+    return _band(name, actual, cl, "fermi_J", data, rel_tol=rel_tol, unit="J")
 
 
 def verify_bragg(spec: Dict[str, Any]) -> VerifierResult:
@@ -102,9 +100,7 @@ def verify_bragg(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"n": nf, "lambda": lamf, "d": df, "theta_deg": actual, "claimed_deg": cl,
             "formula": "n lambda = 2 d sin(theta)"}
-    if _close(actual, cl, rel_tol=rel_tol, abs_tol=1e-2):
-        return confirm(name, f"theta = arcsin({s:.4f}) = {actual:.3f} deg (matches {cl})", data)
-    return mismatch(name, f"theta = {actual:.3f} deg, claimed {cl}", data)
+    return _band(name, actual, cl, "theta_deg", data, rel_tol=rel_tol, abs_tol=1e-2, unit="deg")
 
 
 def verify_quantum_hall(spec: Dict[str, Any]) -> VerifierResult:
@@ -131,10 +127,7 @@ def verify_quantum_hall(spec: Dict[str, Any]) -> VerifierResult:
         except (TypeError, ValueError):
             return error(name, "claimed_von_klitzing_ohm must be numeric")
         data = {**base, "claimed_ohm": cl}
-        if _close(R_K, cl, rel_tol=rel_tol):
-            return confirm(name, f"R_K = h/e^2 = {R_K:.6f} ohm (= mu0 c/2alpha = "
-                                 f"{R_K_from_alpha:.6f}); matches {cl}", data)
-        return mismatch(name, f"R_K = h/e^2 = {R_K:.6f} ohm, claimed {cl}", data)
+        return _band(name, R_K, cl, "von_klitzing_ohm", data, rel_tol=rel_tol, fmt="{:.6f}", unit="ohm")
 
     if "claimed_josephson_ghz_per_v" in spec:
         try:
@@ -143,9 +136,7 @@ def verify_quantum_hall(spec: Dict[str, Any]) -> VerifierResult:
             return error(name, "claimed_josephson_ghz_per_v must be numeric")
         kj_ghz = K_J / 1e9
         data = {**base, "josephson_ghz_per_v": kj_ghz, "claimed_ghz_per_v": cl}
-        if _close(kj_ghz, cl, rel_tol=rel_tol):
-            return confirm(name, f"K_J = 2e/h = {kj_ghz:.4f} GHz/V; matches {cl}", data)
-        return mismatch(name, f"K_J = 2e/h = {kj_ghz:.4f} GHz/V, claimed {cl}", data)
+        return _band(name, kj_ghz, cl, "josephson_ghz_per_v", data, rel_tol=rel_tol, fmt="{:.4f}", unit="GHz/V")
 
     if "filling_factor" in spec and "claimed_hall_resistance_ohm" in spec:
         try:
@@ -157,9 +148,7 @@ def verify_quantum_hall(spec: Dict[str, Any]) -> VerifierResult:
             return error(name, f"filling factor must be positive (nu={nu})")
         R_H = R_K / nu
         data = {**base, "filling_factor": nu, "hall_resistance_ohm": R_H, "claimed_ohm": cl}
-        if _close(R_H, cl, rel_tol=rel_tol):
-            return confirm(name, f"R_H = R_K/{nu:g} = {R_H:.4f} ohm; matches {cl}", data)
-        return mismatch(name, f"R_H = R_K/{nu:g} = {R_H:.4f} ohm, claimed {cl}", data)
+        return _band(name, R_H, cl, "hall_resistance_ohm", data, rel_tol=rel_tol, fmt="{:.4f}", unit="ohm")
 
     return na(name)
 
@@ -180,9 +169,7 @@ def verify_phonon_energy(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-4)
     data = {"omega": wf, "E_J": actual, "E_eV": actual / 1.602176634e-19, "claimed_J": cl,
             "formula": "E = hbar*omega"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"E = hbar*omega = {actual:.4g} J ({data['E_eV']:.4g} eV) (matches {cl})", data)
-    return mismatch(name, f"E = hbar*omega = {actual:.4g} J, claimed {cl}", data)
+    return _band(name, actual, cl, "phonon_energy_J", data, rel_tol=rel_tol, unit="J")
 
 
 def verify_debye_temperature(spec: Dict[str, Any]) -> VerifierResult:
@@ -200,9 +187,7 @@ def verify_debye_temperature(spec: Dict[str, Any]) -> VerifierResult:
     actual = _HBAR * wdf / _C["boltzmann_constant"]
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-4)
     data = {"omega_D": wdf, "theta_D_K": actual, "claimed_K": cl, "formula": "theta_D = hbar*omega_D/k_B"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"theta_D = hbar*omega_D/k_B = {actual:.4g} K (matches {cl})", data)
-    return mismatch(name, f"theta_D = {actual:.4g} K, claimed {cl}", data)
+    return _band(name, actual, cl, "debye_temp_K", data, rel_tol=rel_tol, unit="K")
 
 
 def verify_phonon_occupation(spec: Dict[str, Any]) -> VerifierResult:
@@ -222,9 +207,7 @@ def verify_phonon_occupation(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"omega": wf, "T": Tf, "x_hw_over_kT": x, "occupation": actual, "claimed": cl,
             "formula": "n = 1/(exp(hbar*omega/k_B T) - 1)"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"n = 1/(exp({x:.4g})-1) = {actual:.4g} (matches {cl})", data)
-    return mismatch(name, f"n = {actual:.4g}, claimed {cl}", data)
+    return _band(name, actual, cl, "occupation", data, rel_tol=rel_tol)
 
 
 def verify_sound_velocity(spec: Dict[str, Any]) -> VerifierResult:
@@ -242,9 +225,7 @@ def verify_sound_velocity(spec: Dict[str, Any]) -> VerifierResult:
     actual = af * math.sqrt(Kf / mf)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"K": Kf, "m": mf, "a": af, "v_s": actual, "claimed": cl, "formula": "v_s = a*sqrt(K/m)"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"v_s = a*sqrt(K/m) = {actual:.4g} m/s (matches {cl})", data)
-    return mismatch(name, f"v_s = {actual:.4g} m/s, claimed {cl}", data)
+    return _band(name, actual, cl, "sound_velocity", data, rel_tol=rel_tol, unit="m/s")
 
 
 def verify_dulong_petit(spec: Dict[str, Any]) -> VerifierResult:
@@ -261,9 +242,7 @@ def verify_dulong_petit(spec: Dict[str, Any]) -> VerifierResult:
     actual = 3.0 * _C["gas_constant"]
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"molar_heat_capacity_J_per_mol_K": actual, "claimed": cl, "formula": "C = 3R"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"C = 3R = {actual:.4f} J/(mol*K) (matches {cl})", data)
-    return mismatch(name, f"C = 3R = {actual:.4f} J/(mol*K), claimed {cl}", data)
+    return _band(name, actual, cl, "molar_heat_capacity", data, rel_tol=rel_tol, fmt="{:.4f}", unit="J/(mol*K)")
 
 
 _RULES = [

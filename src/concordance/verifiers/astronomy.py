@@ -44,7 +44,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from . import grav_scale as _gscale  # G-anchored escape velocity / Schwarzschild radius
 from . import rela_scale as _rela  # c-anchored light-travel time
 
@@ -123,13 +123,7 @@ def verify_gravitational_force(spec: Dict[str, Any]) -> VerifierResult:
     data = {"mass_1_kg": m1f, "mass_2_kg": m2f, "separation_m": rf,
             "actual_force_N": actual, "claimed_force_N": cf, "diff_N": diff,
             "G": _G, "formula": "F = G·m₁·m₂/r²"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"F = G·m₁·m₂/r² = {actual:.4e} N (matches claim {cf:.4e})",
-                       data)
-    return mismatch(name,
-                    f"F = {actual:.4e} N, claimed {cf:.4e} N (diff {diff:.4e} > {threshold:.4e})",
-                    data)
+    return band(name, actual, cf, threshold, "force_N", data, fmt="{:.4e}", unit="N")
 
 
 def verify_parallax_distance(spec: Dict[str, Any]) -> VerifierResult:
@@ -153,13 +147,7 @@ def verify_parallax_distance(spec: Dict[str, Any]) -> VerifierResult:
     data = {"parallax_arcsec": pf, "actual_distance_parsec": actual,
             "claimed_distance_parsec": cf, "diff_pc": diff,
             "formula": "d (pc) = 1 / p (arcsec)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"d = 1/{pf}″ = {actual:.4f} pc (matches claim {cf})",
-                       data)
-    return mismatch(name,
-                    f"d = {actual:.4f} pc, claimed {cf} (diff {diff:.4f})",
-                    data)
+    return band(name, actual, cf, threshold, "distance_parsec", data, fmt="{:.4f}", unit="pc")
 
 
 def verify_distance_modulus(spec: Dict[str, Any]) -> VerifierResult:
@@ -190,13 +178,7 @@ def verify_distance_modulus(spec: Dict[str, Any]) -> VerifierResult:
             "actual_distance_parsec": actual, "claimed_distance_parsec": cf,
             "diff_pc": diff,
             "formula": "d = 10^((m - M + 5) / 5)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"d = 10^(({mf}-{Mf}+5)/5) = {actual:.4f} pc (matches claim {cf})",
-                       data)
-    return mismatch(name,
-                    f"d = {actual:.4f} pc, claimed {cf} (diff {diff:.4f})",
-                    data)
+    return band(name, actual, cf, threshold, "distance_parsec", data, fmt="{:.4f}", unit="pc")
 
 
 def verify_gravitational_scale(spec: Dict[str, Any]) -> VerifierResult:

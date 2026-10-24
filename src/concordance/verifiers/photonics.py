@@ -50,7 +50,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import alpha_scale as _ascale  # alpha-anchored Compton scale
 from . import planck_scale as _planck  # h-anchored photon energy E = h nu
@@ -58,8 +58,10 @@ from . import planck_scale as _planck  # h-anchored photon energy E = h nu
 _C = 299792458.0  # speed of light in vacuum, m/s
 
 
-def _close(a: float, b: float, rel: float = 1e-2, abs_: float = 1e-12) -> bool:
-    return abs(a - b) <= max(abs_, rel * max(abs(a), abs(b)))
+def _band(name: str, a: float, b: float, what: str, data: Dict[str, Any], rel: float = 1e-2,
+          abs_: float = 1e-12, unit: str = ""):
+    """The band every true claim must lie in: ±max(abs_, rel·max(|actual|, |claimed|)) around the recomputed value."""
+    return band(name, a, b, max(abs_, rel * max(abs(a), abs(b))), what, data, fmt="{:.4g}", unit=unit)
 
 
 def _nums(*vals):
@@ -79,11 +81,9 @@ def verify_waveguide_v_number(spec: Dict[str, Any]) -> VerifierResult:
     if lam <= 0:
         return error(name, "wavelength must be > 0")
     V = 2 * math.pi * a * NA / lam
-    if _close(V, c, clamp_tol(spec, "tolerance", 1e-2)):
-        sm = V <= 2.405
-        return confirm(name, f"V = 2*pi*a*NA/lambda = {V:.4g} (single-mode={sm}), matches claim",
-                       {"V": V, "single_mode": sm, "claimed": c})
-    return mismatch(name, f"V = {V:.4g}, claimed {c:.4g}", {"V": V, "claimed": c})
+    sm = V <= 2.405
+    return _band(name, V, c, "v_number", {"V": V, "single_mode": sm, "claimed": c, "formula": "V = 2*pi*a*NA/lambda"},
+                 clamp_tol(spec, "tolerance", 1e-2))
 
 
 def verify_ring_resonator_fsr(spec: Dict[str, Any]) -> VerifierResult:
@@ -98,9 +98,8 @@ def verify_ring_resonator_fsr(spec: Dict[str, Any]) -> VerifierResult:
     if ng <= 0 or L <= 0:
         return error(name, "group_index and ring_length_m must be > 0")
     fsr = _C / (ng * L)
-    if _close(fsr, c, clamp_tol(spec, "tolerance", 1e-2)):
-        return confirm(name, f"FSR = c/(n_g*L) = {fsr:.4g} Hz, matches claim", {"fsr_hz": fsr, "claimed": c})
-    return mismatch(name, f"FSR = {fsr:.4g} Hz, claimed {c:.4g} Hz", {"fsr_hz": fsr, "claimed": c})
+    return _band(name, fsr, c, "fsr_hz", {"fsr_hz": fsr, "claimed": c, "formula": "FSR = c/(n_g*L)"},
+                 clamp_tol(spec, "tolerance", 1e-2), unit="Hz")
 
 
 def verify_fiber_loss(spec: Dict[str, Any]) -> VerifierResult:
@@ -116,9 +115,8 @@ def verify_fiber_loss(spec: Dict[str, Any]) -> VerifierResult:
     out = pin - alpha * Lkm
     # dBm is logarithmic: an ABSOLUTE dB window (as acoustics.decibel_ratio uses), never a
     # window relative to the dBm figure, which widened with distance from 0 dBm.
-    if abs(out - c) <= clamp_tol(spec, "tolerance_db", 0.1):
-        return confirm(name, f"P_out = P_in - alpha*L = {out:.4g} dBm, matches claim", {"output_dbm": out, "claimed": c})
-    return mismatch(name, f"P_out = {out:.4g} dBm, claimed {c:.4g} dBm", {"output_dbm": out, "claimed": c})
+    return band(name, out, c, clamp_tol(spec, "tolerance_db", 0.1), "output_dbm",
+                {"output_dbm": out, "claimed": c, "formula": "P_out = P_in - alpha*L"}, fmt="{:.4g}", unit="dBm")
 
 
 def verify_electro_optic_vpi(spec: Dict[str, Any]) -> VerifierResult:
@@ -134,9 +132,8 @@ def verify_electro_optic_vpi(spec: Dict[str, Any]) -> VerifierResult:
     if n <= 0 or r == 0 or L <= 0:
         return error(name, "index and length must be > 0, eo_coefficient nonzero")
     vpi = lam * d / (n ** 3 * r * L)
-    if _close(vpi, c, clamp_tol(spec, "tolerance", 1e-2)):
-        return confirm(name, f"V_pi = lambda*d/(n^3*r*L) = {vpi:.4g} V, matches claim", {"vpi_v": vpi, "claimed": c})
-    return mismatch(name, f"V_pi = {vpi:.4g} V, claimed {c:.4g} V", {"vpi_v": vpi, "claimed": c})
+    return _band(name, vpi, c, "vpi_v", {"vpi_v": vpi, "claimed": c, "formula": "V_pi = lambda*d/(n^3*r*L)"},
+                 clamp_tol(spec, "tolerance", 1e-2), unit="V")
 
 
 def verify_second_harmonic(spec: Dict[str, Any]) -> VerifierResult:
@@ -152,9 +149,8 @@ def verify_second_harmonic(spec: Dict[str, Any]) -> VerifierResult:
     if p_ref <= 0:
         return error(name, "reference_fundamental_w must be > 0")
     pred = shg_ref * (p_test / p_ref) ** 2  # P_2w proportional to P_w^2
-    if _close(pred, c, clamp_tol(spec, "tolerance", 1e-2)):
-        return confirm(name, f"P_2w ~ P_w^2 -> {pred:.4g} W, matches claim", {"shg_w": pred, "claimed": c})
-    return mismatch(name, f"P_2w ~ P_w^2 -> {pred:.4g} W, claimed {c:.4g} W", {"shg_w": pred, "claimed": c})
+    return _band(name, pred, c, "shg_w", {"shg_w": pred, "claimed": c, "formula": "P_2w ~ P_w^2"},
+                 clamp_tol(spec, "tolerance", 1e-2), unit="W")
 
 
 def verify_laser_slope(spec: Dict[str, Any]) -> VerifierResult:
@@ -168,9 +164,8 @@ def verify_laser_slope(spec: Dict[str, Any]) -> VerifierResult:
     except (TypeError, ValueError):
         return error(name, "threshold_current_a, slope_efficiency_w_per_a, drive_current_a, claimed_output_w must be numeric")
     P = max(0.0, eta * (I - Ith))  # linear above threshold, dark below
-    if _close(P, c, clamp_tol(spec, "tolerance", 1e-2), abs_=1e-6):
-        return confirm(name, f"P_out = eta*(I - I_th) = {P:.4g} W, matches claim", {"output_w": P, "claimed": c})
-    return mismatch(name, f"P_out = {P:.4g} W, claimed {c:.4g} W", {"output_w": P, "claimed": c})
+    return _band(name, P, c, "output_w", {"output_w": P, "claimed": c, "formula": "P_out = eta*(I - I_th)"},
+                 clamp_tol(spec, "tolerance", 1e-2), abs_=1e-6, unit="W")
 
 
 def verify_grating_angle(spec: Dict[str, Any]) -> VerifierResult:
@@ -189,10 +184,8 @@ def verify_grating_angle(spec: Dict[str, Any]) -> VerifierResult:
     if abs(s) > 1:
         return na(name, f"|m*lambda/d| = {abs(s):.3g} > 1: this diffracted order is evanescent (no real angle)")
     theta = math.degrees(math.asin(s))
-    if _close(theta, c, clamp_tol(spec, "tolerance", 1e-2), abs_=1e-3):
-        return confirm(name, f"d*sin(theta) = m*lambda -> theta = {theta:.4g} deg, matches claim",
-                       {"angle_deg": theta, "claimed": c})
-    return mismatch(name, f"theta = {theta:.4g} deg, claimed {c:.4g} deg", {"angle_deg": theta, "claimed": c})
+    return _band(name, theta, c, "angle_deg", {"angle_deg": theta, "claimed": c, "formula": "d*sin(theta) = m*lambda"},
+                 clamp_tol(spec, "tolerance", 1e-2), abs_=1e-3, unit="deg")
 
 
 def verify_beer_lambert(spec: Dict[str, Any]) -> VerifierResult:
@@ -209,9 +202,8 @@ def verify_beer_lambert(spec: Dict[str, Any]) -> VerifierResult:
     except (TypeError, ValueError):
         return error(name, "input_intensity, coefficient_per_m, path_length_m, claimed_output_intensity must be numeric")
     I = I0 * math.exp(-alpha * z)  # absorption (alpha>0) or gain (alpha<0)
-    if _close(I, c, clamp_tol(spec, "tolerance", 1e-2)):
-        return confirm(name, f"I(z) = I0*exp(-alpha*z) = {I:.4g}, matches claim", {"output_intensity": I, "claimed": c})
-    return mismatch(name, f"I(z) = {I:.4g}, claimed {c:.4g}", {"output_intensity": I, "claimed": c})
+    return _band(name, I, c, "output_intensity", {"output_intensity": I, "claimed": c, "formula": "I(z) = I0*exp(-alpha*z)"},
+                 clamp_tol(spec, "tolerance", 1e-2))
 
 
 _RULES = [
@@ -247,9 +239,7 @@ def verify_compton(spec: Dict[str, Any]) -> VerifierResult:
                 return error(name, "claimed_compton_shift_m must be numeric")
             dat = {"formula": "d_lambda = lambda_C (1 - cos theta)", "angle_deg": spec["compton_angle_deg"],
                    "actual": 0.0, "claimed": cl}
-            if abs(cl) <= 1e-15:
-                return confirm(name, "theta = 0: d_lambda = 0 (no shift), matches claim", dat)
-            return mismatch(name, f"theta = 0 gives d_lambda = 0, claimed {cl:.4g} m", dat)
+            return band(name, 0.0, cl, 1e-15, "compton_shift_m", dat, fmt="{:.4g}", unit="m")
         return _ascale.compare(name, shift, spec["claimed_compton_shift_m"], 1e-3,
                                {"formula": "d_lambda = lambda_C (1 - cos theta)",
                                 "angle_deg": spec["compton_angle_deg"]})

@@ -23,7 +23,7 @@ Conservation format:
 """
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 from . import rela_scale as _rela  # c-anchored mass-energy / Lorentz factor
 from . import grav_scale as _grav  # G-anchored Newtonian gravitation
 from . import planck_scale as _planck  # h-anchored; the Planck units join h, G, c, k_B
@@ -151,6 +151,7 @@ def verify_conservation(
     keys = sorted(set(before) | set(after))
     failures = []
     details = {}
+    bands = []
     for k in keys:
         b = before.get(k)
         a = after.get(k)
@@ -161,11 +162,15 @@ def verify_conservation(
         scale = max(abs(b), abs(a), 1e-30)
         rel = diff / scale
         details[k] = {"before": b, "after": a, "abs_diff": diff, "rel_diff": rel}
-        if rel > tolerance_relative and diff > tolerance_absolute:
-            failures.append(f"{k}: {b} -> {a} (rel diff {rel:.3e})")
+        # conserved iff diff <= tolerance_absolute OR rel <= tolerance_relative: one band of the larger window
+        bands.append(band("physics.conservation", b, a, max(tolerance_absolute, tolerance_relative * scale), k))
+    merged = merge_checks("physics.conservation", bands, details)
     if failures:
-        return mismatch("physics.conservation", "; ".join(failures), details)
-    return confirm("physics.conservation", f"all {len(keys)} quantities conserved", details)
+        bad = failures + ([merged.detail] if merged.status == "MISMATCH" else [])
+        return mismatch("physics.conservation", "; ".join(bad), merged.data)
+    if merged.status == "CONFIRMED":
+        return confirm("physics.conservation", f"all {len(keys)} quantities conserved; " + merged.detail, merged.data)
+    return merged
 
 
 def verify_kinematic_motion(spec: Dict[str, Any]) -> VerifierResult:
@@ -196,15 +201,9 @@ def verify_kinematic_motion(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-6)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-9)
     diff = abs(actual - c_f)
-    if diff <= max(abs_tol, rel_tol * max(abs(actual), abs(c_f))):
-        return confirm(name,
-                       f"d = v0·t + ½·a·t² = {actual:.6g} (matches claim {c_f:.6g})",
-                       {"actual": actual, "claimed": c_f, "diff": diff,
-                        "v0": v0_f, "a": a_f, "t": t_f})
-    return mismatch(name,
-                    f"d = v0·t + ½·a·t² = {actual:.6g}, claimed {c_f:.6g} (diff {diff:.3g})",
-                    {"actual": actual, "claimed": c_f, "diff": diff,
-                     "v0": v0_f, "a": a_f, "t": t_f})
+    return band(name, actual, c_f, max(abs_tol, rel_tol * max(abs(actual), abs(c_f))), "displacement",
+                {"actual": actual, "claimed": c_f, "diff": diff, "v0": v0_f, "a": a_f, "t": t_f,
+                 "formula": "d = v0·t + ½·a·t²"}, unit="m")
 
 
 # Speed of light in vacuum (SI: m/s). Public-domain physical constant.
@@ -281,17 +280,7 @@ def verify_newtons_second_law(spec: Dict[str, Any]) -> VerifierResult:
         "formula": "F = m × a",
         "source": "Newton's second law (definition of force)",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"{mf} kg × {af} m/s² = {actual_F} N (claim {Ff} within ±{threshold:.3g})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"{mf} × {af} = {actual_F} N, claimed {Ff} N (diff {diff:.3g})",
-        data,
-    )
+    return band(name, actual_F, Ff, threshold, "force_N", data, unit="N")
 
 
 def verify_kinetic_energy_basic(spec: Dict[str, Any]) -> VerifierResult:
@@ -328,17 +317,7 @@ def verify_kinetic_energy_basic(spec: Dict[str, Any]) -> VerifierResult:
         "formula": "KE = ½ m v²",
         "source": "classical mechanics (definition of kinetic energy)",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"½ × {mf} × {vf}² = {actual} J (claim {Kf} within ±{threshold:.3g})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"½ × {mf} × {vf}² = {actual} J, claimed {Kf} J (diff {diff:.3g})",
-        data,
-    )
+    return band(name, actual, Kf, threshold, "kinetic_energy_J", data, unit="J")
 
 
 def verify_mass_energy(spec: Dict[str, Any]) -> VerifierResult:
@@ -401,23 +380,18 @@ def verify_planck_units(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)   # G is known to 2.2e-5; 1e-3 absorbs a 4-digit claim
     data: Dict[str, Any] = {"h": _planck._h, "G": _planck._G, "c": _planck._c, "k_B": _planck._kB,
                             "rel_tol": rel_tol}
-    bad, good = [], []
+    results = []
     for key, fn, formula, unit in asked:
         try:
             cl = float(spec[key])
         except (TypeError, ValueError):
             return error(name, f"{key} must be numeric")
         actual = fn()
-        rel = abs(actual - cl) / abs(actual)
-        data[key.replace("claimed_", "")] = actual
+        what = key.replace("claimed_", "")
+        data[what] = actual
         data[key] = cl
-        if rel > rel_tol:
-            bad.append(f"{formula} = {actual:.6g} {unit}, claimed {cl:.6g} (rel {rel:.1e} > {rel_tol:.0e})")
-        else:
-            good.append(f"{formula} = {actual:.6g} {unit}")
-    if bad:
-        return mismatch(name, "; ".join(bad), data)
-    return confirm(name, "; ".join(good) + " (matches claims)", data)
+        results.append(band(name, actual, cl, rel_tol * abs(actual), what, {"formula_" + what: formula}, unit=unit))
+    return merge_checks(name, results, data)
 
 
 GOLDEN_PACKET_KEY = "PHYS_VERIFY"
@@ -554,18 +528,16 @@ def verify_named_conservation(
             return error("physics.named_conservation", f"sum failed: {e}")
         diff = abs(total_after - total_before)
         rel = diff / abs(total_before) if total_before != 0 else diff
-        ok = (diff <= tolerance_absolute) or (rel <= tolerance_relative)
         data = {"law": law, "matched_profile": list(matched_profile),
                 "total_before": total_before, "total_after": total_after,
                 "abs_diff": diff, "rel_diff": rel,
                 "preferred_unit": profile["preferred_unit"]}
-        if ok:
-            return confirm("physics.named_conservation",
-                           f"{law} conserved: total {total_before} -> {total_after} "
-                           f"(rel {rel:.2e})", data)
-        return mismatch("physics.named_conservation",
-                        f"{law} not conserved: total {total_before} -> {total_after} "
-                        f"(diff {diff}, rel {rel:.2e})", data)
+        # conserved iff diff <= tolerance_absolute OR rel <= tolerance_relative: one band of the larger window
+        tol = max(tolerance_absolute, tolerance_relative * (abs(total_before) if total_before != 0 else 1.0))
+        r = band("physics.named_conservation", total_before, total_after, tol, "total", data)
+        if r.passed:
+            return confirm("physics.named_conservation", f"{law} conserved: " + r.detail, r.data)
+        return mismatch("physics.named_conservation", f"{law} not conserved: " + r.detail, r.data)
 
     result = verify_conservation(
         before, after,

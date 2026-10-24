@@ -96,13 +96,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
-
-
-def _close(actual: float, claimed: float, rel_tol: float = 1e-3,
-           abs_tol: float = 1e-6) -> bool:
-    """Tolerance comparison: pass if either rel or abs threshold satisfied."""
-    return abs(actual - claimed) <= max(abs_tol, rel_tol * abs(actual))
+from .base import VerifierResult, na, error, clamp_tol, band, bound, merge_checks
 
 
 def _num(value: Any) -> Optional[float]:
@@ -154,16 +148,8 @@ def verify_power_balance(spec: Dict[str, Any]) -> VerifierResult:
             "with margin for cloudy days"
         ),
     }
-    if diff <= threshold:
-        sign = "surplus" if actual > 0 else ("deficit" if actual < 0 else "exact")
-        return confirm(name,
-                       f"balance = {gen} - {cons} - {losses} = "
-                       f"{actual:.4g} kWh/day ({sign}; matches claim {claimed})",
-                       data)
-    return mismatch(name,
-                    f"balance = {actual:.4g} kWh/day, claimed {claimed} "
-                    f"(diff {diff:.4g})",
-                    data)
+    data["sign"] = "surplus" if actual > 0 else ("deficit" if actual < 0 else "exact")
+    return band(name, actual, claimed, threshold, "balance_kwh_day", data, fmt="{:.4g}", unit="kWh/day")
 
 
 # ── 2. Battery sizing ──────────────────────────────────────────────
@@ -200,15 +186,7 @@ def verify_battery_sizing(spec: Dict[str, Any]) -> VerifierResult:
         "diff_Ah": diff,
         "formula": "Ah = (daily_kWh × days × 1000) / (V × DoD)",
     }
-    if diff <= threshold:
-        return confirm(name,
-                       f"required Ah = ({daily_kwh}·{days}·1000)/({sys_v}·{dod}) "
-                       f"= {actual_ah:.1f} Ah (matches claim {claimed})",
-                       data)
-    return mismatch(name,
-                    f"required Ah = {actual_ah:.1f}, claimed {claimed} "
-                    f"(diff {diff:.1f} Ah)",
-                    data)
+    return band(name, actual_ah, claimed, threshold, "required_Ah", data, fmt="{:.1f}", unit="Ah")
 
 
 # ── 3. Solar daily yield ───────────────────────────────────────────
@@ -243,15 +221,7 @@ def verify_solar_daily_yield(spec: Dict[str, Any]) -> VerifierResult:
         "diff": diff,
         "formula": "kWh = (panel_W · peak_sun_hours · η) / 1000",
     }
-    if diff <= threshold:
-        return confirm(name,
-                       f"daily yield = ({panel}·{psh}·{eta})/1000 = "
-                       f"{actual:.3f} kWh (matches claim {claimed})",
-                       data)
-    return mismatch(name,
-                    f"daily yield = {actual:.3f} kWh, claimed {claimed} "
-                    f"(diff {diff:.3f})",
-                    data)
+    return band(name, actual, claimed, threshold, "daily_kwh", data, fmt="{:.3f}", unit="kWh")
 
 
 # ── 4. Wire voltage drop ───────────────────────────────────────────
@@ -290,31 +260,18 @@ def verify_wire_voltage_drop(spec: Dict[str, Any]) -> VerifierResult:
         "system_V_for_drop": sys_v,
         "formula": "Vdrop = 2 · I · R_per_m · length (DC round-trip)",
     }
+    results = []
     if claimed_drop is not None:
         diff = abs(actual_drop - claimed_drop)
         threshold = max(1e-3, rel_tol * abs(actual_drop))
-        data["claimed_drop_V"] = claimed_drop
         data["diff_V"] = diff
-        if diff > threshold:
-            return mismatch(name,
-                            f"Vdrop = {actual_drop:.4f} V, claimed {claimed_drop} "
-                            f"(diff {diff:.4f})",
-                            data)
+        results.append(band(name, actual_drop, claimed_drop, threshold, "drop_V", None, fmt="{:.4f}", unit="V"))
     if claimed_pct is not None and actual_pct is not None:
         diff = abs(actual_pct - claimed_pct)
         threshold = max(0.05, rel_tol * abs(actual_pct))
-        data["claimed_drop_pct"] = claimed_pct
         data["diff_pct"] = diff
-        if diff > threshold:
-            return mismatch(name,
-                            f"Vdrop% = {actual_pct:.2f}%, claimed {claimed_pct}% "
-                            f"(diff {diff:.2f}%)",
-                            data)
-    return confirm(name,
-                   f"Vdrop = {actual_drop:.4f} V"
-                   + (f" ({actual_pct:.2f}% of {sys_v} V)" if actual_pct else "")
-                   + " — matches claim",
-                   data)
+        results.append(band(name, actual_pct, claimed_pct, threshold, "drop_pct", None, fmt="{:.2f}", unit="%"))
+    return merge_checks(name, results, data)
 
 
 # ── 5. kWh ↔ Wh consistency ────────────────────────────────────────
@@ -333,14 +290,7 @@ def verify_kwh_wh_consistency(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual_wh - wh)
     data = {"kwh": kwh, "actual_wh": actual_wh, "claimed_wh": wh,
             "diff": diff, "formula": "Wh = kWh × 1000"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"{kwh} kWh = {actual_wh:.0f} Wh (matches claim {wh})",
-                       data)
-    return mismatch(name,
-                    f"{kwh} kWh × 1000 = {actual_wh:.0f} Wh, claimed {wh} "
-                    f"(diff {diff:.4g})",
-                    data)
+    return band(name, actual_wh, wh, threshold, "wh", data, unit="Wh")
 
 
 # ── 6. Efficiency ──────────────────────────────────────────────────
@@ -375,16 +325,9 @@ def verify_efficiency(spec: Dict[str, Any]) -> VerifierResult:
             "claimed_efficiency": claimed,
             "is_heat_pump": is_hp,
             "diff": diff,
+            "label": label,
             "formula": "η = output / input"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"{label} = {out}/{inp} = {actual:.4f} "
-                       f"(matches claim {claimed})",
-                       data)
-    return mismatch(name,
-                    f"{label} = {actual:.4f}, claimed {claimed} "
-                    f"(diff {diff:.4f})",
-                    data)
+    return band(name, actual, claimed, threshold, "efficiency", data, fmt="{:.4f}")
 
 
 # ── 7. Runtime ─────────────────────────────────────────────────────
@@ -411,15 +354,7 @@ def verify_runtime(spec: Dict[str, Any]) -> VerifierResult:
             "claimed_runtime_hours": claimed,
             "diff_hours": diff,
             "formula": "runtime = battery_Wh / load_W"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"runtime = {bat}/{load} = {actual:.2f} h "
-                       f"(matches claim {claimed})",
-                       data)
-    return mismatch(name,
-                    f"runtime = {actual:.2f} h, claimed {claimed} "
-                    f"(diff {diff:.2f} h)",
-                    data)
+    return band(name, actual, claimed, threshold, "runtime_hours", data, fmt="{:.2f}", unit="h")
 
 
 # ── 8. Peak load vs inverter ──────────────────────────────────────
@@ -441,15 +376,7 @@ def verify_peak_load_vs_inverter(spec: Dict[str, Any]) -> VerifierResult:
     data = {"peak_load_W": peak, "inverter_continuous_W": inv,
             "margin_W": margin, "margin_pct": margin_pct,
             "formula": "peak_load_W ≤ inverter_continuous_W"}
-    if peak <= inv:
-        return confirm(name,
-                       f"peak load {peak} W ≤ inverter {inv} W "
-                       f"(margin {margin:.0f} W, {margin_pct:.1f}%)",
-                       data)
-    return mismatch(name,
-                    f"peak load {peak} W exceeds inverter {inv} W "
-                    f"(over by {-margin:.0f} W)",
-                    data)
+    return bound(name, peak, inv, "max", "peak_load_W", data, unit="W")
 
 
 # ── Entry point ────────────────────────────────────────────────────

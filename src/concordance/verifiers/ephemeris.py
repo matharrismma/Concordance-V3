@@ -42,7 +42,7 @@ import math
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 from .base import dispatch  # declarative run() driver
 from . import grav_scale as _grav  # G-anchored orbital period (Kepler's third law)
 
@@ -94,9 +94,8 @@ def verify_julian_day(spec: Dict[str, Any]) -> VerifierResult:
     data = {"iso_date": iso, "actual_julian_day": actual_jd,
             "claimed_julian_day": cj, "diff": diff,
             "source": "Meeus Astronomical Algorithms ch. 7"}
-    if diff <= 0.5:  # we computed at noon; a half-day off the convention
-        return confirm(name, f"JD({iso}) = {actual_jd}", data)
-    return mismatch(name, f"JD({iso}) actual {actual_jd}, claimed {cj}", data)
+    # we computed at noon; a half-day off the convention is the band
+    return band(name, actual_jd, cj, 0.5, "julian_day", data, fmt="{:.2f}")
 
 
 # ── Moon phase ─────────────────────────────────────────────────────────
@@ -338,7 +337,6 @@ def verify_sunrise_sunset(spec: Dict[str, Any]) -> VerifierResult:
     if result is None:
         return mismatch(name, "polar night or day at this latitude/date", {"iso_date": iso, "lat": latf, "lon": lonf})
     rise, sset = result
-    mismatches: List[str] = []
     data: Dict[str, Any] = {
         "iso_date": iso, "lat": latf, "lon": lonf, "tz_offset_hours": tzf,
         "actual_sunrise_local_hour": rise,
@@ -347,29 +345,23 @@ def verify_sunrise_sunset(spec: Dict[str, Any]) -> VerifierResult:
         "source": "NOAA simplified solar position (Meeus §25)",
     }
     tol = 0.5
+    results: List[VerifierResult] = []
     if claimed_rise is not None:
         try:
             cr = float(claimed_rise)
-            data["claimed_sunrise_hour"] = cr
-            if abs(cr - rise) > tol:
-                mismatches.append(f"sunrise actual {rise:.3f} h, claimed {cr}")
         except (TypeError, ValueError):
             return error(name, "claimed_sunrise_hour must be numeric")
+        results.append(band(name, rise, cr, tol, "sunrise_hour", None, fmt="{:.3f}", unit="h"))
     if claimed_set is not None:
         try:
             cs = float(claimed_set)
-            data["claimed_sunset_hour"] = cs
-            if abs(cs - sset) > tol:
-                mismatches.append(f"sunset actual {sset:.3f} h, claimed {cs}")
         except (TypeError, ValueError):
             return error(name, "claimed_sunset_hour must be numeric")
-    if mismatches:
-        return mismatch(name, "; ".join(mismatches), data)
-    return confirm(
-        name,
-        f"sunrise/sunset at lat {latf} lon {lonf} on {iso}: rise {rise:.2f}, set {sset:.2f} (local h)",
-        data,
-    )
+        results.append(band(name, sset, cs, tol, "sunset_hour", None, fmt="{:.3f}", unit="h"))
+    merged = merge_checks(name, results, data)
+    if merged.status == "CONFIRMED":
+        return confirm(name, f"sunrise/sunset at lat {latf} lon {lonf} on {iso}: " + merged.detail, merged.data)
+    return merged
 
 
 def verify_orbital_period(spec: Dict[str, Any]) -> VerifierResult:

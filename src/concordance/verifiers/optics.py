@@ -29,13 +29,9 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import alpha_scale as _ascale  # alpha-anchored light-matter scale
-
-
-def _close(a, b, rel_tol=1e-3, abs_tol=1e-9):
-    return abs(a - b) <= max(abs_tol, rel_tol * max(abs(a), 1.0))
 
 
 def verify_snell_law(spec: Dict[str, Any]) -> VerifierResult:
@@ -77,13 +73,7 @@ def verify_snell_law(spec: Dict[str, Any]) -> VerifierResult:
     data = {"n1": n1f, "n2": n2f, "theta1_deg": t1f,
             "actual_theta2_deg": actual, "claimed_theta2_deg": c,
             "diff_deg": diff, "formula": "n1·sin(θ1) = n2·sin(θ2)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"θ₂ = arcsin(({n1f}/{n2f})·sin({t1f}°)) = {actual:.3f}° (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"θ₂ = {actual:.3f}°, claimed {c}° (diff {diff:.3f}°)",
-                    data)
+    return band(name, actual, c, threshold, "theta2_deg", data, fmt="{:.3f}", unit="deg")
 
 
 def verify_thin_lens(spec: Dict[str, Any]) -> VerifierResult:
@@ -141,13 +131,7 @@ def verify_magnification(spec: Dict[str, Any]) -> VerifierResult:
     data = {"object_distance": dof, "image_distance": dif,
             "actual_magnification": actual, "claimed_magnification": c,
             "diff": diff, "formula": "M = −d_i / d_o"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"M = -{dif}/{dof} = {actual:.4f} (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"M = {actual:.4f}, claimed {c} (diff {diff:.4f})",
-                    data)
+    return band(name, actual, c, threshold, "magnification", data, fmt="{:.4f}")
 
 
 def verify_rayleigh_diffraction(spec: Dict[str, Any]) -> VerifierResult:
@@ -171,13 +155,7 @@ def verify_rayleigh_diffraction(spec: Dict[str, Any]) -> VerifierResult:
     data = {"wavelength_m": lf, "aperture_m": Df,
             "actual_diffraction_rad": actual, "claimed_diffraction_rad": c,
             "diff": diff, "formula": "θ_min = 1.22·λ/D"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"θ_min = 1.22·{lf:.3g}/{Df:.3g} = {actual:.3e} rad (matches claim)",
-                       data)
-    return mismatch(name,
-                    f"θ_min = {actual:.3e} rad, claimed {c:.3e} (diff {diff:.3e})",
-                    data)
+    return band(name, actual, c, threshold, "diffraction_rad", data, fmt="{:.3e}", unit="rad")
 
 
 # Exact SI-defined constants (2019 redefinition).
@@ -202,9 +180,7 @@ def verify_double_slit(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"wavelength_m": lf, "slit_separation_m": df, "screen_distance_m": Lf,
             "actual_fringe_spacing_m": actual, "claimed_fringe_spacing_m": c, "formula": "Δy = λ·L/d"}
-    if abs(actual - c) <= max(1e-12, rel_tol * abs(actual)):
-        return confirm(name, f"Δy = λL/d = {actual:.3e} m (matches claim)", data)
-    return mismatch(name, f"Δy = {actual:.3e} m, claimed {c:.3e}", data)
+    return band(name, actual, c, max(1e-12, rel_tol * abs(actual)), "fringe_spacing_m", data, fmt="{:.3e}", unit="m")
 
 
 def verify_photon_energy(spec: Dict[str, Any]) -> VerifierResult:
@@ -230,9 +206,8 @@ def verify_photon_energy(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "inputs must be numeric")
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"actual_photon_energy_j": actual, "claimed_photon_energy_j": c, "formula": "E = hc/λ = hf"}
-    if abs(actual - c) <= max(1e-30, rel_tol * abs(actual)):
-        return confirm(name, f"E = {basis} = {actual:.3e} J (matches claim)", data)
-    return mismatch(name, f"E = {actual:.3e} J, claimed {c:.3e}", data)
+    data["basis"] = basis
+    return band(name, actual, c, max(1e-30, rel_tol * abs(actual)), "photon_energy_j", data, fmt="{:.3e}", unit="J")
 
 
 def verify_de_broglie(spec: Dict[str, Any]) -> VerifierResult:
@@ -258,9 +233,7 @@ def verify_de_broglie(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"momentum_kg_m_s": pf, "actual_de_broglie_m": actual,
             "claimed_de_broglie_m": c, "formula": "λ = h/p"}
-    if abs(actual - c) <= max(1e-30, rel_tol * abs(actual)):
-        return confirm(name, f"λ = h/p = {actual:.3e} m (matches claim)", data)
-    return mismatch(name, f"λ = {actual:.3e} m, claimed {c:.3e}", data)
+    return band(name, actual, c, max(1e-30, rel_tol * abs(actual)), "de_broglie_m", data, fmt="{:.3e}", unit="m")
 
 
 def verify_critical_angle(spec: Dict[str, Any]) -> VerifierResult:
@@ -283,9 +256,7 @@ def verify_critical_angle(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"n_core": ncf, "n_cladding": nclf, "actual_critical_angle_deg": actual,
             "claimed_critical_angle_deg": c, "formula": "theta_c = arcsin(n_clad/n_core)"}
-    if abs(actual - c) <= max(1e-6, rel_tol * abs(actual)):
-        return confirm(name, f"theta_c = arcsin({nclf}/{ncf}) = {actual:.4g} deg (matches claim)", data)
-    return mismatch(name, f"theta_c = {actual:.4g} deg, claimed {c:.4g}", data)
+    return band(name, actual, c, max(1e-6, rel_tol * abs(actual)), "critical_angle_deg", data, fmt="{:.4g}", unit="deg")
 
 
 def verify_numerical_aperture(spec: Dict[str, Any]) -> VerifierResult:
@@ -305,9 +276,7 @@ def verify_numerical_aperture(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"actual_numerical_aperture": actual, "claimed_numerical_aperture": c,
             "formula": "NA = sqrt(n_core^2 - n_clad^2)"}
-    if abs(actual - c) <= max(1e-6, rel_tol * abs(actual)):
-        return confirm(name, f"NA = sqrt({ncf}^2-{nclf}^2) = {actual:.4g} (matches claim)", data)
-    return mismatch(name, f"NA = {actual:.4g}, claimed {c:.4g}", data)
+    return band(name, actual, c, max(1e-6, rel_tol * abs(actual)), "numerical_aperture", data, fmt="{:.4g}")
 
 
 def verify_fiber_attenuation(spec: Dict[str, Any]) -> VerifierResult:
@@ -334,9 +303,8 @@ def verify_fiber_attenuation(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "inputs must be numeric")
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"actual_loss_db": actual, "claimed_loss_db": c, "formula": "loss = alpha*L = 10log10(Pin/Pout)"}
-    if abs(actual - c) <= max(1e-6, rel_tol * abs(actual)):
-        return confirm(name, f"loss = {basis} = {actual:.4g} dB (matches claim)", data)
-    return mismatch(name, f"loss = {actual:.4g} dB, claimed {c:.4g}", data)
+    data["basis"] = basis
+    return band(name, actual, c, max(1e-6, rel_tol * abs(actual)), "loss_db", data, fmt="{:.4g}", unit="dB")
 
 
 def verify_wdm_capacity(spec: Dict[str, Any]) -> VerifierResult:
@@ -357,9 +325,7 @@ def verify_wdm_capacity(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"actual_total_gbps": actual, "claimed_total_gbps": c,
             "formula": "total = num_channels x bitrate_per_channel"}
-    if abs(actual - c) <= max(1e-6, rel_tol * abs(actual)):
-        return confirm(name, f"{int(nf)} channels x {rf} Gbps = {actual:.6g} Gbps through one fiber (matches claim)", data)
-    return mismatch(name, f"total = {actual:.6g} Gbps, claimed {c:.6g}", data)
+    return band(name, actual, c, max(1e-6, rel_tol * abs(actual)), "total_gbps", data, unit="Gbps")
 
 
 _RULES = [

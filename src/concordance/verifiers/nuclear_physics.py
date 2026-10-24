@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import rela_scale as _rela  # c-anchored rest energy (E = m c^2)
 
@@ -74,17 +74,7 @@ def verify_radioactive_decay(spec: Dict[str, Any]) -> VerifierResult:
         "n_half_lives": tf / Tf,
         "formula": "N(t) = N₀ × e^(−λt),  λ = ln(2) / T_half",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"N₀={N0f:.4g} × e^(−{lam:.4g}×{tf}) = {actual:.6g} (matches claim {cl:.6g})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual N(t) = {actual:.6g}, claimed {cl:.6g} (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "remaining_count", data)
 
 
 def verify_binding_energy_per_nucleon(spec: Dict[str, Any]) -> VerifierResult:
@@ -119,17 +109,7 @@ def verify_binding_energy_per_nucleon(spec: Dict[str, Any]) -> VerifierResult:
         "amu_to_MeV": _AMU_TO_MEV,
         "formula": "BE/A = (Δm_amu × 931.5 MeV/amu) / A",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"({mdf} amu × 931.5) / {int(Af)} = {actual:.6g} MeV/nucleon (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual BE/A = {actual:.6g} MeV/nucleon, claimed {cl} (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "BE_per_nucleon_MeV", data, unit="MeV/nucleon")
 
 
 def verify_half_life_from_activity(spec: Dict[str, Any]) -> VerifierResult:
@@ -161,17 +141,7 @@ def verify_half_life_from_activity(spec: Dict[str, Any]) -> VerifierResult:
         "diff": diff,
         "formula": "T_half = ln(2) × N / A",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"ln(2) × {Nf:.4g} / {Af:.4g} = {actual:.6g} s (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual T_half = {actual:.6g} s, claimed {cl} s (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "half_life_seconds", data, unit="s")
 
 
 def verify_decay_constant(spec: Dict[str, Any]) -> VerifierResult:
@@ -199,17 +169,7 @@ def verify_decay_constant(spec: Dict[str, Any]) -> VerifierResult:
         "diff": diff,
         "formula": "λ = ln(2) / T_half",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"ln(2) / {Tf} = {actual:.6g} s⁻¹ (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual λ = {actual:.6g} s⁻¹, claimed {cl} s⁻¹ (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "decay_constant_per_s", data, unit="s⁻¹")
 
 
 def verify_rest_energy(spec: Dict[str, Any]) -> VerifierResult:

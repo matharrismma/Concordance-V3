@@ -50,7 +50,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import planck_scale as _planck  # h-anchored qubit energy E = h f
 
@@ -118,9 +118,7 @@ def verify_born_rule(spec: Dict[str, Any]) -> VerifierResult:
     data = {"outcome_index": i, "n_amplitudes": len(vals), "norm_squared": norm_sq,
             "actual_probability": actual, "claimed_probability": c,
             "formula": "P_i = |a_i|² / Σ|a_j|²"}
-    if diff <= max(tol, tol * abs(actual)):
-        return confirm(name, f"P({i}) = |a_{i}|²/Σ|a|² = {actual:.8f} (matches claim {c})", data)
-    return mismatch(name, f"P({i}) = {actual:.8f}, claimed {c} (diff {diff:.2g} > tol {tol})", data)
+    return band(name, actual, c, max(tol, tol * abs(actual)), "probability", data, fmt="{:.8f}")
 
 
 def verify_grover_iterations(spec: Dict[str, Any]) -> VerifierResult:
@@ -146,13 +144,7 @@ def verify_grover_iterations(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"n_items is too large to compute Grover iterations for: {n}")
     data = {"n_items": n, "optimal_iterations": optimal,
             "claimed_iterations": c, "formula": "T = floor(π√N/4)"}
-    if c == optimal:
-        return confirm(name,
-                       f"N={n} → T = floor(π×{math.sqrt(n):.4f}/4) = {optimal} (matches claim)",
-                       data)
-    return mismatch(name,
-                    f"N={n} → optimal T={optimal}, claimed {c}",
-                    data)
+    return band(name, optimal, c, 0, "iterations", data, fmt="{:.0f}")
 
 
 # ── Shor's algorithm period verification ─────────────────────────────────────
@@ -262,13 +254,7 @@ def verify_von_neumann_entropy(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(entropy - c)
     data = {"eigenvalues": lambdas, "computed_entropy_bits": entropy,
             "claimed_entropy_bits": c, "diff_bits": diff, "tolerance_bits": tol}
-    if diff <= tol:
-        return confirm(name,
-                       f"S = −Σλlog₂λ = {entropy:.6f} bits (matches claim {c}, diff {diff:.6f})",
-                       data)
-    return mismatch(name,
-                    f"S = {entropy:.6f} bits, claimed {c} (diff {diff:.6f} > tol {tol})",
-                    data)
+    return band(name, entropy, c, tol, "entropy_bits", data, fmt="{:.6f}", unit="bits")
 
 
 # ── quantum fidelity ──────────────────────────────────────────────────────────
@@ -290,13 +276,7 @@ def verify_quantum_fidelity(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(fidelity - c)
     data = {"inner_product": str(ip_v), "computed_fidelity": fidelity,
             "claimed_fidelity": c, "diff": diff}
-    if diff <= tol:
-        return confirm(name,
-                       f"F = |⟨ψ|φ⟩|² = |{ip_v}|² = {fidelity:.6f} (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"F = {fidelity:.6f}, claimed {c} (diff {diff:.6f} > tol {tol})",
-                    data)
+    return band(name, fidelity, c, tol, "fidelity", data, fmt="{:.6f}")
 
 
 # ── runner ────────────────────────────────────────────────────────────────────

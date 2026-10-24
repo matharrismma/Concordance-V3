@@ -47,12 +47,14 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
-def _close(actual: float, claimed: float, rel_tol: float = 1e-3, abs_tol: float = 1e-6) -> bool:
-    return abs(actual - claimed) <= max(abs_tol, rel_tol * abs(actual))
+def _band(name: str, actual: float, claimed: float, what: str, data: Dict[str, Any],
+          rel_tol: float = 1e-3, abs_tol: float = 1e-6, unit: str = ""):
+    """The band every true claim must lie in: ±max(abs_tol, rel_tol·|actual|) around the recomputed value."""
+    return band(name, actual, claimed, max(abs_tol, rel_tol * abs(actual)), what, data, unit=unit)
 
 
 def verify_ohms_law(spec: Dict[str, Any]) -> VerifierResult:
@@ -79,11 +81,7 @@ def verify_ohms_law(spec: Dict[str, Any]) -> VerifierResult:
     data = {"voltage_V": Vf, "current_A": If, "resistance_ohm": Rf,
             "actual_V_from_IR": actual_V, "diff_V": diff,
             "formula": "V = I · R"}
-    if diff <= threshold:
-        return confirm(name, f"V = {If}·{Rf} = {actual_V} (matches claim {Vf})", data)
-    return mismatch(name,
-                    f"V = {If}·{Rf} = {actual_V}, claimed {Vf} (diff {diff})",
-                    data)
+    return band(name, actual_V, Vf, threshold, "V_from_IR", data, unit="V")
 
 
 def verify_power(spec: Dict[str, Any]) -> VerifierResult:
@@ -124,17 +122,11 @@ def verify_power(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"power_W_claim must be numeric, got {claimed!r}")
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     matches = [(label, p, abs(p - c)) for (label, p) in forms]
-    all_match = all(_close(p, c, rel_tol=rel_tol) for (_, p, _) in matches)
     data = {"forms": [{"label": label, "value": p, "diff": d} for (label, p, d) in matches],
             "claimed_W": c, "tolerance_relative": rel_tol,
             "formulas": "P = V·I = I²·R = V²/R"}
-    if all_match:
-        return confirm(name,
-                       f"P forms {[f'{label}={p:.4g}' for (label, p, _) in matches]} all match claim {c}",
-                       data)
-    return mismatch(name,
-                    f"power forms {[(label, p) for (label, p, _) in matches]} vs claim {c}",
-                    data)
+    results = [_band(name, p, c, "power_W", {"form": label}, rel_tol=rel_tol, unit="W") for (label, p, _) in matches]
+    return merge_checks(name, results, data)
 
 
 def verify_kirchhoff_voltage_loop(spec: Dict[str, Any]) -> VerifierResult:
@@ -158,13 +150,7 @@ def verify_kirchhoff_voltage_loop(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     data = {"voltages_in_loop": vs, "actual_sum": actual, "claimed_sum": c,
             "diff": diff, "formula": "ΣV = 0 (KVL)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"ΣV = {actual:.6g} (matches claim {c}, diff {diff:.6g})",
-                       data)
-    return mismatch(name,
-                    f"ΣV = {actual:.6g}, claimed {c} (diff {diff:.6g} > {threshold:.6g})",
-                    data)
+    return band(name, actual, c, threshold, "sum", data, unit="V")
 
 
 def verify_rc_time_constant(spec: Dict[str, Any]) -> VerifierResult:
@@ -194,13 +180,7 @@ def verify_rc_time_constant(spec: Dict[str, Any]) -> VerifierResult:
     data = {"R": Rf, "C": Cf, "elapsed_s": tf, "supply_V": Vf,
             "tau": tau, "actual_v": actual, "claimed_v": cf,
             "diff": diff, "formula": "v(t) = V(1 − e^(−t/RC))"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"v({tf}) = {Vf}·(1 − e^(−{tf}/{tau:.3g})) = {actual:.4f} V (matches claim {cf})",
-                       data)
-    return mismatch(name,
-                    f"v({tf}) = {actual:.4f} V, claimed {cf} (diff {diff:.4f})",
-                    data)
+    return band(name, actual, cf, threshold, "v", data, fmt="{:.4f}", unit="V")
 
 
 
@@ -241,6 +221,7 @@ def verify_reflection_coefficient(spec: Dict[str, Any]) -> VerifierResult:
             "model": "single frequency, lossless real Z0, no component/tolerance model — the idealized Smith chart"}
     tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     bad = []
+    results = []
     for key, val in (("claimed_gamma_real", gamma.real), ("claimed_gamma_imag", gamma.imag), ("claimed_gamma_mag", mag),
                      ("claimed_vswr", vswr), ("claimed_return_loss_db", rl)):
         if key in spec:
@@ -252,14 +233,16 @@ def verify_reflection_coefficient(spec: Dict[str, Any]) -> VerifierResult:
                 if not (isinstance(cl, float) and math.isinf(cl)):
                     bad.append(f"{key.replace('claimed_', '')} is unbounded (|Γ| = 1), claimed {cl:g}")
                 continue
-            if abs(val - cl) > max(1e-4, tol * abs(val)):
-                bad.append(f"{key.replace('claimed_', '')} = {val:.6g}, claimed {cl:.6g}")
+            results.append(band(name, val, cl, max(1e-4, tol * abs(val)), key.replace("claimed_", ""), None))
     if not data["inverse_holds"]:
         bad.append("the inverse map did not return the load (numerical failure)")
+    merged = merge_checks(name, results, data)
     if bad:
-        return mismatch(name, "; ".join(bad), data)
-    return confirm(name, f"z = {z.real:.4g}{z.imag:+.4g}j → Γ = {gamma.real:.4g}{gamma.imag:+.4g}j (|Γ| = {mag:.4g}, "
-                         f"VSWR {vswr:.4g}, RL {rl:.4g} dB); inverse returns z (matches claims)", data)
+        return mismatch(name, "; ".join(bad + ([merged.detail] if merged.status == "MISMATCH" else [])), merged.data)
+    if merged.status == "CONFIRMED":
+        return confirm(name, f"z = {z.real:.4g}{z.imag:+.4g}j → Γ = {gamma.real:.4g}{gamma.imag:+.4g}j (|Γ| = {mag:.4g}, "
+                             f"VSWR {vswr:.4g}, RL {rl:.4g} dB); inverse returns z; " + merged.detail, merged.data)
+    return merged
 
 
 _RULES = [
