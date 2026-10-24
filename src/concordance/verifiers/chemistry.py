@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from fractions import Fraction
 from typing import Dict, List, Tuple, Any
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from . import alpha_scale as _ascale  # alpha-anchored atomic energy scale
 from . import thermal_scale as _thermal  # k_B-anchored Boltzmann factor
 from . import molar_scale as _molar  # N_A-anchored particle count
@@ -661,11 +661,8 @@ def verify_enantiomeric_excess(spec: Dict[str, Any]) -> VerifierResult:
     actual = abs(rf - sf) / total * 100.0
     diff = abs(actual - c)
     threshold = max(0.1, 1e-3 * abs(actual))
-    data = {"r": rf, "s": sf, "actual_ee_percent": actual, "claimed_ee_percent": c,
-            "formula": "ee = |R − S| / (R + S) × 100%"}
-    if diff <= threshold:
-        return confirm(name, f"ee = |{rf:g} − {sf:g}| / {total:g} = {actual:.4g}% (matches {c:g}%)", data)
-    return mismatch(name, f"ee = {actual:.4g}%, claimed {c:g}% (diff {diff:.4g})", data)
+    data = {"r": rf, "s": sf, "formula": "ee = |R − S| / (R + S) × 100%"}
+    return band(name, actual, c, threshold, "ee_percent", data, fmt="{:.4g}", unit="%")
 
 
 def verify_chiral_amplification(spec: Dict[str, Any]) -> VerifierResult:

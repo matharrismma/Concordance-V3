@@ -36,7 +36,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 
 
 def verify_replicates(spec: Dict[str, Any]) -> VerifierResult:
@@ -49,9 +49,7 @@ def verify_replicates(spec: Dict[str, Any]) -> VerifierResult:
         minimum = int(minimum)
     except (ValueError, TypeError):
         return error("biology.replicates", f"non-integer values: n={n}, min={minimum}")
-    if n >= minimum:
-        return confirm("biology.replicates", f"n_replicates={n} >= minimum {minimum}")
-    return mismatch("biology.replicates", f"n_replicates={n} below minimum {minimum}")
+    return bound("biology.replicates", n, minimum, "min", "n_replicates", fmt="{:d}")
 
 
 def verify_orthogonal_assays(spec: Dict[str, Any]) -> VerifierResult:
@@ -62,11 +60,8 @@ def verify_orthogonal_assays(spec: Dict[str, Any]) -> VerifierResult:
     if not isinstance(assays, list):
         return error("biology.orthogonal_assays", f"assay_classes must be a list, got {type(assays).__name__}")
     unique = sorted(set(str(a) for a in assays))
-    if len(unique) >= minimum:
-        return confirm("biology.orthogonal_assays",
-                       f"{len(unique)} distinct assay classes: {unique} >= minimum {minimum}")
-    return mismatch("biology.orthogonal_assays",
-                    f"only {len(unique)} distinct assay classes ({unique}), need {minimum}")
+    return bound("biology.orthogonal_assays", len(unique), minimum, "min", "distinct_assay_classes",
+                 {"assay_classes": unique})
 
 
 def verify_dose_response_monotonicity(spec: Dict[str, Any]) -> VerifierResult:
@@ -152,15 +147,8 @@ def verify_sample_size_powered(spec: Dict[str, Any]) -> VerifierResult:
     except Exception as e:
         return error("biology.power", f"computation failure: {e}")
 
-    data = {"d": d, "alpha": alpha, "target_power": target_power,
-            "n_per_group": n, "n_required": n_required}
-    if n >= n_required:
-        return confirm("biology.power",
-                       f"n_per_group={n} >= required {n_required} for d={d}, "
-                       f"alpha={alpha}, power={target_power}", data)
-    return mismatch("biology.power",
-                    f"n_per_group={n} below required {n_required} for d={d}, "
-                    f"alpha={alpha}, power={target_power}", data)
+    data = {"d": d, "alpha": alpha, "target_power": target_power, "n_required": n_required}
+    return bound("biology.power", n, n_required, "min", "n_per_group", data)
 
 
 def verify_hardy_weinberg(spec):
@@ -187,12 +175,8 @@ def verify_hardy_weinberg(spec):
     alpha = float(spec.get("alpha", 0.05))
     data = {"p_allele_freq": p, "q_allele_freq": q,
             "expected": [exp_AA, exp_Aa, exp_aa],
-            "chi2": chi2, "df": 1, "p_value": pval, "alpha": alpha}
-    if pval >= alpha:
-        return confirm("biology.hardy_weinberg",
-                       f"counts consistent with HWE (chi2={chi2:.3f}, p={pval:.3g} >= {alpha})", data)
-    return mismatch("biology.hardy_weinberg",
-                    f"counts inconsistent with HWE (chi2={chi2:.3f}, p={pval:.3g} < {alpha})", data)
+            "chi2": chi2, "df": 1, "alpha": alpha}
+    return bound("biology.hardy_weinberg", pval, alpha, "min", "p_value", data, fmt="{:.3g}")
 
 
 def verify_primer(spec):
@@ -211,18 +195,20 @@ def verify_primer(spec):
     tm = 2 * (a + t) + 4 * (g + c)
     gc_lo, gc_hi = spec.get("gc_range", [40.0, 60.0])
     tm_lo, tm_hi = spec.get("tm_range", [50.0, 65.0])
-    fails = []
-    if not (gc_lo <= gc <= gc_hi):
-        fails.append(f"GC%={gc:.1f} outside [{gc_lo},{gc_hi}]")
-    if not (tm_lo <= tm <= tm_hi):
-        fails.append(f"Tm={tm}C outside [{tm_lo},{tm_hi}]")
-    if not (15 <= n <= 30):
-        fails.append(f"length={n} outside [15,30]")
-    data = {"length": n, "gc_percent": gc, "tm_wallace_C": tm}
-    if fails:
-        return mismatch("biology.primer", "; ".join(fails), data)
-    return confirm("biology.primer",
-                   f"primer {seq} OK: len={n}, GC={gc:.1f}%, Tm={tm}C", data)
+    data = {"sequence": seq}
+    nm = "biology.primer"
+    results = [bound(nm, gc, gc_lo, "min", "gc_percent", data, fmt="{:.1f}", unit="%"),
+               bound(nm, gc, gc_hi, "max", "gc_percent", data, fmt="{:.1f}", unit="%"),
+               bound(nm, tm, tm_lo, "min", "tm_wallace_C", data, unit="C"),
+               bound(nm, tm, tm_hi, "max", "tm_wallace_C", data, unit="C"),
+               bound(nm, n, 15, "min", "length", data, fmt="{:d}"),
+               bound(nm, n, 30, "max", "length", data, fmt="{:d}")]
+    bad = [r for r in results if not r.passed]
+    if bad:
+        # every violated edge, not just the first — the old detail listed them all
+        merged = merge_checks(nm, results, data)
+        return mismatch(nm, "; ".join(r.detail for r in bad), merged.data)
+    return merge_checks(nm, results, data)
 
 
 def verify_molarity(spec):
@@ -250,14 +236,12 @@ def verify_molarity(spec):
         actual = moles / v
     except KeyError as e:
         return error("biology.molarity", f"missing field: {e}")
-    diff = abs(actual - float(cl))
-    data = {"computed_molarity": actual, "claimed_molarity": cl,
-            "abs_diff": diff, "tolerance": tol}
-    if diff <= tol or (cl != 0 and diff / abs(cl) <= tol):
-        return confirm("biology.molarity",
-                       f"computed {actual:.6g} M ~ claimed {cl} M (diff {diff:.2e})", data)
-    return mismatch("biology.molarity",
-                    f"computed {actual:.6g} M != claimed {cl} M (diff {diff:.2e})", data)
+    cl = float(cl)
+    diff = abs(actual - cl)
+    # same window as before: absolute tol OR relative tol of the claim, whichever is wider
+    eff_tol = max(tol, tol * abs(cl)) if cl != 0 else tol
+    data = {"computed_molarity": actual, "abs_diff": diff, "tolerance": tol}
+    return band("biology.molarity", actual, cl, eff_tol, "molarity", data, unit="M")
 
 
 def verify_mendelian(spec):
@@ -279,12 +263,8 @@ def verify_mendelian(spec):
     df = len(obs) - 1
     pval = float(_st.chi2.sf(chi2, df=df))
     alpha = float(spec.get("alpha", 0.05))
-    data = {"expected": expected, "chi2": chi2, "df": df, "p_value": pval, "alpha": alpha}
-    if pval >= alpha:
-        return confirm("biology.mendelian",
-                       f"observed consistent with ratio {ratio} (chi2={chi2:.3f}, p={pval:.3g})", data)
-    return mismatch("biology.mendelian",
-                    f"observed inconsistent with ratio {ratio} (chi2={chi2:.3f}, p={pval:.3g})", data)
+    data = {"expected": expected, "chi2": chi2, "df": df, "alpha": alpha, "ratio": ratio}
+    return bound("biology.mendelian", pval, alpha, "min", "p_value", data, fmt="{:.3g}")
 
 
 # ── Nested health / control systems (BIO_CONTROL block) ───────────────────

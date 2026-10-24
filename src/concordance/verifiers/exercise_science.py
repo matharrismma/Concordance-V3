@@ -45,7 +45,7 @@ EX_VERIFY packet shape (any subset of fields):
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -104,15 +104,9 @@ def verify_energy_expenditure(spec: Dict[str, Any]) -> VerifierResult:
     actual = m * w * d
     tol = clamp_tol(spec, "tolerance_kcal", 5.0)
     diff = abs(actual - c)
-    data = {"actual_kcal": actual, "claimed_kcal": c, "diff_kcal": diff,
+    data = {"diff_kcal": diff,
             "met": m, "weight_kg": w, "duration_hours": d, "tolerance_kcal": tol}
-    if diff <= tol:
-        return confirm(name,
-                       f"{m} MET × {w}kg × {d}h = {actual:.1f} kcal (matches claim {c}, diff {diff:.1f} ≤ {tol})",
-                       data)
-    return mismatch(name,
-                    f"{m} MET × {w}kg × {d}h = {actual:.1f} kcal, claimed {c} (diff {diff:.1f} > tol {tol})",
-                    data)
+    return band(name, actual, c, tol, "kcal", data, fmt="{:.1f}", unit="kcal")
 
 
 def verify_max_heart_rate(spec: Dict[str, Any]) -> VerifierResult:
@@ -132,15 +126,9 @@ def verify_max_heart_rate(spec: Dict[str, Any]) -> VerifierResult:
     actual = 208.0 - 0.7 * a
     tol = clamp_tol(spec, "tolerance_bpm", 2.0)
     diff = abs(actual - c)
-    data = {"actual_bpm": actual, "claimed_bpm": c, "diff_bpm": diff,
+    data = {"diff_bpm": diff,
             "age_years": a, "formula": "Tanaka 2001 (208 - 0.7·age)"}
-    if diff <= tol:
-        return confirm(name,
-                       f"HRmax = 208 - 0.7·{a} = {actual:.1f} bpm (matches claim {c}, diff {diff:.1f} ≤ {tol})",
-                       data)
-    return mismatch(name,
-                    f"HRmax = 208 - 0.7·{a} = {actual:.1f} bpm, claimed {c} (diff {diff:.1f} > tol {tol})",
-                    data)
+    return band(name, actual, c, tol, "bpm", data, fmt="{:.1f}", unit="bpm")
 
 
 def verify_target_heart_rate_zone(spec: Dict[str, Any]) -> VerifierResult:
@@ -179,18 +167,10 @@ def verify_target_heart_rate_zone(spec: Dict[str, Any]) -> VerifierResult:
     actual_high = (hrr * ih) + rest_v
     tol = clamp_tol(spec, "tolerance_bpm", 1.0)
     data = {"hrmax": hrmax, "hrr": hrr,
-            "actual_low_bpm": actual_low, "actual_high_bpm": actual_high,
-            "claimed_low_bpm": cl, "claimed_high_bpm": ch,
             "intensity_low": il, "intensity_high": ih, "tolerance_bpm": tol}
-    if abs(actual_low - cl) <= tol and abs(actual_high - ch) <= tol:
-        return confirm(name,
-                       f"zone {il:.0%}-{ih:.0%}: {actual_low:.0f}–{actual_high:.0f} bpm "
-                       f"(matches claim {cl:.0f}–{ch:.0f} within {tol})",
-                       data)
-    return mismatch(name,
-                    f"zone {il:.0%}-{ih:.0%}: {actual_low:.0f}–{actual_high:.0f} bpm, "
-                    f"claimed {cl:.0f}–{ch:.0f}",
-                    data)
+    results = [band(name, actual_low, cl, tol, "low_bpm", data, fmt="{:.0f}", unit="bpm"),
+               band(name, actual_high, ch, tol, "high_bpm", data, fmt="{:.0f}", unit="bpm")]
+    return merge_checks(name, results, data)
 
 
 def verify_met_lookup(spec: Dict[str, Any]) -> VerifierResult:
@@ -209,15 +189,8 @@ def verify_met_lookup(spec: Dict[str, Any]) -> VerifierResult:
     actual = _MET_TABLE[activity]
     tol = clamp_tol(spec, "tolerance_met", 0.5)
     diff = abs(actual - c)
-    data = {"activity": activity, "actual_met": actual, "claimed_met": c,
-            "diff": diff, "tolerance_met": tol}
-    if diff <= tol:
-        return confirm(name,
-                       f"{activity} MET = {actual} (matches claim {c}, diff {diff:.1f} ≤ {tol})",
-                       data)
-    return mismatch(name,
-                    f"{activity} MET = {actual} per Compendium, claimed {c} (diff {diff:.1f} > tol {tol})",
-                    data)
+    data = {"activity": activity, "diff": diff, "tolerance_met": tol}
+    return band(name, actual, c, tol, "met", data, fmt="{:.1f}")
 
 
 _RULES = [

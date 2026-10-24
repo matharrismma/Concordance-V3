@@ -31,7 +31,7 @@ SOIL_VERIFY packet shape (any subset):
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -173,8 +173,7 @@ def verify_npk_requirement(spec: Dict[str, Any]) -> VerifierResult:
     N_ref, P_ref, K_ref = ref
     actual_n, actual_p, actual_k = N_ref * af, P_ref * af, K_ref * af
     tol_pct = clamp_tol(spec, "tolerance_pct", 10.0)
-    results_detail = []
-    mismatches = []
+    results = []
     data = {"crop": crop, "area_ha": af,
             "reference_n_kg": actual_n, "reference_p_kg": actual_p, "reference_k_kg": actual_k,
             "tolerance_pct": tol_pct, "source": "FAO fertilizer guidelines"}
@@ -186,13 +185,8 @@ def verify_npk_requirement(spec: Dict[str, Any]) -> VerifierResult:
         except (TypeError, ValueError):
             return error(name, f"claimed_{label.lower()}_kg must be numeric")
         tol = actual * tol_pct / 100.0
-        if abs(actual - cf) <= tol:
-            results_detail.append(f"{label}={actual:.1f} kg/ha ✓")
-        else:
-            mismatches.append(f"{label}: expected {actual:.1f} kg, claimed {cf:.1f} kg")
-    if mismatches:
-        return mismatch(name, "; ".join(mismatches), data)
-    return confirm(name, f"NPK for {crop} × {af} ha: {', '.join(results_detail)}", data)
+        results.append(band(name, actual, cf, tol, f"{label.lower()}_kg", data, fmt="{:.1f}", unit="kg"))
+    return merge_checks(name, results, data)
 
 
 def verify_irrigation_req(spec: Dict[str, Any]) -> VerifierResult:
@@ -209,12 +203,9 @@ def verify_irrigation_req(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "reference_et0_mm_per_day, crop_coefficient, claimed_etc_mm_per_day must be numeric")
     actual = et0f * kcf
     tol = clamp_tol(spec, "tolerance_mm", max(0.05, actual * 0.02))
-    data = {"et0_mm_per_day": et0f, "crop_coefficient_kc": kcf,
-            "actual_etc_mm_per_day": round(actual, 4), "claimed_etc": c,
+    data = {"et0_mm_per_day": et0f, "crop_coefficient_kc": kcf, "claimed_etc": c,
             "formula": "ETc = ET0 × Kc (FAO-56)", "source": "FAO Irrigation and Drainage Paper 56"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"ETc = {actual:.4f} mm/day (matches claim)", data)
-    return mismatch(name, f"ETc = {actual:.4f} mm/day, claimed {c}", data)
+    return band(name, actual, c, tol, "etc_mm_per_day", data, fmt="{:.4f}", unit="mm/day")
 
 
 def verify_lime_requirement(spec: Dict[str, Any]) -> VerifierResult:
@@ -240,12 +231,9 @@ def verify_lime_requirement(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_t", max(0.1, actual * 0.10))
     data = {"current_ph": cpf, "target_ph": tpf, "delta_ph": delta,
             "soil_type": soil_type, "rate_t_per_ha_per_ph_unit": rate,
-            "actual_lime_t_per_ha": round(actual, 2), "claimed_lime_t_per_ha": c,
             "formula": "lime = (target_ph − current_ph) × rate",
             "source": "Cooperative Extension lime requirement tables"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"lime needed = {actual:.2f} t/ha (matches claim)", data)
-    return mismatch(name, f"lime needed = {actual:.2f} t/ha, claimed {c}", data)
+    return band(name, actual, c, tol, "lime_t_per_ha", data, fmt="{:.2f}", unit="t/ha")
 
 
 def verify_soil_texture(spec: Dict[str, Any]) -> VerifierResult:

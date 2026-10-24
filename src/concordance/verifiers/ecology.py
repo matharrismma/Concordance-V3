@@ -35,7 +35,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -80,22 +80,10 @@ def verify_logistic_growth(spec: Dict[str, Any]) -> VerifierResult:
         "initial_population_N0": N0f,
         "growth_rate_r": rf,
         "time_t": tf,
-        "actual_population": actual,
-        "claimed_population": cl,
         "diff": diff,
         "formula": "N(t) = K / (1 + ((K−N0)/N0) × e^(−r×t))",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"N({tf}) = {actual:.6g} (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual N({tf}) = {actual:.6g}, claimed {cl} (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "population", data)
 
 
 def verify_trophic_efficiency(spec: Dict[str, Any]) -> VerifierResult:
@@ -126,23 +114,11 @@ def verify_trophic_efficiency(spec: Dict[str, Any]) -> VerifierResult:
         "energy_input": Ef,
         "trophic_levels_up": int(lf),
         "trophic_efficiency": eff,
-        "actual_energy_output": actual,
-        "claimed_energy_output": cl,
         "diff": diff,
         "formula": "output = input × efficiency^levels",
         "note": "default efficiency is 0.10 (Lindeman 10% rule)",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"{Ef} × {eff}^{int(lf)} = {actual:.6g} (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual output = {actual:.6g}, claimed {cl} (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "energy_output", data)
 
 
 def verify_shannon_diversity(spec: Dict[str, Any]) -> VerifierResult:
@@ -182,23 +158,11 @@ def verify_shannon_diversity(spec: Dict[str, Any]) -> VerifierResult:
         "species_proportions": props,
         "species_count": len(props),
         "proportions_sum": total,
-        "actual_shannon_index": actual,
-        "claimed_shannon_index": cl,
         "diff": diff,
         "formula": "H = −Σ(p_i × ln(p_i))",
         "note": "zero-proportion terms excluded (0·ln0 = 0 by convention)",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"H = {actual:.6g} nats (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual H = {actual:.6g} nats, claimed {cl} (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "shannon_index", data)
 
 
 def verify_carbon_footprint_transport(spec: Dict[str, Any]) -> VerifierResult:
@@ -225,22 +189,10 @@ def verify_carbon_footprint_transport(spec: Dict[str, Any]) -> VerifierResult:
     data = {
         "distance_km": df,
         "emission_factor_kg_per_km": ff,
-        "actual_co2_kg": actual,
-        "claimed_co2_kg": cl,
         "diff": diff,
         "formula": "CO₂_kg = distance_km × emission_factor_kg_per_km",
     }
-    if diff <= threshold:
-        return confirm(
-            name,
-            f"{df} km × {ff} kg/km = {actual:.6g} kg CO₂ (matches claim {cl})",
-            data,
-        )
-    return mismatch(
-        name,
-        f"actual CO₂ = {actual:.6g} kg, claimed {cl} kg (diff {diff:.6g})",
-        data,
-    )
+    return band(name, actual, cl, threshold, "co2_kg", data)
 
 
 _RULES = [

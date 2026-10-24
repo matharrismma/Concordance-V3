@@ -25,15 +25,15 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch
 
 _R = 8.314462618   # J/(mol·K)
 _F = 96485.33212   # C/mol
 
 
-def _close(actual: float, claimed: float, rel_tol: float = 1e-2, abs_tol: float = 1e-2) -> bool:
-    return abs(actual - claimed) <= max(abs_tol, rel_tol * abs(actual))
+def _tol(actual: float, rel_tol: float = 1e-2, abs_tol: float = 1e-2) -> float:
+    return max(abs_tol, rel_tol * abs(actual))
 
 
 def verify_nernst_potential(spec: Dict[str, Any]) -> VerifierResult:
@@ -53,9 +53,7 @@ def verify_nernst_potential(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"z": zf, "c_out": cof, "c_in": cif, "T_K": T, "E_mV": actual, "claimed_mV": cl,
             "formula": "E = (RT/zF) ln(C_out/C_in)"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"E = (RT/{zf:g}F) ln({cof}/{cif}) = {actual:.2f} mV (matches {cl})", data)
-    return mismatch(name, f"E = {actual:.2f} mV, claimed {cl} (diff {abs(actual-cl):.2f})", data)
+    return band(name, actual, cl, _tol(actual, rel_tol=rel_tol), "E_mV", data, fmt="{:.2f}", unit="mV")
 
 
 def verify_goldman(spec: Dict[str, Any]) -> VerifierResult:
@@ -78,9 +76,7 @@ def verify_goldman(spec: Dict[str, Any]) -> VerifierResult:
     actual = (_R * T / _F) * math.log(num / den) * 1000.0
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"num": num, "den": den, "T_K": T, "Vm_mV": actual, "claimed_mV": cl, "formula": "GHK"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"V_m = {actual:.2f} mV (matches {cl})", data)
-    return mismatch(name, f"V_m = {actual:.2f} mV, claimed {cl} (diff {abs(actual-cl):.2f})", data)
+    return band(name, actual, cl, _tol(actual, rel_tol=rel_tol), "Vm_mV", data, fmt="{:.2f}", unit="mV")
 
 
 def verify_weber_fechner(spec: Dict[str, Any]) -> VerifierResult:
@@ -98,9 +94,7 @@ def verify_weber_fechner(spec: Dict[str, Any]) -> VerifierResult:
     actual = kf * math.log(If / I0f)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"stimulus": If, "reference": I0f, "k": kf, "S": actual, "claimed": cl, "formula": "S = k ln(I/I0)"}
-    if _close(actual, cl, rel_tol=rel_tol, abs_tol=1e-4):
-        return confirm(name, f"S = {kf}·ln({If}/{I0f}) = {actual:.4f} (matches {cl})", data)
-    return mismatch(name, f"S = {actual:.4f}, claimed {cl}", data)
+    return band(name, actual, cl, _tol(actual, rel_tol=rel_tol, abs_tol=1e-4), "S", data, fmt="{:.4f}")
 
 
 _RULES = [

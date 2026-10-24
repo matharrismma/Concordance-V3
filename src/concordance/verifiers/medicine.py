@@ -35,10 +35,11 @@ MED_VERIFY packet shape (any subset):
     }
 """
 from __future__ import annotations
+import dataclasses
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 
 # ── BMI ──────────────────────────────────────────────────────────────────────
 
@@ -77,14 +78,16 @@ def verify_bmi(spec: Dict[str, Any]) -> VerifierResult:
     data = {"weight_kg": wf, "height_m": hf, "bmi": round(bmi, 2),
             "classification": bmi_cat,
             "formula": "BMI = weight_kg / height_m^2"}
+    results = []
     if claimed_bmi is not None:
         try:
             c = float(claimed_bmi)
         except (TypeError, ValueError):
             return error(name, "claimed_bmi must be numeric")
-        diff = abs(bmi - c)
-        if diff > tol:
-            return mismatch(name, f"BMI = {bmi:.2f}, claimed {c} (diff {diff:.2f})", data)
+        b = band(name, bmi, c, tol, "bmi", data, fmt="{:.2f}")
+        if not b.passed:
+            return b
+        results.append(b)
     if claimed_class is not None:
         if str(claimed_class).lower() != bmi_cat:
             return mismatch(name,
@@ -92,6 +95,8 @@ def verify_bmi(spec: Dict[str, Any]) -> VerifierResult:
                             data)
     if claimed_bmi is None and claimed_class is None:
         return na(name, "no claimed_bmi or claimed_bmi_class to check")
+    if results:
+        return merge_checks(name, results, data)
     return confirm(name, f"BMI = {bmi:.2f} ({bmi_cat})", data)
 
 
@@ -119,12 +124,10 @@ def verify_drug_dosage(spec: Dict[str, Any]) -> VerifierResult:
              "condition, or person. A correct calculation can still be a dangerous dose. Confirm "
              "with a clinician or pharmacist before giving any medication.")
     data = {"dose_mg_per_kg": dpk, "weight_kg": wf,
-            "actual_dose_mg": actual, "claimed_dose_mg": c,
             "diff_mg": diff, "formula": "dose = dose_mg_per_kg * weight_kg",
             "scope": ("arithmetic of the stated formula only — not a clinical-safety judgement")}
-    if diff <= tol:
-        return confirm(name, f"{dpk} mg/kg × {wf} kg = {actual:.1f} mg (arithmetic matches claim)." + _clin, data)
-    return mismatch(name, f"dose = {actual:.1f} mg, claimed {c} mg (diff {diff:.1f})." + _clin, data)
+    r = band(name, actual, c, tol, "dose_mg", data, fmt="{:.1f}", unit="mg")
+    return dataclasses.replace(r, detail=r.detail + "." + _clin)
 
 
 # ── Blood pressure classification (AHA 2017) ─────────────────────────────────
@@ -190,12 +193,9 @@ def verify_a1c_to_eag(spec: Dict[str, Any]) -> VerifierResult:
     actual = 28.7 * af - 46.7
     tol = clamp_tol(spec, "tolerance_mg_dl", 3.0)
     diff = abs(actual - c)
-    data = {"a1c_pct": af, "actual_eag_mg_dl": round(actual, 1),
-            "claimed_eag_mg_dl": c, "diff_mg_dl": diff,
+    data = {"a1c_pct": af, "diff_mg_dl": diff,
             "formula": "eAG = 28.7 * A1C - 46.7 (ADA)"}
-    if diff <= tol:
-        return confirm(name, f"A1C {af}% → eAG {actual:.1f} mg/dL (matches claim)", data)
-    return mismatch(name, f"eAG = {actual:.1f} mg/dL, claimed {c} (diff {diff:.1f})", data)
+    return band(name, actual, c, tol, "eag_mg_dl", data, fmt="{:.1f}", unit="mg/dL")
 
 
 # ── eGFR Cockcroft-Gault ──────────────────────────────────────────────────────
@@ -224,11 +224,8 @@ def verify_egfr_cockcroft(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     data = {"age_years": af, "weight_kg": wf, "serum_creatinine": cr,
             "sex": sex, "sex_factor": sex_factor,
-            "actual_egfr": round(actual, 1), "claimed_egfr": c,
             "formula": "((140-age)*weight*sex_factor) / (72*Cr)"}
-    if diff <= tol:
-        return confirm(name, f"eGFR = {actual:.1f} mL/min (matches claim)", data)
-    return mismatch(name, f"eGFR = {actual:.1f}, claimed {c} (diff {diff:.1f})", data)
+    return band(name, actual, c, tol, "egfr", data, fmt="{:.1f}", unit="mL/min")
 
 
 # ── Ideal body weight (Devine formula) ───────────────────────────────────────
@@ -253,11 +250,8 @@ def verify_ibw_devine(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_ibw_kg", 1.0)
     diff = abs(actual - c)
     data = {"height_in": hf, "sex": sex, "base_kg": base,
-            "actual_ibw_kg": round(actual, 1), "claimed_ibw_kg": c,
             "formula": f"{base} + 2.3 * (height_in - 60) (Devine)"}
-    if diff <= tol:
-        return confirm(name, f"IBW = {actual:.1f} kg (matches claim)", data)
-    return mismatch(name, f"IBW = {actual:.1f} kg, claimed {c} (diff {diff:.1f})", data)
+    return band(name, actual, c, tol, "ibw_kg", data, fmt="{:.1f}", unit="kg")
 
 
 # ── Mean arterial pressure ────────────────────────────────────────────────────
@@ -278,11 +272,8 @@ def verify_map(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_map_mmhg", 1.0)
     diff = abs(actual - c)
     data = {"systolic": sf, "diastolic": df,
-            "actual_map_mmhg": round(actual, 2), "claimed_map_mmhg": c,
             "formula": "MAP = DBP + (SBP - DBP) / 3"}
-    if diff <= tol:
-        return confirm(name, f"MAP = {actual:.1f} mmHg (matches claim)", data)
-    return mismatch(name, f"MAP = {actual:.1f} mmHg, claimed {c} (diff {diff:.1f})", data)
+    return band(name, actual, c, tol, "map_mmhg", data, fmt="{:.1f}", unit="mmHg")
 
 
 # ── run ───────────────────────────────────────────────────────────────────────

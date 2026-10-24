@@ -45,7 +45,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from . import thermal_scale as _thermal  # k_B-anchored thermal energy scale
 
 
@@ -76,10 +76,8 @@ def verify_stress_strain(spec: Dict[str, Any]) -> VerifierResult:
         diff = abs(actual - c)
         threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
         data = {"formula": "σ = F / A", "force_N": Ff, "area_m2": Af,
-                "actual_stress_Pa": actual, "claimed_stress_Pa": c, "diff": diff}
-        if diff <= threshold:
-            return confirm(name, f"σ = {Ff}/{Af} = {actual:.6g} Pa (matches claim {c})", data)
-        return mismatch(name, f"actual σ {actual:.6g} Pa, claimed {c} Pa (diff {diff:.6g})", data)
+                "diff": diff}
+        return band(name, actual, c, threshold, "stress_Pa", data, unit="Pa")
 
     # Case 1: E + ε → σ
     if (spec.get("youngs_modulus_Pa") is not None and spec.get("strain") is not None
@@ -97,10 +95,8 @@ def verify_stress_strain(spec: Dict[str, Any]) -> VerifierResult:
         diff = abs(actual - c)
         threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
         data = {"formula": "σ = E · ε", "youngs_modulus_Pa": Ef, "strain": epsf,
-                "actual_stress_Pa": actual, "claimed_stress_Pa": c, "diff": diff}
-        if diff <= threshold:
-            return confirm(name, f"σ = {Ef:.4g}·{epsf:.4g} = {actual:.6g} Pa (matches claim {c})", data)
-        return mismatch(name, f"actual σ {actual:.6g} Pa, claimed {c} Pa (diff {diff:.6g})", data)
+                "diff": diff}
+        return band(name, actual, c, threshold, "stress_Pa", data, unit="Pa")
 
     # Case 2: E + σ → ε
     if (spec.get("youngs_modulus_Pa") is not None and spec.get("stress_Pa") is not None
@@ -118,10 +114,8 @@ def verify_stress_strain(spec: Dict[str, Any]) -> VerifierResult:
         diff = abs(actual - c)
         threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
         data = {"formula": "ε = σ / E", "youngs_modulus_Pa": Ef, "stress_Pa": sf,
-                "actual_strain": actual, "claimed_strain": c, "diff": diff}
-        if diff <= threshold:
-            return confirm(name, f"ε = {sf:.4g}/{Ef:.4g} = {actual:.6g} (matches claim {c})", data)
-        return mismatch(name, f"actual ε {actual:.6g}, claimed {c} (diff {diff:.6g})", data)
+                "diff": diff}
+        return band(name, actual, c, threshold, "strain", data, unit="")
 
     return na(name)
 
@@ -149,15 +143,8 @@ def verify_thermal_expansion(spec: Dict[str, Any]) -> VerifierResult:
     threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
     data = {"formula": "ΔL = α · L₀ · ΔT",
             "thermal_expansion_coeff": af, "original_length_m": L0f,
-            "delta_T_K": dTf, "actual_delta_length_m": actual,
-            "claimed_delta_length_m": c, "diff": diff}
-    if diff <= threshold:
-        return confirm(name,
-                       f"ΔL = {af:.4g}·{L0f}·{dTf} = {actual:.6g} m (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"actual ΔL {actual:.6g} m, claimed {c} m (diff {diff:.6g})",
-                    data)
+            "delta_T_K": dTf, "diff": diff}
+    return band(name, actual, c, threshold, "delta_length_m", data, unit="m")
 
 
 def verify_density(spec: Dict[str, Any]) -> VerifierResult:
@@ -182,10 +169,8 @@ def verify_density(spec: Dict[str, Any]) -> VerifierResult:
         diff = abs(actual - c)
         threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
         data = {"formula": "ρ = m / V", "mass_kg": mf, "volume_m3": Vf,
-                "actual_density_kg_per_m3": actual, "claimed_density_kg_per_m3": c, "diff": diff}
-        if diff <= threshold:
-            return confirm(name, f"ρ = {mf}/{Vf} = {actual:.6g} kg/m³ (matches claim {c})", data)
-        return mismatch(name, f"actual ρ {actual:.6g} kg/m³, claimed {c} (diff {diff:.6g})", data)
+                "diff": diff}
+        return band(name, actual, c, threshold, "density_kg_per_m3", data, unit="kg/m³")
 
     # Case 2: density + volume → mass
     if (spec.get("density_kg_per_m3") is not None and spec.get("volume_m3") is not None
@@ -203,10 +188,8 @@ def verify_density(spec: Dict[str, Any]) -> VerifierResult:
         diff = abs(actual - c)
         threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
         data = {"formula": "m = ρ · V", "density_kg_per_m3": rhof, "volume_m3": Vf,
-                "actual_mass_kg": actual, "claimed_mass_kg": c, "diff": diff}
-        if diff <= threshold:
-            return confirm(name, f"m = {rhof}·{Vf} = {actual:.6g} kg (matches claim {c})", data)
-        return mismatch(name, f"actual m {actual:.6g} kg, claimed {c} kg (diff {diff:.6g})", data)
+                "diff": diff}
+        return band(name, actual, c, threshold, "mass_kg", data, unit="kg")
 
     return na(name)
 

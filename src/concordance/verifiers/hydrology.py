@@ -29,7 +29,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -55,11 +55,8 @@ def verify_manning_velocity(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     threshold = max(1e-6, rel_tol * actual) if actual > 0 else 1e-6
     data = {"n": nf, "R_m": Rf, "S": Sf,
-            "actual_v_m_s": actual, "claimed_v_m_s": c, "diff": diff,
             "formula": "V = (1/n)·R^(2/3)·S^(1/2)  [SI]"}
-    if diff <= threshold:
-        return confirm(name, f"V = {actual:.4f} m/s (matches claim)", data)
-    return mismatch(name, f"V = {actual:.4f} m/s, claimed {c} (diff {diff:.4f})", data)
+    return band(name, actual, c, threshold, "v_m_s", data, fmt="{:.4f}", unit="m/s")
 
 
 def verify_darcy_velocity(spec: Dict[str, Any]) -> VerifierResult:
@@ -80,11 +77,8 @@ def verify_darcy_velocity(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     threshold = max(1e-15, rel_tol * abs(actual)) if actual != 0 else 1e-15
     data = {"K_m_s": Kf, "i": ig,
-            "actual_q_m_s": actual, "claimed_q_m_s": c, "diff": diff,
             "formula": "q = K · i  (Darcy's law, magnitude)"}
-    if diff <= threshold:
-        return confirm(name, f"q = {actual:.6e} m/s (matches claim)", data)
-    return mismatch(name, f"q = {actual:.6e} m/s, claimed {c} (diff {diff:.6e})", data)
+    return band(name, actual, c, threshold, "q_m_s", data, fmt="{:.6e}", unit="m/s")
 
 
 def verify_rational_runoff(spec: Dict[str, Any]) -> VerifierResult:
@@ -109,11 +103,8 @@ def verify_rational_runoff(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     threshold = max(1e-6, rel_tol * actual) if actual > 0 else 1e-6
     data = {"C": Cf, "i": If, "A": Af,
-            "actual_runoff": actual, "claimed_runoff": c, "diff": diff,
             "formula": "Q = C · i · A  (rational method)"}
-    if diff <= threshold:
-        return confirm(name, f"Q = {actual:.4f} (matches claim)", data)
-    return mismatch(name, f"Q = {actual:.4f}, claimed {c} (diff {diff:.4f})", data)
+    return band(name, actual, c, threshold, "runoff", data, fmt="{:.4f}", unit="")
 
 
 def verify_bernoulli_head(spec: Dict[str, Any]) -> VerifierResult:
@@ -137,11 +128,8 @@ def verify_bernoulli_head(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     threshold = max(1e-3, rel_tol * abs(actual)) if actual != 0 else 1e-3
     data = {"z_m": zf, "p_pa": pf, "v_m_s": vf, "rho_kg_m3": rf,
-            "actual_head_m": actual, "claimed_head_m": c, "diff_m": diff,
             "formula": "h = z + p/(ρg) + v²/(2g)"}
-    if diff <= threshold:
-        return confirm(name, f"head = {actual:.4f} m (matches claim)", data)
-    return mismatch(name, f"head = {actual:.4f} m, claimed {c} (diff {diff:.4f})", data)
+    return band(name, actual, c, threshold, "head_m", data, fmt="{:.4f}", unit="m")
 
 
 _RULES = [

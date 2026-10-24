@@ -37,7 +37,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -197,17 +197,12 @@ def verify_hardiness_zone(spec: Dict[str, Any]) -> VerifierResult:
     if crop not in _CROP_HARDINESS:
         return na(name, f"no hardiness data for crop {crop!r} in reference table")
     lo, hi = _CROP_HARDINESS[crop]
-    if lo <= z_int <= hi:
-        return confirm(name,
-                       f"{crop!r} is hardy in zone {claimed_zone} (range zones "
-                       f"{_int_to_zone(lo)}–{_int_to_zone(hi)})",
-                       {"crop": crop, "zone": str(claimed_zone),
-                        "tolerance_low": _int_to_zone(lo), "tolerance_high": _int_to_zone(hi)})
-    return mismatch(name,
-                    f"{crop!r} is not hardy in zone {claimed_zone} — tolerance is zones "
-                    f"{_int_to_zone(lo)}–{_int_to_zone(hi)}",
-                    {"crop": crop, "zone": str(claimed_zone),
-                     "tolerance_low": _int_to_zone(lo), "tolerance_high": _int_to_zone(hi)})
+    data = {"crop": crop, "zone": str(claimed_zone),
+            "tolerance_low": _int_to_zone(lo), "tolerance_high": _int_to_zone(hi)}
+    # zone index: 1a=2, 1b=3, … — the half-zone ladder as integers
+    results = [bound(name, z_int, lo, "min", "zone_index", data, fmt="{:d}"),
+               bound(name, z_int, hi, "max", "zone_index", data, fmt="{:d}")]
+    return merge_checks(name, results, data)
 
 
 def _int_to_zone(z: int) -> str:
@@ -231,13 +226,10 @@ def verify_soil_ph(spec: Dict[str, Any]) -> VerifierResult:
     if crop not in _CROP_PH:
         return na(name, f"no soil-pH data for crop {crop!r} in reference table")
     lo, hi = _CROP_PH[crop]
-    if lo <= ph <= hi:
-        return confirm(name,
-                       f"{crop!r} grows well at pH {ph} (preferred range {lo}–{hi})",
-                       {"crop": crop, "ph": ph, "preferred_min": lo, "preferred_max": hi})
-    return mismatch(name,
-                    f"{crop!r} prefers pH {lo}–{hi}, claim is {ph} ({'too acidic' if ph < lo else 'too alkaline'})",
-                    {"crop": crop, "ph": ph, "preferred_min": lo, "preferred_max": hi})
+    data = {"crop": crop, "preferred_min": lo, "preferred_max": hi}
+    results = [bound(name, ph, lo, "min", "ph", data),
+               bound(name, ph, hi, "max", "ph", data)]
+    return merge_checks(name, results, data)
 
 
 def verify_rotation(spec: Dict[str, Any]) -> VerifierResult:
@@ -287,14 +279,10 @@ def verify_stocking_density(spec: Dict[str, Any]) -> VerifierResult:
     if animal not in _STOCKING_BOUNDS:
         return na(name, f"no stocking-density data for animal {animal!r} in reference table")
     lo, hi = _STOCKING_BOUNDS[animal]
-    if lo <= per <= hi:
-        return confirm(name,
-                       f"{animal!r} stocking {per}/acre within recommended range {lo}–{hi}",
-                       {"animal": animal, "per_acre": per, "min": lo, "max": hi})
-    side = "below" if per < lo else "above"
-    return mismatch(name,
-                    f"{animal!r} stocking {per}/acre is {side} recommended range {lo}–{hi}",
-                    {"animal": animal, "per_acre": per, "min": lo, "max": hi})
+    data = {"animal": animal, "min": lo, "max": hi}
+    results = [bound(name, per, lo, "min", "per_acre", data, unit="/acre"),
+               bound(name, per, hi, "max", "per_acre", data, unit="/acre")]
+    return merge_checks(name, results, data)
 
 
 _RULES = [

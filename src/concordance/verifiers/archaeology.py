@@ -20,15 +20,15 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch
 
 _C14_HALFLIFE = 5730.0   # years (Libby/Cambridge convention; 5730 standard)
 _LN2 = math.log(2.0)
 
 
-def _close(actual: float, claimed: float, rel_tol: float = 1e-2, abs_tol: float = 1.0) -> bool:
-    return abs(actual - claimed) <= max(abs_tol, rel_tol * abs(actual))
+def _tol(actual: float, rel_tol: float = 1e-2, abs_tol: float = 1.0) -> float:
+    return max(abs_tol, rel_tol * abs(actual))
 
 
 def verify_radiocarbon(spec: Dict[str, Any]) -> VerifierResult:
@@ -48,9 +48,7 @@ def verify_radiocarbon(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"fraction": f, "half_life_yr": T, "age_years": actual, "claimed_years": cl,
             "formula": "t = -(T_half/ln2) ln(f)"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"t = -(5730/ln2)·ln({f}) = {actual:.0f} yr (matches {cl})", data)
-    return mismatch(name, f"t = {actual:.0f} yr, claimed {cl} (diff {abs(actual-cl):.0f})", data)
+    return band(name, actual, cl, _tol(actual, rel_tol=rel_tol), "age_years", data, fmt="{:.0f}", unit="yr")
 
 
 def verify_radiometric(spec: Dict[str, Any]) -> VerifierResult:
@@ -69,9 +67,7 @@ def verify_radiometric(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"fraction": f, "half_life_yr": Tf, "age_years": actual, "claimed_years": cl,
             "formula": "t = -(T_half/ln2) ln(f)"}
-    if _close(actual, cl, rel_tol=rel_tol):
-        return confirm(name, f"t = {actual:.4g} yr (matches {cl})", data)
-    return mismatch(name, f"t = {actual:.4g} yr, claimed {cl}", data)
+    return band(name, actual, cl, _tol(actual, rel_tol=rel_tol), "age_years", data, fmt="{:.4g}", unit="yr")
 
 
 def verify_half_lives_elapsed(spec: Dict[str, Any]) -> VerifierResult:
@@ -88,9 +84,7 @@ def verify_half_lives_elapsed(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"fraction must be in (0, 1] (got {f})")
     actual = -math.log2(f)
     data = {"fraction": f, "half_lives": actual, "claimed": cl, "formula": "n = -log2(f)"}
-    if _close(actual, cl, rel_tol=1e-3, abs_tol=1e-3):
-        return confirm(name, f"n = -log2({f}) = {actual:.4f} half-lives (matches {cl})", data)
-    return mismatch(name, f"n = {actual:.4f} half-lives, claimed {cl}", data)
+    return band(name, actual, cl, _tol(actual, rel_tol=1e-3, abs_tol=1e-3), "half_lives", data, fmt="{:.4f}")
 
 
 _RULES = [

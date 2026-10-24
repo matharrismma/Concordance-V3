@@ -33,7 +33,7 @@ GENETICS_VERIFY packet shape (any subset of fields, all optional):
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -162,13 +162,8 @@ def verify_gc_content(spec: Dict[str, Any]) -> VerifierResult:
     gc = sum(1 for c in seq if c in "GCgc")
     actual = gc / len(seq)
     tol = clamp_tol(spec, "tolerance", 1e-3)
-    if abs(actual - claimed_f) <= tol:
-        return confirm(name,
-                       f"GC fraction {actual:.4f} matches claim {claimed_f:.4f} (tol {tol})",
-                       {"actual": actual, "claimed": claimed_f, "gc_count": gc, "length": len(seq)})
-    return mismatch(name,
-                    f"GC fraction {actual:.4f} != claim {claimed_f:.4f} (diff {abs(actual-claimed_f):.4f} > tol {tol})",
-                    {"actual": actual, "claimed": claimed_f, "gc_count": gc, "length": len(seq)})
+    return band(name, actual, claimed_f, tol, "gc_fraction",
+                {"actual": actual, "claimed": claimed_f, "gc_count": gc, "length": len(seq)}, fmt="{:.4f}")
 
 
 def _translate_dna(seq_dna: str) -> str:

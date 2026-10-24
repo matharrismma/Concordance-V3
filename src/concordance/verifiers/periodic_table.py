@@ -31,7 +31,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from . import alpha_scale as _ascale  # alpha-anchored Moseley K-alpha
 
 
@@ -317,12 +317,9 @@ def verify_atomic_mass_weighted_average(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "mass_abs_tol", 0.01)
     data = {"isotopes": [{"mass": m, "abundance": a} for m, a in pairs],
             "abundance_basis": basis,
-            "actual_weighted_mass": round(actual, 5),
-            "claimed_atomic_mass": c, "abs_tol": tol,
+            "actual_weighted_mass": round(actual, 5), "abs_tol": tol,
             "formula": "m_avg = Σ(abundance_i × mass_i)"}
-    if abs(actual - c) <= tol:
-        return confirm(name, f"weighted average = {actual:.5f} u (matches claim {c})", data)
-    return mismatch(name, f"weighted average = {actual:.5f} u, claimed {c}", data)
+    return band(name, actual, c, tol, "atomic_mass", data, fmt="{:.5f}", unit="u")
 
 
 _MOLAR_FORMULA = re.compile(r"(?:[A-Z][a-z]?\d*)+$")
@@ -370,15 +367,13 @@ def verify_molar_mass(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     threshold = max(1e-4, rel_tol * total)
     data = {"formula": formula, "composition": comp,
-            "actual_molar_mass_g_per_mol": round(total, 4), "claimed_molar_mass": cl,
+            "actual_molar_mass_g_per_mol": round(total, 4),
             "rule": "M = Σ(count × atomic_mass)"}
     if spec.get("claimed_literal") not in (None, ""):                # the one rule (2026-10-08, H6)
         from .base import window_for
         threshold, info = window_for(spec, "claimed_literal", threshold, 1.0, total)
         data.update(info)
-    if abs(total - cl) <= threshold:
-        return confirm(name, f"{formula} molar mass = {total:.4f} g/mol (claim {cl} within {rel_tol:g})", data)
-    return mismatch(name, f"{formula} molar mass = {total:.4f} g/mol, not {cl}", data)
+    return band(name, total, cl, threshold, "molar_mass", data, fmt="{:.4f}", unit="g/mol")
 
 
 def list_elements() -> List[Dict[str, Any]]:

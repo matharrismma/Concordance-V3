@@ -42,7 +42,7 @@ NUT_VERIFY packet shape (any subset of fields):
 from __future__ import annotations
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -135,17 +135,10 @@ def verify_macronutrient_calories(spec: Dict[str, Any]) -> VerifierResult:
               + fg * _CAL_PER_G_FAT + ag * _CAL_PER_G_ALCOHOL)
     tol = clamp_tol(spec, "tolerance_kcal", 5.0)
     diff = abs(actual - c)
-    data = {"actual_kcal": actual, "claimed_kcal": c, "diff_kcal": diff,
+    data = {"diff_kcal": diff,
             "carb_g": cg, "protein_g": pg, "fat_g": fg, "alcohol_g": ag,
             "tolerance_kcal": tol}
-    if diff <= tol:
-        return confirm(name,
-                       f"{actual:.0f} kcal from {cg}g C + {pg}g P + {fg}g F"
-                       f"{f' + {ag}g A' if ag else ''} matches claim {c:.0f} (diff {diff:.1f} ≤ {tol})",
-                       data)
-    return mismatch(name,
-                    f"actual {actual:.0f} kcal != claimed {c:.0f} kcal (diff {diff:.1f} > tol {tol})",
-                    data)
+    return band(name, actual, c, tol, "kcal", data, fmt="{:.1f}", unit="kcal")
 
 
 def verify_rda_compliance(spec: Dict[str, Any]) -> VerifierResult:
@@ -203,15 +196,8 @@ def verify_energy_balance(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_kcal", 5.0)
     diff = abs(actual - c)
     data = {"intake_kcal": i, "expenditure_kcal": e,
-            "actual_balance_kcal": actual, "claimed_balance_kcal": c,
             "diff_kcal": diff, "tolerance_kcal": tol}
-    if diff <= tol:
-        return confirm(name,
-                       f"balance = {i} - {e} = {actual} kcal (matches claim {c}, diff {diff:.1f} ≤ {tol})",
-                       data)
-    return mismatch(name,
-                    f"balance = {i} - {e} = {actual} kcal, claimed {c} (diff {diff:.1f} > {tol})",
-                    data)
+    return band(name, actual, c, tol, "balance_kcal", data, fmt="{:.1f}", unit="kcal")
 
 
 def verify_bmi_classification(spec: Dict[str, Any]) -> VerifierResult:

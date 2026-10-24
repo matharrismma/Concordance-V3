@@ -34,7 +34,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 # Physical constants
@@ -75,17 +75,8 @@ def verify_pressure_at_depth(spec: Dict[str, Any]) -> VerifierResult:
         threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
         data = {"formula": "P = P_atm + ρ·g·d",
                 "depth_m": df, "rho_seawater_kg_m3": _RHO_SEAWATER, "g_m_s2": _G,
-                "P_atm_Pa": _P_ATM, "actual_pressure_Pa": actual_pa,
-                "actual_pressure_atm": actual_atm,
-                "claimed_pressure_Pa": c, "diff": diff}
-        if diff <= threshold:
-            return confirm(name,
-                           f"P = {_P_ATM} + {_RHO_SEAWATER}·{_G}·{df} = {actual_pa:.6g} Pa "
-                           f"(matches claim {c})",
-                           data)
-        return mismatch(name,
-                        f"actual P {actual_pa:.6g} Pa, claimed {c} Pa (diff {diff:.6g})",
-                        data)
+                "P_atm_Pa": _P_ATM, "actual_pressure_atm": actual_atm, "diff": diff}
+        return band(name, actual, c, threshold, "pressure_Pa", data, unit="Pa")
 
     # claimed_pressure_atm
     try:
@@ -97,16 +88,8 @@ def verify_pressure_at_depth(spec: Dict[str, Any]) -> VerifierResult:
     threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
     data = {"formula": "P = (P_atm + ρ·g·d) / P_atm  [in atm]",
             "depth_m": df, "rho_seawater_kg_m3": _RHO_SEAWATER, "g_m_s2": _G,
-            "P_atm_Pa": _P_ATM, "actual_pressure_Pa": actual_pa,
-            "actual_pressure_atm": actual_atm,
-            "claimed_pressure_atm": c, "diff": diff}
-    if diff <= threshold:
-        return confirm(name,
-                       f"P = {actual_pa:.6g} Pa = {actual_atm:.6g} atm (matches claim {c} atm)",
-                       data)
-    return mismatch(name,
-                    f"actual P {actual_atm:.6g} atm, claimed {c} atm (diff {diff:.6g})",
-                    data)
+            "P_atm_Pa": _P_ATM, "actual_pressure_Pa": actual_pa, "diff": diff}
+    return band(name, actual, c, threshold, "pressure_atm", data, unit="atm")
 
 
 def verify_salinity_classification(spec: Dict[str, Any]) -> VerifierResult:
@@ -165,16 +148,9 @@ def verify_deep_water_wave_speed(spec: Dict[str, Any]) -> VerifierResult:
     threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
     data = {"formula": "c = √(g·λ / 2π)",
             "wavelength_m": lamf, "g_m_s2": _G,
-            "actual_wave_speed_m_per_s": actual,
-            "claimed_wave_speed_m_per_s": c, "diff": diff,
+            "diff": diff,
             "note": "valid for deep water only (depth > λ/2)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"c = √({_G}·{lamf}/2π) = {actual:.6g} m/s (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"actual c {actual:.6g} m/s, claimed {c} m/s (diff {diff:.6g})",
-                    data)
+    return band(name, actual, c, threshold, "wave_speed_m_per_s", data, unit="m/s")
 
 
 def verify_tidal_range_classification(spec: Dict[str, Any]) -> VerifierResult:

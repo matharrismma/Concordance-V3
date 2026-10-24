@@ -55,7 +55,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 
@@ -115,16 +115,9 @@ def verify_haversine_distance(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     threshold = max(0.5, rel_tol * actual)  # absolute floor 0.5 km
     data = {"lat1": a1, "lon1": o1, "lat2": a2, "lon2": o2,
-            "actual_distance_km": actual, "claimed_distance_km": c,
             "diff_km": diff, "earth_radius_km": _EARTH_RADIUS_KM,
             "formula": "haversine on spherical Earth"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"haversine({a1},{o1} → {a2},{o2}) = {actual:.2f} km (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"haversine = {actual:.2f} km, claimed {c} (diff {diff:.2f})",
-                    data)
+    return band(name, actual, c, threshold, "distance_km", data, fmt="{:.2f}", unit="km")
 
 
 def verify_initial_bearing(spec: Dict[str, Any]) -> VerifierResult:
@@ -276,19 +269,18 @@ def verify_geodesic_distance(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     threshold = max(0.05, rel_tol * actual)
     data = {"lat1": a1, "lon1": o1, "lat2": a2, "lon2": o2,
-            "actual_geodesic_km": actual, "claimed_geodesic_km": c, "diff_km": diff,
+            "diff_km": diff,
             "spherical_haversine_km": sphere,
             "spherical_error_km": sphere_err,
             "spherical_error_percent": (abs(sphere_err) / actual * 100.0) if actual else 0.0,
             "forward_azimuth_deg": fwd, "reverse_azimuth_deg": rev,
             "datum": "WGS84", "semi_major_m": _WGS84_A, "flattening": _WGS84_F,
             "formula": "Vincenty (1975) inverse geodesic on an oblate spheroid"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"geodesic = {actual:.3f} km (matches claim {c}); the spherical model "
-                       f"would have said {sphere:.3f} km, off by {sphere_err:+.3f} km",
-                       data)
-    return mismatch(name, f"geodesic = {actual:.3f} km, claimed {c} (diff {diff:.3f})", data)
+    r = band(name, actual, c, threshold, "geodesic_km", data, fmt="{:.3f}", unit="km")
+    if r.passed:
+        return confirm(name, f"{r.detail}; the spherical model would have said {sphere:.3f} km, "
+                             f"off by {sphere_err:+.3f} km", r.data)
+    return r
 
 
 def verify_destination_point(spec: Dict[str, Any]) -> VerifierResult:
@@ -359,11 +351,7 @@ def verify_destination_point(spec: Dict[str, Any]) -> VerifierResult:
             "claimed_dest_lat": cla, "claimed_dest_lon": clo,
             "miss_km": off, "tolerance_km": tol, "datum": "WGS84",
             "formula": "Vincenty (1975) direct geodesic on an oblate spheroid"}
-    if off <= tol:
-        return confirm(name, f"{d} km on bearing {b}° lands at ({a2:.5f}, {o2:.5f}) — "
-                             f"{off:.3f} km from the claim", data)
-    return mismatch(name, f"lands at ({a2:.5f}, {o2:.5f}), claimed ({cla}, {clo}) — "
-                          f"off by {off:.3f} km", data)
+    return bound(name, off, tol, "max", "miss_km", data, fmt="{:.3f}", unit="km")
 
 
 def verify_projection_distortion(spec: Dict[str, Any]) -> VerifierResult:
@@ -407,20 +395,13 @@ def verify_projection_distortion(spec: Dict[str, Any]) -> VerifierResult:
             ca = float(c_area)
         except (TypeError, ValueError):
             return error(name, "claimed_area_inflation must be numeric")
-        data["claimed_area_inflation"] = ca
-        if abs(area - ca) <= max(1e-6, tol * area):
-            return confirm(name, f"at {phi}° Web Mercator inflates area {area:.4f}× "
-                                 f"(matches claim {ca})", data)
-        return mismatch(name, f"at {phi}° area inflation is {area:.4f}×, claimed {ca}", data)
+        return band(name, area, ca, max(1e-6, tol * area), "area_inflation", data, fmt="{:.4f}")
 
     try:
         cs = float(c_scale)
     except (TypeError, ValueError):
         return error(name, "claimed_scale_factor must be numeric")
-    data["claimed_scale_factor"] = cs
-    if abs(k - cs) <= max(1e-6, tol * k):
-        return confirm(name, f"at {phi}° the scale factor is {k:.4f} (matches claim {cs})", data)
-    return mismatch(name, f"at {phi}° the scale factor is {k:.4f}, claimed {cs}", data)
+    return band(name, k, cs, max(1e-6, tol * k), "scale_factor", data, fmt="{:.4f}")
 
 
 def _clean_ring(poly: Any) -> Optional[List[Tuple[float, float]]]:
@@ -521,15 +502,11 @@ def verify_polygon_area(spec: Dict[str, Any]) -> VerifierResult:
     actual = abs(total * _EARTH_RADIUS_KM * _EARTH_RADIUS_KM / 2.0)
     rel_tol = clamp_tol(spec, "tolerance_relative", 0.01)
     diff = abs(actual - c)
-    data = {"vertices": n, "actual_area_km2": actual, "claimed_area_km2": c, "diff_km2": diff,
+    data = {"vertices": n, "diff_km2": diff,
             "earth_radius_km": _EARTH_RADIUS_KM,
             "formula": "spherical excess (line integral over the ring)",
             "note": "spherical, not ellipsoidal — good to ~0.3% at any size that fits on a map"}
-    if diff <= max(1e-6, rel_tol * actual):
-        return confirm(name, f"{n}-vertex boundary encloses {actual:.3f} km² "
-                             f"(matches claim {c})", data)
-    return mismatch(name, f"boundary encloses {actual:.3f} km², claimed {c} "
-                          f"(diff {diff:.3f})", data)
+    return band(name, actual, c, max(1e-6, rel_tol * actual), "area_km2", data, fmt="{:.3f}", unit="km²")
 
 
 _RULES = [

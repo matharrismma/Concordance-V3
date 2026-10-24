@@ -29,7 +29,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 from . import thermal_scale as _thermal  # k_B-anchored barometric scale height
 
@@ -61,16 +61,9 @@ def verify_dew_point(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_c", 0.5)
     diff = abs(actual - c)
     data = {"temperature_c": Tf, "relative_humidity_pct": Rf,
-            "actual_dew_point_c": actual, "claimed_dew_point_c": c,
             "diff_c": diff, "tolerance_c": tol,
             "formula": "Magnus-Tetens (a=17.625, b=243.04)"}
-    if diff <= tol:
-        return confirm(name,
-                       f"T={Tf}°C, RH={Rf}% → dew point {actual:.2f}°C (matches claim)",
-                       data)
-    return mismatch(name,
-                    f"dew point = {actual:.2f}°C, claimed {c} (diff {diff:.2f})",
-                    data)
+    return band(name, actual, c, tol, "dew_point_c", data, fmt="{:.2f}", unit="°C")
 
 
 def verify_heat_index(spec: Dict[str, Any]) -> VerifierResult:
@@ -106,16 +99,9 @@ def verify_heat_index(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_f", 1.5)
     diff = abs(actual - c)
     data = {"temperature_f": Tf, "relative_humidity_pct": Rf,
-            "actual_heat_index_f": actual, "claimed_heat_index_f": c,
             "diff_f": diff, "tolerance_f": tol,
             "formula": "Rothfusz regression (NWS)"}
-    if diff <= tol:
-        return confirm(name,
-                       f"T={Tf}°F, RH={Rf}% → HI {actual:.2f}°F (matches claim)",
-                       data)
-    return mismatch(name,
-                    f"HI = {actual:.2f}°F, claimed {c} (diff {diff:.2f})",
-                    data)
+    return band(name, actual, c, tol, "heat_index_f", data, fmt="{:.2f}", unit="°F")
 
 
 def verify_wind_chill(spec: Dict[str, Any]) -> VerifierResult:
@@ -140,16 +126,9 @@ def verify_wind_chill(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_f", 1.0)
     diff = abs(actual - c)
     data = {"temperature_f": Tf, "wind_speed_mph": Vf,
-            "actual_wind_chill_f": actual, "claimed_wind_chill_f": c,
             "diff_f": diff, "tolerance_f": tol,
             "formula": "NWS 2001 wind-chill"}
-    if diff <= tol:
-        return confirm(name,
-                       f"T={Tf}°F, V={Vf} mph → WC {actual:.2f}°F (matches claim)",
-                       data)
-    return mismatch(name,
-                    f"WC = {actual:.2f}°F, claimed {c} (diff {diff:.2f})",
-                    data)
+    return band(name, actual, c, tol, "wind_chill_f", data, fmt="{:.2f}", unit="°F")
 
 
 def verify_wind_chill_metric(spec: Dict[str, Any]) -> VerifierResult:
@@ -182,10 +161,7 @@ def verify_wind_chill_metric(spec: Dict[str, Any]) -> VerifierResult:
         except (TypeError, ValueError):
             return error(name, "claimed_wc_c must be numeric")
         tol = clamp_tol(spec, "tolerance_c", 0.5)
-        diff = abs(wc - c)
-        if diff <= tol:
-            return confirm(name, f"WC = {wc:.2f}°C (matches claim {c})", data)
-        return mismatch(name, f"WC = {wc:.2f}°C, claimed {c} (diff {diff:.2f})", data)
+        return band(name, wc, c, tol, "wc_c", data, fmt="{:.2f}", unit="°C")
     # Threshold comparison
     threshold = spec.get("claimed_below_c")
     if threshold is not None:
@@ -219,17 +195,10 @@ def verify_saturation_vapor_pressure(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 0.02)  # 2%
     diff = abs(actual - c)
     threshold = max(0.05, rel_tol * actual)
-    data = {"temperature_c": Tf, "actual_es_hpa": actual,
-            "claimed_es_hpa": c, "diff_hpa": diff,
+    data = {"temperature_c": Tf, "diff_hpa": diff,
             "tolerance_relative": rel_tol,
             "formula": "es(T) = 6.112·exp((17.625·T)/(T + 243.04))"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"T={Tf}°C → es {actual:.3f} hPa (matches claim)",
-                       data)
-    return mismatch(name,
-                    f"es = {actual:.3f} hPa, claimed {c} (diff {diff:.3f})",
-                    data)
+    return band(name, actual, c, threshold, "es_hpa", data, fmt="{:.3f}", unit="hPa")
 
 
 def verify_scale_height(spec: Dict[str, Any]) -> VerifierResult:

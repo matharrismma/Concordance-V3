@@ -28,7 +28,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 from . import grav_scale as _grav  # G-anchored surface gravity
 
@@ -55,18 +55,10 @@ def verify_radiometric_decay(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
     data = {"half_life_years": Tf, "elapsed_years": tf,
-            "initial_amount": N0f, "actual_remaining": actual,
-            "claimed_remaining": c, "diff": diff,
+            "initial_amount": N0f, "diff": diff,
             "n_half_lives": tf / Tf,
             "formula": "N(t) = N₀ · 2^(−t/T_½)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"{N0f} · 2^(−{tf}/{Tf}) = {actual:.6g} after {tf/Tf:.3g} half-lives "
-                       f"(matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"actual {actual:.6g}, claimed {c} (diff {diff:.6g})",
-                    data)
+    return band(name, actual, c, threshold, "remaining", data)
 
 
 def verify_mohs_scratch(spec: Dict[str, Any]) -> VerifierResult:
@@ -112,16 +104,9 @@ def verify_richter_amplitude(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     diff = abs(actual - c)
     threshold = max(1e-6, rel_tol * abs(actual))
-    data = {"M1": M1f, "M2": M2f, "actual_ratio": actual,
-            "claimed_ratio": c, "diff": diff,
+    data = {"M1": M1f, "M2": M2f, "diff": diff,
             "formula": "A₂/A₁ = 10^(M₂−M₁)"}
-    if diff <= threshold:
-        return confirm(name,
-                       f"10^({M2f}−{M1f}) = {actual:.4g} (matches claim {c})",
-                       data)
-    return mismatch(name,
-                    f"A2/A1 = {actual:.4g}, claimed {c} (diff {diff:.4g})",
-                    data)
+    return band(name, actual, c, threshold, "ratio", data, fmt="{:.4g}")
 
 
 def verify_surface_gravity(spec: Dict[str, Any]) -> VerifierResult:

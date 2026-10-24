@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error
+from .base import VerifierResult, na, confirm, mismatch, error, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 
 # (steric_number, lone_pairs) -> (geometry, ideal_bond_angle_deg | None if multi-angle).
@@ -63,6 +63,9 @@ def verify_vsepr(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, f"VSEPR geometry not tabulated for steric={steric}, lone_pairs={lp}")
     geo, angle = entry
     reasons: List[str] = []
+    data = {"geometry": geo, "ideal_bond_angle_deg": angle, "steric_number": steric,
+            "bonding_domains": bd, "lone_pairs": lp}
+    angle_band = None
     if claimed_geo is not None:
         if str(claimed_geo).strip().lower().replace(" ", "_").replace("-", "_") != geo:
             reasons.append(f"geometry is {geo}, not {claimed_geo!r}")
@@ -71,12 +74,15 @@ def verify_vsepr(spec: Dict[str, Any]) -> VerifierResult:
             reasons.append(f"{geo} has more than one bond angle; no single value")
         else:
             try:
-                if abs(float(claimed_angle) - angle) > 1.0:  # 1° tol (rounding + lone-pair nominal)
-                    reasons.append(f"ideal bond angle is {angle:.2f} deg, not {claimed_angle}")
+                # 1° tol (rounding + lone-pair nominal)
+                angle_band = band(name, angle, float(claimed_angle), 1.0, "bond_angle_deg", data,
+                                  fmt="{:.2f}", unit="deg")
+                if not angle_band.passed:
+                    reasons.append(angle_band.detail)
             except (TypeError, ValueError):
                 reasons.append("claimed_bond_angle_deg not numeric")
-    data = {"geometry": geo, "ideal_bond_angle_deg": angle, "steric_number": steric,
-            "bonding_domains": bd, "lone_pairs": lp}
+    if angle_band is not None:
+        data = angle_band.data
     if reasons:
         return mismatch(name, "; ".join(reasons), data)
     detail = f"steric {steric} ({bd} bonding + {lp} lone) -> {geo}"
