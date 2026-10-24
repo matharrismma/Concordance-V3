@@ -239,25 +239,63 @@ def feedback(report: Dict[str, Any], writer: str) -> str:
     return "\n".join(L)
 
 
+def _carry(prev: Optional[Dict[str, Any]], rep: Dict[str, Any]) -> Dict[str, Any]:
+    """Stage the brackets: a claim's bracket can only tighten from pass to pass, and a value eliminated once
+    stays eliminated. Each pass is a rocket stage — it sheds what the verifier killed and hands the next pass a
+    narrower window, never a wider one."""
+    out: Dict[str, Any] = {}
+    for cid, nw in rep["narrow_way"].items():
+        p = (prev or {}).get(cid) or {}
+        br = nw.get("bracket")
+        pb = p.get("bracket")
+        if br and pb:
+            lo, hi = max(br["min"], pb["min"]), min(br["max"], pb["max"])
+            br = {"min": lo, "max": hi, "from": br["from"]} if lo <= hi else pb   # inconsistent → keep the older, tighter stage
+        elif pb and not br:
+            br = pb
+        out[cid] = {"band": nw.get("band") or p.get("band"), "bracket": br,
+                    "eliminated": list(p.get("eliminated") or []) + [e["value"] for e in nw["eliminated"]],
+                    "stage": (p.get("stage") or 0) + 1}
+    return out
+
+
+def _stage_note(carry: Dict[str, Any]) -> str:
+    L = ["Stage constraints from earlier passes (values already eliminated do not return):"]
+    for cid, c in carry.items():
+        br = c.get("bracket")
+        if br:
+            L.append(f"- {cid}: stay within [{br['min']:,.6g}, {br['max']:,.6g}]"
+                     + (f"; eliminated: {', '.join(f'{v:,.6g}' for v in c['eliminated'])}" if c["eliminated"] else ""))
+        elif c["eliminated"]:
+            L.append(f"- {cid}: eliminated: {', '.join(f'{v:,.6g}' for v in c['eliminated'])}")
+    return "\n".join(L)
+
+
 def run(writers: List[Writer], spec: str, packets: Dict[str, List[Dict[str, Any]]], passes: int = 3,
-        claim_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-    """Drive N writers for up to `passes` rounds. Returns the list of pass reports; stops early on CONVERGED
-    or UNDERDETERMINED. Context is the caller's business: pass a de-identified spec and reapply afterwards."""
+        claim_ids: Optional[List[str]] = None, value_key: str = "claimed_value") -> List[Dict[str, Any]]:
+    """Drive N writers for up to `passes` stages. Each stage scores the drafts, carries the tightened brackets
+    and the eliminated values forward (`report["stages"]`), and feeds every writer its own counterexamples plus
+    the stage constraints. Stops early on CONVERGED or UNDERDETERMINED. Context is the caller's business: pass a
+    de-identified spec and reapply afterwards."""
     reports: List[Dict[str, Any]] = []
     fb: Dict[str, Optional[str]] = {w.name: None for w in writers}
+    carry: Optional[Dict[str, Any]] = None
     for _ in range(passes):
         drafts = []
         for w in writers:
             d = w.write(spec, fb.get(w.name))
             drafts.append({"writer": w.name, **d})
-        rep = score_pass(drafts, packets, claim_ids)
+        rep = score_pass(drafts, packets, claim_ids, value_key)
         rep["drafts"] = drafts
+        carry = _carry(carry, rep)
+        rep["stages"] = carry
         reports.append(rep)
         if rep["status"] in ("CONVERGED", "UNDERDETERMINED"):
             break
-        fb = rep["feedback"]
+        note = _stage_note(carry)
+        fb = {w: rep["feedback"][w] + "\n" + note for w in rep["feedback"]}
     return reports
 
 
-__all__ = ["Writer", "claim_matrix", "spectrum", "verify_matrix", "score_pass", "feedback", "run",
+__all__ = ["Writer", "claim_matrix", "spectrum", "verify_matrix", "narrow_way", "score_pass", "feedback", "run",
            "FLAT_SHARE", "SPREAD_TOL"]

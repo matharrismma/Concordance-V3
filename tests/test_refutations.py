@@ -92,3 +92,28 @@ def test_scribe_narrow_way_eliminates_and_brackets():
     assert nw["fee"]["bracket"]["min"] == 118000 and nw["fee"]["bracket"]["max"] == 125000
     assert "ELIMINATED" in r["feedback"]["b"] and "outside [" in r["feedback"]["b"]
     assert r["read"].startswith("1 stated value eliminated by counterexample, 2 inside the band")
+
+
+def test_scribe_run_is_staged_brackets_only_tighten():
+    from concordance.scribe import run
+    pk = {"pi": [{"id": "m", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {
+        "par": 12_000_000, "annual_rate": 0.045, "term_months": 240, "claimed_monthly_pi": 0}}}]}
+
+    class W:
+        def __init__(self, name, seq):
+            self.name, self.seq, self.i, self.seen = name, seq, 0, []
+
+        def write(self, spec, feedback=None):
+            self.seen.append(feedback)
+            v = self.seq[min(self.i, len(self.seq) - 1)]
+            self.i += 1
+            return {"claims": [{"id": "pi", "value": v}]}
+
+    a = W("a", [75917.93, 75917.93])
+    b = W("b", [75000, 75917.92])          # eliminated in stage 1, corrects in stage 2
+    reps = run([a, b], "spec", pk, passes=3, claim_ids=["pi"], value_key="claimed_monthly_pi")
+    assert reps[0]["stages"]["pi"]["eliminated"] == [75000.0] and reps[0]["stages"]["pi"]["stage"] == 1
+    assert "ELIMINATED" in b.seen[1] and "eliminated: 75,000" in b.seen[1] and "stay within" in b.seen[1]
+    assert reps[1]["stages"]["pi"]["stage"] == 2 and reps[1]["stages"]["pi"]["eliminated"] == [75000.0]
+    br0, br1 = reps[0]["stages"]["pi"]["bracket"], reps[1]["stages"]["pi"]["bracket"]
+    assert br1["min"] >= br0["min"] and br1["max"] <= br0["max"]
