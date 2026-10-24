@@ -91,7 +91,7 @@ edited inputs. One hash covers the memo — the chain, not the number.
 
 ## Context is stripped, checked, and put back
 
-Every door runs the same loop. **In:** personal details in free text (claim text, step labels, document title
+Every entry point runs the same loop. **In:** personal details in free text (claim text, step labels, document title
 and prose, a scribe spec) become stable placeholders — one map per request, so the same email is the same token
 everywhere; numbers are never touched, they are what gets checked. **Check:** the verifier and the seal see only
 the stripped form; the record in the CAS and the public log never hold the original. **Out:** the response is
