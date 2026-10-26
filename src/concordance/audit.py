@@ -416,6 +416,31 @@ def _x_ltv(text: str):
     return out
 
 
+_DSCR = re.compile(
+    r"\$?\s*(?P<noi>\d[\d,]*(?:\.\d+)?)\s*(?:k\b|thousand\b|million\b)?\s*(?:in\s+|of\s+)?"
+    r"(?:noi|net\s+operating\s+income)\b"                                                          # NOI, number-first
+    r"[^.\n]{0,55}?\$?\s*(?P<ads>\d[\d,]*(?:\.\d+)?)\s*(?:k\b|thousand\b|million\b)?\s*(?:in\s+|of\s+)?"
+    r"(?:annual\s+)?debt\s+service\b"                                                              # annual debt service
+    r"[^.\n]{0,55}?(?:is|=|of|gives?|means|has|at)\s*(?:an?\s+)?"
+    r"(?:(?:dscr|debt.service.coverage(?:\s+ratio)?)\s*(?:of|=|is|:)?\s*(?P<d1>\d+(?:\.\d+)?)"      # DSCR of 1.055
+    r"|(?P<d2>\d+(?:\.\d+)?)\s*(?:dscr|debt.service.coverage(?:\s+ratio)?))\b", re.I)               # 1.055 DSCR
+
+
+def _x_dscr(text: str):
+    """"24,000 NOI and 22,755 in annual debt service is a DSCR of 1.055" — real_estate debt-service
+    coverage (DSCR = NOI / annual debt service), the ratio a lender underwrites on. Net operating income,
+    annual debt service, and a claimed DSCR all labelled, with 'DSCR' or 'debt service coverage' on either
+    side of the number — the labels anchor it, so a wrong DSCR breaks honestly and a non-claim fires
+    nothing. Amounts are stated number-first (the memo form)."""
+    out = []
+    for m in _DSCR.finditer(text):
+        out.append((_q(text, m), "real_estate",
+                    {"RE_VERIFY": {"net_operating_income": _f(m.group("noi")),
+                                   "annual_debt_service": _f(m.group("ads")),
+                                   "claimed_dscr": _f(m.group("d1") or m.group("d2"))}}))
+    return out
+
+
 def _x_rule72(text: str):
     out = []
     for m in re.finditer(r"(?:at\s*)?(\d+(?:\.\d+)?)\s*%[^.\n]{0,50}?doubl\w+[^.\n]{0,30}?"
@@ -2550,7 +2575,7 @@ _EXTRACTORS: Tuple[Tuple[str, Callable], ...] = (
     ("sequence_fact", _x_sequence_fact), ("primality", _x_primality), ("divisor_count", _x_divisor_count),
     ("units_each", _x_each), ("percent", _x_percent),
     ("gross_pay", _x_gross_pay), ("annual_hourly", _x_annual_hourly),
-    ("loan_payment", _x_loan_payment), ("ltv", _x_ltv),
+    ("loan_payment", _x_loan_payment), ("ltv", _x_ltv), ("dscr", _x_dscr),
     ("compound_interest", _x_compound), ("rule_of_72", _x_rule72),
     ("hourly_annual", _x_hourly_annual), ("math_constant", _x_math_constant),
     ("elapsed_years", _x_elapsed_years), ("day_of_week", _x_day_of_week),

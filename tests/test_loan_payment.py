@@ -70,3 +70,24 @@ def test_ltv_zero_false_positives():
     for t in ["a 240,000 loan on a 300,000 property",     # no LTV keyword / ratio
               "the LTV rules changed last year"]:          # no amounts
         assert "ltv" not in _names(t), t
+
+
+# ---- debt-service coverage ratio (DSCR) — the lender's underwriting ratio ----
+
+def test_dscr_holds_both_keyword_positions():
+    for t in ["a property with 24,000 NOI and 22,755 in annual debt service has a DSCR of 1.055",
+              "24,000 net operating income and 22,755 debt service is a 1.055 DSCR"]:
+        assert "dscr" in _names(t), t
+        r = audit(t, CFG, seal=False)
+        assert r["held"] == 1 and r["broken"] == 0, (t, r["results"])
+
+
+def test_dscr_wrong_ratio_breaks():
+    r = audit("24,000 NOI and 22,755 in annual debt service is a DSCR of 2.0", CFG, seal=False)  # 1.055
+    assert r["broken"] == 1 and r["results"][0]["status"] == "MISMATCH"
+
+
+def test_dscr_zero_false_positives():
+    for t in ["the DSCR was fine last quarter",   # no amounts
+              "24,000 NOI looks healthy"]:          # no debt service, no DSCR
+        assert "dscr" not in _names(t), t
