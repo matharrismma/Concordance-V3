@@ -41,7 +41,7 @@ def test_every_tool_declares_an_input_schema():
 
 def test_receipt_spec_version_is_pinned():
     # The receipt format is its own versioned contract; verify_receipt.py and the golden pin its shape.
-    assert transparency.SPEC_VERSION == "concordance-receipt/3.0"
+    assert transparency.SPEC_VERSION == "concordance-receipt/3.1"
 
 
 def test_library_version_is_semver_and_has_a_changelog_entry():

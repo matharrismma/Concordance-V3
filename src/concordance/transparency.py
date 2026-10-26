@@ -38,13 +38,30 @@ CONTENT_TYPE = "application/concordance-record+json"
 # The receipt-format version, carried in the attestation (unhashed) so a consumer knows which rules
 # apply (RECEIPT_SPEC.md). Bump on any change to the envelope/attestation shape; the record's own
 # content_hash is unaffected — SEAL_SPEC.md: a record hashes the same with or without attestation.
-SPEC_VERSION = "concordance-receipt/3.0"
+SPEC_VERSION = "concordance-receipt/3.1"   # 3.1: optional post-quantum signature (attest.pq), additive
 
 
 # ── keys ──────────────────────────────────────────────────────────────────────────────────────────
 def issuer_private_key() -> Optional[str]:
     k = os.environ.get("CONCORDANCE_ISSUER_KEY", "").strip()
     return k or None
+
+
+def pq_issuer_private_key() -> Optional[str]:
+    """The ML-DSA-65 issuer seed (b64u). Independent of the Ed25519 key — a receipt can carry one,
+    both, or neither; both is the durable path (Ed25519 for today's tooling, ML-DSA for permanence)."""
+    k = os.environ.get("CONCORDANCE_PQ_ISSUER_KEY", "").strip()
+    return k or None
+
+
+def pq_issuer_public_key() -> Optional[str]:
+    k = pq_issuer_private_key()
+    return signing.pq_public_from_seed(k) if k else None
+
+
+def pq_issuer_kid() -> Optional[str]:
+    pub = pq_issuer_public_key()
+    return ("ml-dsa-65:" + hashlib.sha256(signing._b64u_decode(pub)).hexdigest()[:16]) if pub else None
 
 
 def issuer_public_key() -> Optional[str]:
@@ -119,6 +136,31 @@ def envelope(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                      "content type, kid, the CWT Claims header (15: iss, sub = content_hash, iat — the SCITT "
                      "signed-statement shape), and the concordance claim set under label -70001; verify with any "
                      "COSE library or docs/verify_receipt.py"}
+
+
+def pq_envelope(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """A post-quantum signature beside the COSE envelope: ML-DSA-65 (FIPS 204) over the SAME canonical
+    record bytes the Ed25519 statement signs, so it binds the same `content_hash`. A self-describing
+    block (not COSE-wrapped — the RFC 9964 COSE encoding of ML-DSA is the standards path once its alg
+    ids are pinned). Returns None when no PQ issuer key is set.
+
+    This is the durable half of the receipt: Ed25519 rests on a problem quantum computers break, so a
+    receipt meant to prove something permanently carries a lattice (Regev/LWE) signature whose hardness
+    survives that transition. Verification needs only the ML-DSA public key.
+    """
+    seed = pq_issuer_private_key()
+    if not seed:
+        return None
+    payload, content_hash = _record_bytes(record)
+    if record.get("content_hash") and record["content_hash"] != content_hash:
+        raise ValueError("record does not re-hash to its content_hash; refusing to sign a mismatched record")
+    return {"format": "pq-detached", "alg": signing.PQ_ALG, "spec": SPEC_VERSION,
+            "signature": signing.pq_sign_bytes(payload, seed), "content_hash": content_hash,
+            "kid": pq_issuer_kid(), "public_key": pq_issuer_public_key(),
+            "means": "ML-DSA-65 (FIPS 204, module-lattice) over the canonical record bytes "
+                     "(SHA-256 = content_hash). Verify: check the signature under the ML-DSA public key, "
+                     "then that sha256(payload) equals content_hash. Durable against the quantum attack "
+                     "that breaks the Ed25519 statement; carry both during the transition."}
 
 
 def in_toto_statement(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -262,7 +304,8 @@ def attest(content_hash: str, *, publish_log: Optional[bool] = None) -> Dict[str
     if side and side.get("log") and not side["log"].get("pending"):
         return side
     env = envelope(rec)
-    out: Dict[str, Any] = {"content_hash": content_hash, "envelope": env, "in_toto": dsse_envelope(rec)}
+    out: Dict[str, Any] = {"content_hash": content_hash, "envelope": env, "in_toto": dsse_envelope(rec),
+                           "pq": pq_envelope(rec)}
     want = (os.environ.get("CONCORDANCE_PUBLISH", "").strip() in ("1", "true", "yes")) if publish_log is None else publish_log
     if env and want:
         out["log"] = publish(content_hash, statement_b64=env["cose_sign1_b64"])
@@ -277,6 +320,8 @@ def attest(content_hash: str, *, publish_log: Optional[bool] = None) -> Dict[str
 def status() -> Dict[str, Any]:
     return {"issuer_key_configured": bool(issuer_private_key()), "kid": issuer_kid(),
             "public_key": issuer_public_key(), "rekor": REKOR,
+            "pq_key_configured": bool(pq_issuer_private_key()), "pq_alg": signing.PQ_ALG,
+            "pq_kid": pq_issuer_kid(),
             "publish_by_default": os.environ.get("CONCORDANCE_PUBLISH", "").strip() in ("1", "true", "yes"),
             "means": "without an issuer key no envelopes are minted and no entries are logged; the seal is then "
                      "self-attested (content-addressed only) and says so"}
@@ -358,5 +403,6 @@ def agentledger_pob(content_hash: str) -> Optional[Dict[str, Any]]:
     }
 
 
-__all__ = ["envelope", "verify_envelope", "in_toto_statement", "dsse_envelope", "agentledger_pob",
-           "publish", "lookup", "attest", "status", "issuer_public_key", "public_key_pem", "issuer_kid"]
+__all__ = ["envelope", "verify_envelope", "pq_envelope", "in_toto_statement", "dsse_envelope",
+           "agentledger_pob", "publish", "lookup", "attest", "status", "issuer_public_key",
+           "public_key_pem", "issuer_kid", "pq_issuer_public_key", "pq_issuer_kid"]

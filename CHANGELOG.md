@@ -4,6 +4,15 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- Post-quantum durable receipts (`concordance-receipt/3.1`, additive). Beside the Ed25519 COSE
+  statement, a receipt now carries `attest.pq`: an **ML-DSA-65** (FIPS 204, module-lattice / Regev's
+  LWE) signature over the same canonical record bytes, binding the same `content_hash`. Ed25519 rests
+  on a problem a quantum computer breaks; ML-DSA's hardness survives it, so a receipt proves its
+  integrity permanently (crypto-agility: both ride together — Ed25519 for today's tooling, ML-DSA for
+  permanence). `CONCORDANCE_PQ_ISSUER_KEY` enables it; `docs/verify_receipt.py` reports a `PQ-SIG`
+  line and a receipt is "durable" when it passes; `transparency.pq_envelope` + `signing.pq_*` (the
+  `cryptography` library's vetted FIPS 204 implementation — never rolled); RECEIPT_SPEC §2d. The
+  golden receipt and conformance suite now pin the PQ signature too.
 
 ## 3.0.0a1 — 2026-10-24
 - Receipt format named and pinned as an open standard, `concordance-receipt/3.0` (the version rides

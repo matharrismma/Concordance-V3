@@ -35,7 +35,7 @@ def _golden() -> dict:
 
 
 def test_the_receipt_carries_its_format_version():
-    assert _golden()["attest"]["envelope"]["spec"] == "concordance-receipt/3.0"
+    assert _golden()["attest"]["envelope"]["spec"] == "concordance-receipt/3.1"
 
 
 def test_the_hash_checks_with_pure_stdlib():
@@ -112,3 +112,31 @@ def test_the_in_toto_dsse_envelope_verifies_and_names_the_subject():
     sig = base64.b64decode(dsse["signatures"][0]["sig"])
     assert _ed25519_verify(dsse["public_key"], sig, pae)
     assert not _ed25519_verify(dsse["public_key"], sig, pae + b"x")   # tamper the body → fails
+
+
+def test_the_post_quantum_signature_verifies_and_is_durable():
+    """The ML-DSA-65 (FIPS 204, lattice) signature over the same canonical record bytes — the half that
+    survives a quantum adversary. A stranger checks it with cryptography and nothing from this repo."""
+    pytest.importorskip("cryptography")
+    vr, g = _verify_receipt(), _golden()
+    pq = g["attest"]["pq"]
+    assert pq["alg"] == "ML-DSA-65"
+    ok, why = vr.check_pq_signature(pq, g)
+    assert ok, why
+
+
+def test_a_tampered_post_quantum_signature_does_not_verify():
+    vr, g = _verify_receipt(), _golden()
+    pq = dict(g["attest"]["pq"])
+    s = pq["signature"]
+    pq["signature"] = s[:-6] + ("AAAAAA" if not s.endswith("AAAAAA") else "BBBBBB")
+    ok, _why = vr.check_pq_signature(pq, g)
+    assert not ok
+
+
+def test_a_tampered_record_fails_the_post_quantum_check():
+    vr, g = _verify_receipt(), _golden()
+    g2 = copy.deepcopy(g)
+    g2["verifier_results"] = []   # change the covered bytes
+    ok, _why = vr.check_pq_signature(g2["attest"]["pq"], g2)
+    assert not ok

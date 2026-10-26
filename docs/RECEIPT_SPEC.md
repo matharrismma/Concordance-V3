@@ -17,9 +17,13 @@ is the same whether or not anyone has signed it, and a reader with no key materi
   ...record fields...,                 # see SEAL_SPEC.md; kind = seal | document
   "content_hash": "<64 hex>",          # sha256(canonical(record minus content_hash))
   "attest": {                          # absent → self-attested (content-addressed only)
-    "envelope": { "format": "COSE_Sign1", "spec": "concordance-receipt/3.0",
+    "envelope": { "format": "COSE_Sign1", "spec": "concordance-receipt/3.1",
                   "cose_sign1_b64": "...", "content_hash": "...",
                   "kid": "ed25519:<16 hex>", "public_key": "<b64url raw Ed25519>" },
+    "pq":       { "format": "pq-detached", "alg": "ML-DSA-65",     # the durable signature (§2d)
+                  "signature": "<b64url ML-DSA over the same canonical record bytes>",
+                  "content_hash": "...", "kid": "ml-dsa-65:<16 hex>",
+                  "public_key": "<b64url raw ML-DSA-65 public key>" },
     "in_toto":  { "payloadType": "application/vnd.in-toto+json",   # the same verdict, DSSE-wrapped (§2b)
                   "payload": "<b64 of an in-toto Statement v1>",
                   "signatures": [ { "keyid": "ed25519:<16 hex>", "sig": "<b64 Ed25519 over PAE>" } ],
@@ -91,6 +95,30 @@ over `result_hash`, which verifies with `verify_receipt.py`/`verify_envelope` un
 PoB itself, it records behaviour, not correctness: the verdict says only what was checked. A sealed record
 that was never chained (a non-PASS verdict is sealed but not ledgered) reports `chained: false` and a null
 `prev_hash`.
+
+## 2d. The durable form — ML-DSA (FIPS 204, lattice / LWE)
+
+A receipt is meant to prove something *permanently*, but Ed25519 rests on the elliptic-curve discrete
+log — a problem a quantum computer breaks (the frontier of that attack is Regev's own 2023 factoring
+result). An adversary can archive today's receipts and public keys and, once quantum arrives, recover
+the private key and forge any of them, backdated. So the receipt carries a second, independent
+signature whose hardness survives that: **ML-DSA-65** (FIPS 204), the NIST module-lattice standard,
+descended from Regev's Learning-With-Errors. It is at `attest.pq`, signed over the **same** canonical
+record bytes the Ed25519 statement covers (`canonical(record − {content_hash, attest})`), so it binds
+the same `content_hash`; verification needs only the ML-DSA public key. We do not roll it — it is the
+`cryptography` library's vetted FIPS 204 implementation.
+
+Both signatures ride together on purpose (crypto-agility): Ed25519 for today's compact tooling and the
+SCITT/Rekor path, ML-DSA for permanence. `verify_receipt.py` reports each on its own line; a receipt is
+**durable** when the ML-DSA line passes. A receipt with only the Ed25519 statement is valid today but
+says so plainly — not durable past a quantum adversary. The standards path is the RFC 9964 COSE encoding
+of ML-DSA once its algorithm ids are pinned; until then the block is self-describing.
+
+Why a lattice is the right floor to stand on: a lattice is a perfect, periodic symmetry. LWE hides a
+secret by adding a small error that breaks that symmetry just enough to look like random noise — and
+recovering the symmetry from the distorted samples is the worst-case-hard problem the signature rests
+on. A forged receipt is exactly an attempt to recover that symmetry without the key; it cannot be done.
+The receipt is the concrete, checkable form of that hardness.
 
 ## 3. The log entry — Rekor `rekord`
 

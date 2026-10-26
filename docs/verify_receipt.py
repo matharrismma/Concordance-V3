@@ -86,6 +86,27 @@ def check_signature(statement_b64: str, public_key_b64u: str) -> tuple[bool, str
         **claims, "payload_hash": payload_hash, "statement_bytes": raw, "cwt_iss": cwt.get(CWT_ISS), "cwt_sub": cwt.get(CWT_SUB)}
 
 
+def check_pq_signature(pq: dict, record: dict) -> tuple[bool, str]:
+    """Verify the post-quantum (ML-DSA-65, FIPS 204) signature over the canonical record bytes — the
+    durable half of the receipt, whose hardness survives the quantum attack that breaks the Ed25519
+    statement. Signed over canonical(record minus content_hash and attest), the same bytes the Ed25519
+    statement covers, so it binds the same content_hash. Needs a recent `cryptography` (ML-DSA)."""
+    from cryptography.hazmat.primitives.asymmetric import mldsa
+    from cryptography.exceptions import InvalidSignature
+    payload = canonical({k: v for k, v in record.items() if k not in ("content_hash", "attest")})
+    ph = sha256(payload)
+    try:
+        pub = mldsa.MLDSA65PublicKey.from_public_bytes(b64u_decode(pq["public_key"]))
+        pub.verify(b64u_decode(pq["signature"]), payload)
+    except (InvalidSignature, ValueError) as e:
+        return False, f"ML-DSA signature does not verify ({e.__class__.__name__})"
+    if pq.get("content_hash") not in (None, ph):
+        return False, f"pq content_hash {str(pq.get('content_hash'))[:16]}… != record hash {ph[:16]}…"
+    if record.get("content_hash") not in (None, ph):
+        return False, "the signature is about a different record than the one supplied"
+    return True, f"ML-DSA-65 ok; kid {pq.get('kid')}; payload sha256 = {ph[:16]}… (post-quantum durable)"
+
+
 def fetch_entry(rekor: str, uuid: str) -> dict:
     with urllib.request.urlopen(urllib.request.Request(f"{rekor}/api/v1/log/entries/{uuid}",
                                                        headers={"Accept": "application/json"}), timeout=20) as r:
@@ -162,6 +183,13 @@ def main() -> int:
             results.append(("SIGNATURE", False, "the statement is about a different record than the one supplied"))
     else:
         results.append(("SIGNATURE", None, "no envelope: the record is self-attested (content-addressed only)"))
+
+    pq = att.get("pq")
+    if pq and pq.get("signature"):
+        ok, why = check_pq_signature(pq, record)
+        results.append(("PQ-SIG", ok, why))
+    else:
+        results.append(("PQ-SIG", None, "no post-quantum signature (Ed25519 only — not durable past a quantum adversary)"))
 
     if log and not log.get("pending") and log.get("uuid") and stmt.get("statement_bytes"):
         try:

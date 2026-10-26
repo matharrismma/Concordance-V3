@@ -17,7 +17,7 @@ be loud. Three surfaces carry a version, and they move together under [semver](h
 | change | library / tool surface | receipt format |
 |---|---|---|
 | **major** | remove or rename a tool; remove a public symbol; change a schema so an old call stops validating | change the envelope or attestation shape so an existing verifier stops reading a receipt |
-| **minor** | add a tool, a field, or a public symbol, backward-compatibly | add a field or an attestation form a current verifier ignores (the CWT claims and the in-toto form were such additions) |
+| **minor** | add a tool, a field, or a public symbol, backward-compatibly | add a field or an attestation form a current verifier ignores (the CWT claims, the in-toto form, and the ML-DSA post-quantum signature of `3.1` were such additions) |
 | **patch** | a fix with no surface change | a documentation or wording fix with no shape change |
 
 A verdict's meaning (`HOLDS` / `BROKEN` / `INCOMPLETE`), a verifier's tolerance, and the

@@ -22,6 +22,8 @@ from concordance.mcp import server as S  # noqa: E402
 
 priv, _pub = signing.generate_keypair()
 os.environ["CONCORDANCE_ISSUER_KEY"] = priv
+pq_priv, _pq_pub = signing.pq_generate_keypair()         # the durable (ML-DSA / lattice) half
+os.environ["CONCORDANCE_PQ_ISSUER_KEY"] = pq_priv
 os.environ["CONCORDANCE_DATA_DIR"] = tempfile.mkdtemp(prefix="nh-golden-")
 
 STEP = {"id": "m", "domain": "real_estate", "spec": {"RE_VERIFY": {
@@ -36,10 +38,12 @@ record["content_hash"] = h
 att = T.attest(h, publish_log=False)   # envelope (COSE/SCITT) + in_toto (DSSE), no live log entry
 env = att.get("envelope")
 assert env, "no issuer key configured — envelope() returned None"
-receipt = {**record, "attest": {"envelope": env, "in_toto": att.get("in_toto")}}   # offline golden, no log line
+pq = att.get("pq")
+assert pq, "no PQ issuer key configured — pq_envelope() returned None"
+receipt = {**record, "attest": {"envelope": env, "in_toto": att.get("in_toto"), "pq": pq}}   # offline golden, no log line
 
 out = ROOT / "tests" / "fixtures" / "receipt_golden.json"
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(json.dumps(receipt, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 print(f"wrote {out.relative_to(ROOT)}  (content_hash {h[:16]}…, spec {env.get('spec')}, kid {env.get('kid')}, "
-      f"in_toto {'yes' if att.get('in_toto') else 'no'})")
+      f"in_toto {'yes' if att.get('in_toto') else 'no'}, pq {pq.get('alg')} kid {pq.get('kid')})")

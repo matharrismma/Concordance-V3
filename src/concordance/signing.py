@@ -208,6 +208,77 @@ def verify_seal(content_hash: str, attestation: Dict[str, Any]) -> Tuple[bool, s
     return False, "seal signature invalid (wrong key or tampered)"
 
 
+# ── Post-quantum signing — ML-DSA (FIPS 204, module-lattice / Regev's LWE) ───────────
+# Ed25519 rests on a problem a quantum computer breaks (the frontier of that attack is
+# Regev's own 2023 factoring work); a receipt meant to prove something *permanently* must
+# also carry a signature whose hardness survives that. ML-DSA-65 is the balanced NIST
+# standard, module-LWE based — the same worst-case lattice hardness Regev founded. We never
+# roll it: this is `cryptography`'s vetted FIPS 204 implementation, lazy-loaded like Ed25519.
+# The private key is stored as its 32-byte seed (b64u); the public key is 1952 bytes.
+
+PQ_ALG = "ML-DSA-65"
+
+
+def _require_mldsa():
+    try:
+        from cryptography.hazmat.primitives.asymmetric import mldsa
+        return mldsa
+    except ImportError as e:
+        raise ImportError(
+            "post-quantum (ML-DSA) signing requires a recent `cryptography` package "
+            "(>=45, OpenSSL 3.5+ / its bundled provider). Install with: "
+            "pip install 'concordance[signing]'"
+        ) from e
+
+
+def pq_generate_keypair() -> Tuple[str, str]:
+    """Fresh ML-DSA-65 keypair as (private_seed_b64u, public_key_b64u)."""
+    mldsa = _require_mldsa()
+    priv = mldsa.MLDSA65PrivateKey.generate()
+    seed = priv.private_bytes_raw() if hasattr(priv, "private_bytes_raw") else _seed_of(priv)
+    pub = priv.public_key().public_bytes_raw() if hasattr(priv.public_key(), "public_bytes_raw") \
+        else _pub_of(priv.public_key())
+    return _b64u_encode(seed), _b64u_encode(pub)
+
+
+def _seed_of(priv) -> bytes:
+    from cryptography.hazmat.primitives import serialization as ser
+    return priv.private_bytes(ser.Encoding.Raw, ser.PrivateFormat.Raw, ser.NoEncryption())
+
+
+def _pub_of(pub) -> bytes:
+    from cryptography.hazmat.primitives import serialization as ser
+    return pub.public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
+
+
+def _pq_priv_from_seed(seed_b64u: str):
+    mldsa = _require_mldsa()
+    return mldsa.MLDSA65PrivateKey.from_seed_bytes(_b64u_decode(seed_b64u))
+
+
+def pq_public_from_seed(seed_b64u: str) -> str:
+    priv = _pq_priv_from_seed(seed_b64u)
+    pub = priv.public_key()
+    raw = pub.public_bytes_raw() if hasattr(pub, "public_bytes_raw") else _pub_of(pub)
+    return _b64u_encode(raw)
+
+
+def pq_sign_bytes(message: bytes, seed_b64u: str) -> str:
+    """Sign raw bytes with an ML-DSA-65 private key seed. Returns the b64u signature."""
+    return _b64u_encode(_pq_priv_from_seed(seed_b64u).sign(message))
+
+
+def pq_verify_bytes(message: bytes, signature_b64u: str, public_key_b64u: str) -> bool:
+    """Verify an ML-DSA-65 signature against a public key. Returns True/False."""
+    mldsa = _require_mldsa()
+    try:
+        pub = mldsa.MLDSA65PublicKey.from_public_bytes(_b64u_decode(public_key_b64u))
+        pub.verify(_b64u_decode(signature_b64u), message)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 __all__ = [
     "generate_keypair",
     "public_from_private",
@@ -217,4 +288,9 @@ __all__ = [
     "verify_packet",
     "sign_seal",
     "verify_seal",
+    "PQ_ALG",
+    "pq_generate_keypair",
+    "pq_public_from_seed",
+    "pq_sign_bytes",
+    "pq_verify_bytes",
 ]
