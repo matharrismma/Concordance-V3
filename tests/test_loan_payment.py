@@ -48,3 +48,25 @@ def test_zero_false_positives_on_near_misses():
               "a 6% mortgage sounds high",                   # no principal, term, or payment
               "the loan was for 12 months"]:                 # no rate or payment
         assert "loan_payment" not in _names(t), t
+
+
+# ---- loan-to-value (LTV) — the core lending and DeFi-collateral ratio ----
+
+def test_ltv_holds_both_keyword_positions_and_formats():
+    for t in ["a 240,000 loan on a 300,000 property is 80% LTV",          # 80% LTV (after)
+              "a $240,000 loan against a $300,000 home is an LTV of 80%",  # LTV of 80% (before)
+              "a 240,000 loan on a 300,000 collateral is 0.8 loan-to-value"]:  # decimal, DeFi collateral
+        assert "ltv" in _names(t), t
+        r = audit(t, CFG, seal=False)
+        assert r["held"] == 1 and r["broken"] == 0, (t, r["results"])
+
+
+def test_ltv_wrong_ratio_breaks():
+    r = audit("a 150,000 loan on a 300,000 property is 80% LTV", CFG, seal=False)  # 0.5, not 0.8
+    assert r["broken"] == 1 and r["results"][0]["status"] == "MISMATCH"
+
+
+def test_ltv_zero_false_positives():
+    for t in ["a 240,000 loan on a 300,000 property",     # no LTV keyword / ratio
+              "the LTV rules changed last year"]:          # no amounts
+        assert "ltv" not in _names(t), t

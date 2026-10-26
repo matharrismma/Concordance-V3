@@ -389,6 +389,33 @@ def _x_loan_payment(text: str):
     return out
 
 
+_LTV = re.compile(
+    r"\$?\s*(?P<loan>\d[\d,]*(?:\.\d+)?)\s*(?:k\b|thousand\b|million\b)?\s*(?:dollar\s+)?loan\b"
+    r"[^.\n]{0,45}?(?:on|against|for|with|versus|vs\.?)\s+(?:a\s+|an\s+|the\s+)?"
+    r"\$?\s*(?P<value>\d[\d,]*(?:\.\d+)?)\s*(?:k\b|thousand\b|million\b)?\s*(?:dollar\s+)?"
+    r"(?:property|home|hous\w*|place|building|appraisal|appraised\s+value|value|asset|collateral|car|vehicle)\b"
+    r"[^.\n]{0,45}?(?:is|=|of|at|gives?|means)\s*(?:an?\s+)?"
+    r"(?:(?:ltv|loan.to.value)\s*(?:of|=|is|:|at)?\s*(?P<r1>\d+(?:\.\d+)?)\s*(?P<p1>%|percent)?"   # LTV of 80%
+    r"|(?P<r2>\d+(?:\.\d+)?)\s*(?P<p2>%|percent)?\s*(?:ltv|loan.to.value))\b", re.I)                # 80% LTV
+
+
+def _x_ltv(text: str):
+    """"a 240,000 loan on a 300,000 property is 80% LTV" — real_estate loan-to-value (LTV = loan/value),
+    the core lending and DeFi-collateral ratio. A loan amount, a value (property/home/collateral/…), and
+    a claimed LTV with the words 'LTV' or 'loan-to-value' present on either side of the number — the
+    keyword anchors it so an ordinary loan+price sentence is never read as a ratio. A wrong LTV breaks
+    honestly. '80%' -> 0.8; a bare 0.8 reads as the decimal."""
+    out = []
+    for m in _LTV.finditer(text):
+        raw = _f(m.group("r1") or m.group("r2"))
+        pct = m.group("p1") or m.group("p2")
+        ltv = raw / 100.0 if (pct or raw > 1.5) else raw
+        out.append((_q(text, m), "real_estate",
+                    {"RE_VERIFY": {"loan_amount": _f(m.group("loan")), "appraised_value": _f(m.group("value")),
+                                   "claimed_ltv": ltv}}))
+    return out
+
+
 def _x_rule72(text: str):
     out = []
     for m in re.finditer(r"(?:at\s*)?(\d+(?:\.\d+)?)\s*%[^.\n]{0,50}?doubl\w+[^.\n]{0,30}?"
@@ -2523,7 +2550,7 @@ _EXTRACTORS: Tuple[Tuple[str, Callable], ...] = (
     ("sequence_fact", _x_sequence_fact), ("primality", _x_primality), ("divisor_count", _x_divisor_count),
     ("units_each", _x_each), ("percent", _x_percent),
     ("gross_pay", _x_gross_pay), ("annual_hourly", _x_annual_hourly),
-    ("loan_payment", _x_loan_payment),
+    ("loan_payment", _x_loan_payment), ("ltv", _x_ltv),
     ("compound_interest", _x_compound), ("rule_of_72", _x_rule72),
     ("hourly_annual", _x_hourly_annual), ("math_constant", _x_math_constant),
     ("elapsed_years", _x_elapsed_years), ("day_of_week", _x_day_of_week),
