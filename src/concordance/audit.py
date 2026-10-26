@@ -363,6 +363,32 @@ def _x_compound(text: str):
     return out
 
 
+_LOAN_PAY = re.compile(
+    r"\$?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:k\b|thousand\b|million\b)?\s*(?:dollar\s+)?(?:loan|mortgage)\b"   # 1 principal
+    r"[^.\n]{0,40}?(?:at|@|of)\s*(\d+(?:\.\d+)?)\s*%\s*"                                                 # 2 annual rate %
+    r"(?:apr|a\.?p\.?r\.?|annual(?:ly)?|a\s+year|per\s+year|/\s*yr|nominal|interest)?"
+    r"[^.\n]{0,40}?(?:over|for|across|with\s+a\s+(?:term|life)\s+of|repaid\s+over)\s+"
+    r"(\d+(?:\.\d+)?)\s*(months?|mos?\b|years?|yrs?\b)"                                                  # 3 term, 4 unit
+    r"[^.\n]{0,40}?(?:is|=|costs?|comes?\s+to|of|means|works?\s+out\s+to)\s*\$?\s*"
+    r"(\d[\d,]*(?:\.\d+)?)\s*(?:a|per|/|each)\s*month", re.I)                                            # 5 payment
+
+
+def _x_loan_payment(text: str):
+    """"a 12,000 loan at 6% annual over 12 months is 1032.80 a month" — a monthly amortization payment,
+    M = P·r(1+r)^n / ((1+r)^n − 1), routed to the real_estate monthly-mortgage verifier. Four slots
+    anchor it — a principal on a 'loan'/'mortgage', an annual rate %, a term in months or years, and a
+    claimed monthly payment — so a wrong payment breaks honestly (it recomputes). The % is read as the
+    ANNUAL rate (standard), and a term in years is ×12."""
+    out = []
+    for m in _LOAN_PAY.finditer(text):
+        term = _f(m.group(3))
+        months = term * 12 if m.group(4).lower().startswith(("year", "yr")) else term
+        out.append((_q(text, m), "real_estate",
+                    {"RE_VERIFY": {"loan_principal": _f(m.group(1)), "annual_rate": _f(m.group(2)) / 100.0,
+                                   "loan_term_months": months, "claimed_monthly_payment": _f(m.group(5))}}))
+    return out
+
+
 def _x_rule72(text: str):
     out = []
     for m in re.finditer(r"(?:at\s*)?(\d+(?:\.\d+)?)\s*%[^.\n]{0,50}?doubl\w+[^.\n]{0,30}?"
@@ -2497,6 +2523,7 @@ _EXTRACTORS: Tuple[Tuple[str, Callable], ...] = (
     ("sequence_fact", _x_sequence_fact), ("primality", _x_primality), ("divisor_count", _x_divisor_count),
     ("units_each", _x_each), ("percent", _x_percent),
     ("gross_pay", _x_gross_pay), ("annual_hourly", _x_annual_hourly),
+    ("loan_payment", _x_loan_payment),
     ("compound_interest", _x_compound), ("rule_of_72", _x_rule72),
     ("hourly_annual", _x_hourly_annual), ("math_constant", _x_math_constant),
     ("elapsed_years", _x_elapsed_years), ("day_of_week", _x_day_of_week),
