@@ -222,6 +222,54 @@ def test_pid_loop_accumulates_fields_across_rounds():
     assert r["verdict"] == "HOLDS" and r["reached_by"] == "model" and m.calls == 4
 
 
+# ── the MPC planner (candidates > 1): plan over actions, attend, commit one; verdict stays masked ──
+
+def _ladder_model(reach_leg):
+    """A small onboard model for the right-triangle word problem. It fills geometry's packet when it
+    sees geometry's schema (pyth_a...); for any other candidate domain it has nothing to say. `reach_leg`
+    is the claimed far leg — 8 completes a 6-8-10 right triangle, 9 does not."""
+    def m(prompt):
+        if "pyth_a" in prompt:
+            return '{"pyth_a":6,"pyth_b":%d,"pyth_c":10,"claimed_right_triangle":true}' % reach_leg
+        return "{}"
+    return m
+
+
+_LADDER = "a ladder 10 feet long with its base 6 feet from the wall reaches 8 feet up the wall"
+
+
+def test_planner_integrates_geometry_when_the_resolver_routes_elsewhere():
+    # the keyword resolver sends the ladder to architecture; the geometry cue adds geometry as a
+    # candidate action, and attention picks it because only it reaches a verifier.
+    r = ce_translate.verify_text(_LADDER, model=_ladder_model(8), candidates=4, max_rounds=2)
+    assert r["verdict"] == "HOLDS" and r["reached_by"] == "model"
+    assert "GEOM_VERIFY" in r["proposed_packet"]   # reached geometry, not architecture
+
+
+def test_planner_still_cannot_make_a_false_geometry_claim_hold():
+    bad = _LADDER.replace("reaches 8 feet", "reaches 9 feet")
+    r = ce_translate.verify_text(bad, model=_ladder_model(9), candidates=4, max_rounds=2)
+    assert r["verdict"] == "BROKEN"   # 6-9-10 is not a right triangle; the engine recomputed
+
+
+def test_the_verdict_is_masked_out_of_planning():
+    # a reaching HOLDS and a reaching BROKEN must cost the SAME — the planner may not prefer a claim
+    # because it passes; only "did it reach a verifier" and "how many fields" are heads.
+    hold = ce_translate._plan_cost({"verdict": "HOLDS"}, {"filled": 4})
+    brk = ce_translate._plan_cost({"verdict": "BROKEN"}, {"filled": 4})
+    miss = ce_translate._plan_cost({"verdict": "INCOMPLETE"}, {"filled": 4})
+    assert hold == brk          # the causal mask: identical cost
+    assert miss > hold          # not reaching a verifier is strictly worse
+    assert ce_translate._plan_cost({"verdict": "HOLDS"}, {"filled": 5}) < hold   # more fields breaks the tie
+
+
+def test_candidates_one_is_backward_compatible():
+    # the default plan is the single top domain — the standard tier-2 claim is unaffected
+    m = _Mock(_GOOD)
+    r = ce_translate.verify_text(_TIER2, model=m, candidates=1)
+    assert r["verdict"] == "HOLDS" and r["reached_by"] == "model" and m.calls == 1
+
+
 # ── PrimeIntellect reward (framework-free core): the engine as an un-hackable RL reward ──────
 
 def test_primeintellect_reward_is_the_verdict():

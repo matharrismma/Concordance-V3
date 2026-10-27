@@ -34,11 +34,16 @@ CLAIMS = [
     "a quarter-million loan against a four-hundred-thousand property sits at a 62.5% LTV",       # HOLDS
     "net operating income of 24,000 with debt service of 22,755 gives a coverage ratio of 1.055",  # HOLDS
     "borrowing twelve thousand at six percent for a year comes to about 5,000 a month",          # BROKEN
+    # a geometric WORD problem — the keyword resolver routes "ladder/wall" to architecture; the
+    # planner (candidates>1) adds geometry as a candidate action and attends to the one that reaches:
+    "a ladder ten feet long with its base six feet from the wall reaches eight feet up",         # HOLDS (6-8-10)
+    "a ladder ten feet long with its base six feet from the wall reaches nine feet up",          # BROKEN
 ]
 
 if __name__ == "__main__":
     for c in CLAIMS:
-        r = verify_text(c, model=MODEL, max_rounds=3)
+        # candidates=4 = plan over several candidate domains per round; the verdict is the engine's.
+        r = verify_text(c, model=MODEL, max_rounds=3, candidates=4)
         print(f"[{str(r.get('reached_by')):9}] {str(r.get('verdict')):11} {c[:62]}")
         if r.get("proposed_packet"):
             print("            the model asked the engine to check:", r["proposed_packet"])
