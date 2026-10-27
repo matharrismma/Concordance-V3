@@ -171,7 +171,10 @@ _SYNONYMS: Dict[str, Tuple[str, ...]] = {
                     "livestock", "harvest", "bushel", "pasture", "manure"),
     "soil_science": ("soil", "compost", "loam", "topsoil", "amendment", "tilth"),
     "music_theory": ("chord", "chords", "note", "notes", "scale", "interval", "octave", "triad",
-                     "key signature"),
+                     "key signature",
+                     # the geometry IN music: intervals are exact frequency ratios (reach, 2026-10-27)
+                     "perfect fifth", "perfect fourth", "major third", "minor third", "frequency ratio",
+                     "semitone", "semitones", "equal temperament", "circle of fifths", "just intonation"),
     "calendar_time": ("days between", "weekday", "leap year", "passover", "pentecost", "easter",
                       "how many days", "date falls", "day of the week", "fell on", "what day",
                       "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"),
@@ -200,7 +203,10 @@ _SYNONYMS: Dict[str, Tuple[str, ...]] = {
     "quantum_computing": ("born rule", "amplitude squared", "squared amplitude", "probability amplitude",
                           "qubit", "qubits", "superposition", "wavefunction", "wave function",
                           "wavefunction collapse", "measure the state", "measurement outcome"),
-    "acoustics": ("resonance", "resonant", "pitch", "decibel", "decibels", "sound wave", "hertz"),
+    "acoustics": ("resonance", "resonant", "pitch", "decibel", "decibels", "sound wave", "hertz",
+                  # curves have sound: the wave relation c=fλ and the harmonic series (reach, 2026-10-27)
+                  "harmonic", "harmonics", "overtone", "overtones", "fundamental frequency",
+                  "wavelength", "sound intensity", "sound pressure", "speed of sound"),
     "photography": ("aperture", "shutter", "shutter speed", "exposure", "depth of field"),
     "nutrition": ("calories", "protein", "carbs", "carbohydrate", "vitamin", "serving", "servings"),
     "astronomy": ("light year", "planet", "orbit", "galaxy", "parsec", "magnitude", "nebula"),

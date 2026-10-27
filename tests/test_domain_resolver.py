@@ -118,6 +118,9 @@ def test_the_twenty_nine_domains_with_no_everyday_vocabulary_now_route():
         ("the fermi energy of copper is 7 ev", "condensed_matter"),
         ("is utilitarianism a consequentialist ethical framework", "philosophy"),
         ("grimms law shifts p to f in proto germanic", "sound_law"),
+        ("a perfect fifth is a frequency ratio of 3 to 2", "music_theory"),   # geometry in music
+        ("the third harmonic of 220 Hz is 660 Hz", "acoustics"),             # curves have sound
+        ("a 440 Hz sound wave at 343 m/s has a wavelength of 0.78 meters", "acoustics"),
         ("the critical path of this project schedule", "operations_research"),
         ("what is the cpk of a process with these control limits", "manufacturing"),
         ("the action potential resting membrane potential of a neuron", "neuroscience"),
