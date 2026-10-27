@@ -126,7 +126,8 @@ def _analyse(mod_path: str) -> Dict[str, Any]:
                                      if isinstance(e, ast.Constant) and isinstance(e.value, str)}
     input_fields = {f for f in input_fields
                     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,60}", f)
-                    and not f.startswith("tolerance") and f != "rel_tol"}
+                    and not f.startswith("tolerance") and f != "rel_tol"
+                    and f not in artifacts}   # the artifact KEY (LIN_VERIFY, GEOM_VERIFY) is the wrapper, not a field
     doc = inspect.getdoc(mod) or ""
     named = re.findall(r"^\s*\*\s+([a-z_]+\.[a-z0-9_]+)", doc, re.M)
     example = None
