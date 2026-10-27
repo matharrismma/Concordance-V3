@@ -712,3 +712,22 @@ def test_substance_claims_extract_and_non_substances_do_not():
     assert audit("the boiling point of ethanol is 79 C", CFG, seal=False)["broken"] == 1
     for t in ("Jesus is Lord", "she is Mary", "it is OK", "the book is good"):
         assert "substance" not in _extractors(t), t
+
+
+# ---- geometric reasoning: area stated BEFORE the dimensions (2026-10-27) ----
+
+def test_area_first_rectangle_extracts_and_confirms():
+    text = "the area of a 4 by 6 rectangle is 24"
+    assert _extractors(text) == ["rectangle"]
+    res = audit(text, CFG, seal=False)
+    assert res["held"] == 1 and res["broken"] == 0
+
+
+def test_area_first_rectangle_catches_a_wrong_area():
+    res = audit("the area of a 4 by 6 rectangle is 25", CFG, seal=False)  # 24, not 25
+    assert res["broken"] == 1
+    assert res["results"][0]["status"] == "MISMATCH"
+
+
+def test_area_first_rectangle_with_units():
+    assert audit("the area of a 5 m by 8 m rectangle comes to 40", CFG, seal=False)["held"] == 1

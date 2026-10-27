@@ -962,6 +962,12 @@ def _x_rectangle(text: str):
         out.append((_q(text, m), "geometry",
                     {"GEOM_VERIFY": {"rect_length": _f(m.group(1)), "rect_width": _f(m.group(2)),
                                      "claimed_rect_area": _f(m.group(3)), "claimed_rect_area_as_written": m.group(3)}}))
+    area_first = (r"area\s+of\s+(?:a|an|the)\s+" + n + unit + r"\s*(?:by|×|x)\s*" + n + unit +
+                  r"\s+rectangle\s+(?:is|=|equals?|comes\s+(?:out\s+)?to)\s+" + approx + n)
+    for m in re.finditer(area_first, text, re.I):                     # "the area of a 4 by 6 rectangle is 24" (area stated first)
+        out.append((_q(text, m), "geometry",
+                    {"GEOM_VERIFY": {"rect_length": _f(m.group(1)), "rect_width": _f(m.group(2)),
+                                     "claimed_rect_area": _f(m.group(3)), "claimed_rect_area_as_written": m.group(3)}}))
     for m in re.finditer(dims + r"perimeter\s+(?:of\s+)?" + approx + n, text, re.I):
         out.append((_q(text, m), "geometry",
                     {"GEOM_VERIFY": {"rect_length": _f(m.group(1)), "rect_width": _f(m.group(2)),

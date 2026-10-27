@@ -92,6 +92,41 @@ def _analyse(mod_path: str) -> Dict[str, Any]:
             for c in _str_consts(node):
                 if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,60}", c):
                     fields.add(c)
+    # INPUT fields — what a *claim* fills, versus what a check computes. The `fields` set above is
+    # deliberately over-inclusive so validate_steps never rejects a valid packet; but a caller reading
+    # the schema to BUILD a packet (the edge translator, or a model) must see only the keys a verifier
+    # reads from its spec. Found 2026-10-27: the geometry schema advertised a_sq_plus_b_sq / actual_*
+    # (computed outputs from the data dict), so the translator asked the model to fill the answer. The
+    # inputs are the strings read via spec/gv/packet .get(...) or ["..."], tested with `"x" in spec`,
+    # or iterated by an `all(k in gv for k in (...))` membership test.
+    _SPEC_NAMES = {"spec", "gv", "packet", "a", "art"}   # the artifact dict's parameter names across modules
+
+    def _is_spec(x: ast.AST) -> bool:
+        return isinstance(x, ast.Name) and x.id in _SPEC_NAMES
+
+    input_fields: set = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "get" \
+                and _is_spec(n.func.value) and n.args and isinstance(n.args[0], ast.Constant) \
+                and isinstance(n.args[0].value, str):
+            input_fields.add(n.args[0].value)
+        elif isinstance(n, ast.Subscript) and _is_spec(n.value) \
+                and isinstance(n.slice, ast.Constant) and isinstance(n.slice.value, str):
+            input_fields.add(n.slice.value)
+        elif isinstance(n, ast.Compare) and len(n.ops) == 1 and isinstance(n.ops[0], ast.In) \
+                and isinstance(n.left, ast.Constant) and isinstance(n.left.value, str) \
+                and n.comparators and _is_spec(n.comparators[0]):
+            input_fields.add(n.left.value)
+        elif isinstance(n, (ast.GeneratorExp, ast.ListComp, ast.SetComp)) \
+                and isinstance(n.elt, ast.Compare) and len(n.elt.ops) == 1 and isinstance(n.elt.ops[0], ast.In) \
+                and n.elt.comparators and _is_spec(n.elt.comparators[0]):   # all(k in gv for k in (...))
+            for gen in n.generators:
+                if isinstance(gen.iter, (ast.Tuple, ast.List, ast.Set)):
+                    input_fields |= {e.value for e in gen.iter.elts
+                                     if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+    input_fields = {f for f in input_fields
+                    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,60}", f)
+                    and not f.startswith("tolerance") and f != "rel_tol"}
     doc = inspect.getdoc(mod) or ""
     named = re.findall(r"^\s*\*\s+([a-z_]+\.[a-z0-9_]+)", doc, re.M)
     example = None
@@ -99,7 +134,8 @@ def _analyse(mod_path: str) -> Dict[str, Any]:
     if m:
         example = m.group(1).strip()
     return {"module": mod_path.rsplit(".", 1)[-1], "artifact_key": artifact, "artifact_keys": artifacts, "root_fields": sorted(root_fields),
-            "checks": checks, "named_checks": named, "fields": sorted(fields), "example": example}
+            "checks": checks, "named_checks": named, "fields": sorted(fields),
+            "input_fields": sorted(input_fields), "example": example}
 
 
 def schema_for(domain: str) -> Dict[str, Any]:
@@ -115,13 +151,18 @@ def schema_for(domain: str) -> Dict[str, Any]:
         return {"error": f"no verifier for domain '{domain}'",
                 "available": sorted({v.rsplit('.', 1)[-1] for v in _V.VERIFIERS.values()})}
     a = _analyse(mod)
-    props = {f: {"type": ["number", "string", "boolean", "array", "object"]} for f in a["fields"]}
+    # Serve the fields a claim FILLS (what each verify_* reads from its spec), not the wider set that
+    # validate_steps tolerates — the latter includes computed-output keys and would tell a caller to
+    # fill the answer. Fall back to the wide set only if a module reads its inputs through an
+    # unrecognised local (input_fields empty), so no domain loses its schema.
+    inp = a.get("input_fields") or a["fields"]
+    props = {f: {"type": ["number", "string", "boolean", "array", "object"]} for f in inp}
     return {"domain": a["module"], "artifact_key": a["artifact_key"],
             "packet": {"type": "object", "properties": {a["artifact_key"] or "SPEC": {
                 "type": "object", "properties": props, "additionalProperties": True}}},
             "checks": a["checks"], "named_checks": a["named_checks"], "example": a["example"],
-            "means": "fields are those each verify_* function reads from the artifact; a check fires when its "
-                     "trigger fields are present (see the module's run())"}
+            "means": "the properties are the fields a claim fills (what each verify_* reads from its spec); a "
+                     "check fires when its trigger fields are present (see the module's run())"}
 
 
 def validate_steps(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
