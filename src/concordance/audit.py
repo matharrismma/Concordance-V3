@@ -2218,6 +2218,257 @@ def _x_equation_system(text: str):
     return out
 
 
+# ── CALCULUS & ODE SOLUTION CHECK (2026-10-27) ───────────────────────────────────────────────────
+# "the derivative of x^2 is 2x", "the integral of 2x is x^2 + C", "the limit of sin(x)/x as x
+# approaches 0 is 1", and "y = e^x satisfies dy/dx = y" all returned INCOMPLETE for the same reason the
+# nonlinear-algebra forms did: the mathematics domain is modes, not a fillable packet, so no extractor
+# built the packet. These four extractors route the UNAMBIGUOUS phrasings to the existing symbolic
+# verifiers — derivative, integral, limit — and do the ODE check BY SUBSTITUTION through the equality
+# verifier (substitute the claimed solution for y, write each derivative as diff(...), and ask whether
+# the two sides reduce to the same thing). Nothing is solved; the claim is checked against itself.
+#
+# THE EXPRESSION NORMALIZER (_calc_normalize) is the piece the guarded _parse needs and does not have:
+# _parse runs plain sympify, which has NO implicit multiplication (so "2x" is a SyntaxError) and reads a
+# bare "e" as a free symbol, not Euler's number. The normalizer is a strict allowlist TOKENIZER, not a
+# regex rewrite: it emits "*" ONLY between unambiguously adjacent factors (2x, 2(x+1), (x+1)(x-1), )x),
+# maps "^"->"**", Euler's "e"->"E" and "inf"->"oo", keeps a known function as name(...) (so sin(x) is
+# never split into s*i*n*(x)), and DECLINES (returns None) on anything else — an unknown multi-letter run
+# ("xy", an unlisted function), a single letter applied like a function ("y(x+1)": product or call?), or
+# implicit multiplication right after a divided number ("1/2x": (1/2)x or 1/(2x)?). A normalization that
+# silently changed meaning would be worse than a miss, so every ambiguous case is a miss. The verifier
+# still owns the authoritative parse; the normalizer only produces a string its guard will accept.
+
+_CALC_FUNCS = frozenset({
+    "sin", "cos", "tan", "cot", "sec", "csc", "sinc", "asin", "acos", "atan", "acot", "asec", "acsc",
+    "sinh", "cosh", "tanh", "coth", "sech", "csch", "asinh", "acosh", "atanh",
+    "exp", "log", "ln", "sqrt", "cbrt", "Abs",
+})  # a subset of mathematics._ALLOWED_FUNCS; the verifier's AST guard owns the authoritative list
+_CALC_CONST = {"pi": "pi", "oo": "oo", "inf": "oo"}
+_CALC_TOKRE = re.compile(r"\d+(?:\.\d+)?|[A-Za-z]+|\*\*|''|'|[-+*/^()]|\s+")
+_CALC_SINGLE = re.compile(r"(?<![A-Za-z])[A-Za-z](?![A-Za-z])")
+
+
+def _calc_tokenize(src: str):
+    """A math-expression string -> a flat token list, or None if it holds any character that is not part
+    of an expression (so a stray '=', ',', or word punctuation fails closed)."""
+    s = (src or "").strip()
+    if not s:
+        return None
+    toks, pos = [], 0
+    for m in _CALC_TOKRE.finditer(s):
+        if m.start() != pos:                 # a gap means an unrecognized character sat between tokens
+            return None
+        pos = m.end()
+        g = m.group()
+        if not g.isspace():
+            toks.append(g)
+    return toks if pos == len(s) else None
+
+
+def _calc_assemble(toks, dep: str = None, X: str = None, Gf: str = None):
+    """Token list -> a sympy-parseable string, inserting '*' only at unambiguous factor adjacencies, or
+    None on any ambiguity. With dep/X/Gf set (the ODE case), the dependent letter is substituted by the
+    claimed solution Gf and its primes become diff(...): y -> (Gf), y' -> (diff(Gf, X)), y'' ->
+    (diff(diff(Gf, X), X)) — so the equality verifier recomputes the derivatives itself."""
+    if not toks:
+        return None
+    out, prev, num_after_div, i, n = [], None, False, 0, len(toks)
+    while i < n:
+        t = toks[i]
+        if t[0].isdigit():
+            kind, emit = "num", t
+        elif t[0].isalpha():
+            if dep is not None and t == dep:
+                order = 0
+                if i + 1 < n and toks[i + 1] == "''":
+                    order, i = 2, i + 1
+                elif i + 1 < n and toks[i + 1] == "'":
+                    order, i = 1, i + 1
+                emit = ("(" + Gf + ")" if order == 0
+                        else "(diff(" + Gf + ", " + X + "))" if order == 1
+                        else "(diff(diff(" + Gf + ", " + X + "), " + X + "))")
+                kind = "fac"
+            elif t in _CALC_FUNCS:
+                if i + 1 >= n or toks[i + 1] != "(":      # a known function must be applied: name(...)
+                    return None
+                kind, emit = "func", t
+            elif t.lower() in _CALC_CONST:
+                kind, emit = "fac", _CALC_CONST[t.lower()]
+            elif len(t) == 1:
+                kind, emit = "fac", ("E" if t == "e" else t)
+            else:
+                return None                                # an unknown multi-letter run is not a product
+        elif t in ("**", "^"):
+            kind, emit = "pow", "**"
+        elif t == "/":
+            kind, emit = "div", "/"
+        elif t in ("+", "-", "*"):
+            kind, emit = "op", t
+        elif t == "(":
+            kind, emit = "lparen", "("
+        elif t == ")":
+            kind, emit = "rparen", ")"
+        else:
+            return None                                    # a stray prime, comma, or other character
+        if prev in ("num", "rparen", "fac") and kind in ("num", "lparen", "fac", "func"):
+            if kind == "lparen" and prev == "fac":
+                return None                                # a single letter applied like a function: ambiguous
+            if prev == "num" and num_after_div:
+                return None                                # "1/2x": implicit mult after a divided number
+            out.append("*")
+        out.append(emit)
+        num_after_div = (prev == "div") if kind == "num" else False
+        prev = kind
+        i += 1
+    if prev in (None, "op", "div", "pow", "func", "lparen"):
+        return None                                        # dangling operator / open paren / bare function
+    return "".join(out)
+
+
+def _calc_normalize(src: str):
+    toks = _calc_tokenize(src)
+    return _calc_assemble(toks) if toks else None
+
+
+def _calc_lower_vars(s: str):
+    """the lowercase single-letter symbols in a normalized expression — used to pick the variable when the
+    phrasing does not name one (Euler's E is uppercase and multi-letter names are skipped by construction)."""
+    return {c for c in _CALC_SINGLE.findall(s) if c.islower()}
+
+
+_CALC_IS = r"(?:\bis\b|\bequals?\b|=)"
+_CALC_EXPR = r"[0-9A-Za-z+\-*/^().\s]"
+_CALC_PT = r"[0-9A-Za-z+\-*/^().\s]"
+_CALC_INF = re.compile(r"\binfinity\b", re.I)
+
+_DERIV = re.compile(
+    r"\b(?:the\s+)?derivative\s+of\s+(?P<f>" + _CALC_EXPR + r"{1,80}?)"
+    r"(?:\s+with\s+respect\s+to\s+(?P<wrt>[A-Za-z]))?"
+    r"\s+" + _CALC_IS + r"\s+(?P<g>" + _CALC_EXPR + r"{1,80}?)\s*[.?!]?\s*$", re.I)
+_DERIV_OP = re.compile(
+    r"\bd\s*/\s*d(?P<wrt>[A-Za-z])\s*\(\s*(?P<f>[0-9A-Za-z+\-*/^.\s]{1,80}?)\s*\)\s*"
+    r"" + _CALC_IS + r"\s+(?P<g>" + _CALC_EXPR + r"{1,80}?)\s*[.?!]?\s*$", re.I)
+_INTEG = re.compile(
+    r"\b(?:the\s+)?(?:integral|antiderivative)\s+of\s+(?P<f>" + _CALC_EXPR + r"{1,80}?)"
+    r"(?:\s+with\s+respect\s+to\s+(?P<wrt>[A-Za-z]))?"
+    r"\s+" + _CALC_IS + r"\s+(?P<g>" + _CALC_EXPR + r"{1,80}?)\s*[.?!]?\s*$", re.I)
+_LIMIT = re.compile(
+    r"\b(?:the\s+)?limit\s+of\s+(?P<f>" + _CALC_EXPR + r"{1,80}?)\s+as\s+(?P<v>[A-Za-z])"
+    r"(?:\s+approaches\s+|\s+goes\s+to\s+|\s+tends\s+to\s+|\s*->\s*|\s*→\s*)(?P<p>" + _CALC_PT + r"{1,30}?)"
+    r"\s+" + _CALC_IS + r"\s+(?P<g>" + _CALC_PT + r"{1,30}?)\s*[.?!]?\s*$", re.I)
+_ODE = re.compile(
+    r"\b(?:the\s+function\s+)?(?P<dep>[A-Za-z])\s*(?:\(\s*[A-Za-z]\s*\))?\s*=\s*"
+    r"(?P<sol>[0-9A-Za-z+\-*/^().\s]{1,80}?)\s+"
+    r"(?:satisfies|solves|is\s+(?:a\s+)?solutions?\s+(?:of|to))\s+"
+    r"(?P<ode>[0-9A-Za-z+\-*/^()'=.\s]{1,100}?)\s*[.?!]?\s*$", re.I)
+
+
+def _calc_quote(m):
+    return re.sub(r"\s+", " ", m.group(0)).strip()[:160]
+
+
+def _x_derivative(text: str):
+    """"the derivative of x^2 is 2x" / "d/dx(x^2) = 2x" -> mathematics.derivative. The variable is the one
+    named ("with respect to x", or the d/dx operator); otherwise the single variable in the function, or
+    nothing extracts. Both sides must normalize to a clean expression (0-FP)."""
+    out = []
+    for rx in (_DERIV, _DERIV_OP):
+        for m in rx.finditer(text):
+            f, g = _calc_normalize(m.group("f")), _calc_normalize(m.group("g"))
+            if f is None or g is None:
+                continue
+            var = m.group("wrt")
+            if not var:
+                vs = _calc_lower_vars(f)
+                if len(vs) != 1:
+                    continue                 # zero or many variables and none named: decline
+                var = next(iter(vs))
+            out.append((_calc_quote(m), "mathematics",
+                        {"mode": "derivative",
+                         "params": {"function": f, "variable": var, "claimed_derivative": g}}))
+    return out
+
+
+def _x_integral(text: str):
+    """"the integral of 2x is x^2 + C" -> mathematics.integral (the verifier differentiates the claimed
+    antiderivative and compares, so the "+ C" falls away correctly). Variable named, else the single
+    variable of the integrand, else nothing."""
+    out = []
+    for m in _INTEG.finditer(text):
+        f, g = _calc_normalize(m.group("f")), _calc_normalize(m.group("g"))
+        if f is None or g is None:
+            continue
+        var = m.group("wrt")
+        if not var:
+            vs = _calc_lower_vars(f)
+            if len(vs) != 1:
+                continue
+            var = next(iter(vs))
+        out.append((_calc_quote(m), "mathematics",
+                    {"mode": "integral",
+                     "params": {"integrand": f, "variable": var, "claimed_antiderivative": g}}))
+    return out
+
+
+def _x_limit(text: str):
+    """"the limit of sin(x)/x as x approaches 0 is 1" -> mathematics.limit. The variable, the point, and
+    the claimed value are all read from the phrasing ("infinity" -> oo); any side that will not normalize
+    extracts nothing."""
+    out = []
+    for m in _LIMIT.finditer(text):
+        f = _calc_normalize(m.group("f"))
+        p = _calc_normalize(_CALC_INF.sub("oo", m.group("p")))
+        g = _calc_normalize(_CALC_INF.sub("oo", m.group("g")))
+        if f is None or p is None or g is None:
+            continue
+        out.append((_calc_quote(m), "mathematics",
+                    {"mode": "limit",
+                     "params": {"function": f, "variable": m.group("v"), "point": p, "claimed_limit": g}}))
+    return out
+
+
+def _x_ode(text: str):
+    """"y = e^x satisfies dy/dx = y", "y = C*exp(2x) is a solution of y' = 2y" -> a mathematics `equality`
+    packet that SUBSTITUTES the claimed solution for y and writes each derivative as diff(...), so the
+    verifier reduces both sides and checks they agree (never solving the ODE). The independent variable is
+    read from the Leibniz form when present, else it is the single variable of the solution. The ODE must
+    actually contain a derivative of y, or nothing extracts (0-FP)."""
+    out = []
+    for m in _ODE.finditer(text):
+        dep = m.group("dep")
+        Gf = _calc_normalize(m.group("sol"))
+        ode = m.group("ode")
+        if Gf is None or ode.count("=") != 1:
+            continue
+        leib = re.search(r"\bd\s*" + re.escape(dep) + r"\s*/\s*d\s*([A-Za-z])", ode)
+        if leib:
+            X = leib.group(1)
+        else:
+            cands = _calc_lower_vars(Gf) - {dep}
+            if len(cands) != 1:
+                continue                      # cannot tell the independent variable: decline
+            X = next(iter(cands))
+        subs, saw_deriv, ok = [], False, True
+        for side in ode.split("="):
+            s = re.sub(r"\bd\s*\^?\s*2\s*" + re.escape(dep) + r"\s*/\s*d\s*" + re.escape(X) + r"\s*\^?\s*2",
+                       dep + "''", side)
+            s = re.sub(r"\bd\s*" + re.escape(dep) + r"\s*/\s*d\s*" + re.escape(X), dep + "'", s)
+            if dep + "'" in s.replace(" ", ""):
+                saw_deriv = True
+            toks = _calc_tokenize(s)
+            asm = _calc_assemble(toks, dep=dep, X=X, Gf=Gf) if toks else None
+            if asm is None:
+                ok = False
+                break
+            subs.append(asm)
+        if not ok or len(subs) != 2 or not saw_deriv:
+            continue
+        out.append((_calc_quote(m), "mathematics",
+                    {"mode": "equality",
+                     "params": {"expr_a": subs[0], "expr_b": subs[1], "variables": [X]}}))
+    return out
+
+
 _SUB_PHASE = re.compile(
     r"\bthe\s+(?P<prop>boiling|melting|freezing)\s+point\s+of\s+(?P<sub>[a-z][a-z ]{1,28}?)\s+"
     r"(?:is|are|=|equals?)\s+(?P<num>-?\d+(?:\.\d+)?)\s*(?:°|º|deg(?:rees?)?)?\s*(?:c\b|celsius|centigrade)\b", re.I)
@@ -2834,6 +3085,7 @@ _EXTRACTORS: Tuple[Tuple[str, Callable], ...] = (
     ("sum", _x_sum), ("product", _x_product), ("quotient", _x_quotient), ("arith_words", _x_arith_words),
     ("rational_roots", _x_rational_roots), ("substance", _x_substance),
     ("equation_solution", _x_equation_solution), ("equation_system", _x_equation_system),
+    ("derivative", _x_derivative), ("integral", _x_integral), ("limit", _x_limit), ("ode", _x_ode),
     ("expression", _x_expression),      # THE CLAIM GRAMMAR (Gen 3 · 3): a mixed/parenthesised expression
     ("power", _x_power), ("factorial", _x_factorial), ("sqrt", _x_sqrt),
     ("combinations", _x_combinations), ("permutations", _x_permutations),
