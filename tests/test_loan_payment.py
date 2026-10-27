@@ -91,3 +91,26 @@ def test_dscr_zero_false_positives():
     for t in ["the DSCR was fine last quarter",   # no amounts
               "24,000 NOI looks healthy"]:          # no debt service, no DSCR
         assert "dscr" not in _names(t), t
+
+
+# ---- balance-sheet identity (assets = liabilities + equity) = proof of reserves ----
+
+def test_balance_sheet_holds_any_order_and_reserves():
+    for t in ["assets of 1,000, liabilities of 600, and equity of 400",
+              "with 1,000 in assets, 600 in liabilities, and 400 in equity, the books balance",
+              "reserves of 1,000 against 600 in liabilities and 400 equity",   # proof of reserves
+              "equity of 400, assets of 1,000, liabilities of 600"]:            # scrambled order
+        assert "balance_sheet" in _names(t), t
+        r = audit(t, CFG, seal=False)
+        assert r["held"] == 1 and r["broken"] == 0, (t, r["results"])
+
+
+def test_balance_sheet_that_does_not_balance_breaks():
+    r = audit("assets of 1,000, liabilities of 600, and equity of 999", CFG, seal=False)  # 600+999 != 1000
+    assert r["broken"] == 1 and r["results"][0]["status"] == "MISMATCH"
+
+
+def test_balance_sheet_zero_false_positives_when_a_slot_is_missing():
+    for t in ["the company has strong assets",                 # only one label
+              "assets of 1000 and liabilities of 600"]:          # no equity
+        assert "balance_sheet" not in _names(t), t

@@ -441,6 +441,30 @@ def _x_dscr(text: str):
     return out
 
 
+def _x_balance_sheet(text: str):
+    """"assets of 1,000, liabilities of 600, and equity of 400" — the balance-sheet identity
+    (assets = liabilities + equity), GAAP/IFRS, which is also the proof-of-reserves check ('reserves'
+    reads as assets). Three labelled amounts — assets/reserves, liabilities, equity — each appearing
+    exactly once, in any order, with the label on either side of the number; a set that does not
+    balance breaks honestly, and a sentence missing any of the three extracts nothing (a miss stays a
+    miss). This is label-anchored, like a slot-filler, so word order does not matter."""
+    def _amt(label: str):
+        num = r"\d(?:[\d,]*\d)?(?:\.\d+)?"   # starts and ends in a digit: never eats a trailing comma
+        rx = (r"(?:" + label + r")\s*(?:of|=|:|at|are|is|totall?ing|worth|holds?)?\s*\$?\s*(" + num + r")"
+              r"|\$?\s*(" + num + r")\s*(?:k\b|thousand\b|million\b|billion\b)?\s*(?:in\s+|of\s+)?(?:" + label + r")")
+        hits = [(m.start(), m.end(), m.group(1) or m.group(2)) for m in re.finditer(rx, text, re.I)]
+        return hits[0] if len(hits) == 1 else None
+    a = _amt(r"assets?|reserves?")
+    li = _amt(r"liabilit(?:y|ies)|debts?\s+owed")
+    eq = _amt(r"equity|net\s+worth")
+    if not (a and li and eq):
+        return []
+    lo, hi = min(a[0], li[0], eq[0]), max(a[1], li[1], eq[1])
+    quote = re.sub(r"\s+", " ", text[lo:hi]).strip()[:160]
+    return [(quote, "finance",
+             {"FIN_VERIFY": {"assets": _f(a[2]), "liabilities": _f(li[2]), "equity": _f(eq[2])}})]
+
+
 def _x_rule72(text: str):
     out = []
     for m in re.finditer(r"(?:at\s*)?(\d+(?:\.\d+)?)\s*%[^.\n]{0,50}?doubl\w+[^.\n]{0,30}?"
@@ -2576,6 +2600,7 @@ _EXTRACTORS: Tuple[Tuple[str, Callable], ...] = (
     ("units_each", _x_each), ("percent", _x_percent),
     ("gross_pay", _x_gross_pay), ("annual_hourly", _x_annual_hourly),
     ("loan_payment", _x_loan_payment), ("ltv", _x_ltv), ("dscr", _x_dscr),
+    ("balance_sheet", _x_balance_sheet),
     ("compound_interest", _x_compound), ("rule_of_72", _x_rule72),
     ("hourly_annual", _x_hourly_annual), ("math_constant", _x_math_constant),
     ("elapsed_years", _x_elapsed_years), ("day_of_week", _x_day_of_week),
