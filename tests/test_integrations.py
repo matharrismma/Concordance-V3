@@ -206,6 +206,22 @@ def test_pid_loop_never_flips_a_broken_verdict():
     assert r["verdict"] == "BROKEN" and false_once.calls == 1   # stops at the band, never retries to pass
 
 
+class _OneField:
+    """A tiny model that fills only ONE field per round — it can converge only because the Markov
+    chain accumulates the fields across rounds."""
+    SEQ = ['{"loan_principal":12000}', '{"annual_rate":0.06}',
+           '{"loan_term_months":12}', '{"claimed_monthly_payment":1032.80}']
+    def __init__(self): self.calls = 0
+    def __call__(self, prompt):
+        out = self.SEQ[min(self.calls, len(self.SEQ) - 1)]; self.calls += 1; return out
+
+
+def test_pid_loop_accumulates_fields_across_rounds():
+    m = _OneField()
+    r = ce_translate.verify_text(_TIER2, model=m, max_rounds=6)
+    assert r["verdict"] == "HOLDS" and r["reached_by"] == "model" and m.calls == 4
+
+
 # ── PrimeIntellect reward (framework-free core): the engine as an un-hackable RL reward ──────
 
 def test_primeintellect_reward_is_the_verdict():

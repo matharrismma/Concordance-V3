@@ -51,16 +51,25 @@ def verify_text(text: str, *, model: Optional[Model] = None, seal: bool = False,
         res["reached_by"] = "none"
         return res
     feedback: Optional[str] = None
+    acc: Dict[str, Any] = {}        # the Markov chain's state — fields built up across rounds
+    acc_dom: Optional[str] = None
+    acc_ak: Optional[str] = None
     for _ in range(max(1, int(max_rounds))):
         steps, ctx = translate(text, model, config=config, feedback=feedback)
         if steps:
-            out = engine.verify(steps=steps, seal=seal, config=config)
-            if out.get("verdict") in ("HOLDS", "BROKEN"):     # reached the band — done, never flip it
+            dom = steps[0]["domain"]
+            ak = next(iter(steps[0]["spec"]))
+            if ak != acc_ak or dom != acc_dom:       # domain changed -> start a fresh accumulation
+                acc, acc_ak, acc_dom = {}, ak, dom
+            acc.update(steps[0]["spec"][ak])          # later rounds add and override earlier fields
+            merged = [{"id": "t", "domain": acc_dom, "spec": {acc_ak: dict(acc)}}]
+            out = engine.verify(steps=merged, seal=seal, config=config)
+            if out.get("verdict") in ("HOLDS", "BROKEN"):   # reached the band — done, never flip it
                 out["reached_by"] = "model"
-                out["proposed_packet"] = steps[0]["spec"]
+                out["proposed_packet"] = merged[0]["spec"]
                 return out
-            feedback = _feedback(ctx, "that packet did not reach a verifier (verdict "
-                                 + str(out.get("verdict")) + ")")
+            feedback = _feedback(ctx, "not reached yet (verdict " + str(out.get("verdict"))
+                                 + "); fields so far: " + ", ".join(acc.keys()))
         else:
             feedback = _feedback(ctx, ctx.get("note", "no packet was produced"))
     res["reached_by"] = "none"
