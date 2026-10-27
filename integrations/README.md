@@ -69,5 +69,18 @@ guard.validate("the monthly payment is 75,917.93")   # blocks only a provably-wr
 This is prepared as one package for review and iteration. For publication it splits cleanly into
 the names each ecosystem expects — `concordance-evals` (DeepEval + autoevals), `concordance-langgraph`,
 and `guardrails-ai-concordance` (Guardrails Hub) — each a thin shim over `concordance_integrations`.
-The split is a packaging step, not a code change. A PrimeIntellect `verifiers` environment that
-exposes the benchmark as un-hackable rewards is the next adapter and is not in this package yet.
+The split is a packaging step, not a code change.
+
+## PrimeIntellect (RL rewards)
+
+```python
+import verifiers as vf
+from concordance_integrations.primeintellect import load_environment, concordance_reward
+
+env = load_environment(dataset=my_dataset)   # reward = the Concordance verdict
+```
+
+The reward recomputes each completion's claim: `HOLDS` → 1.0, `BROKEN` → 0.0, un-checkable → 0.0
+(configurable). A model cannot game a reward it cannot fool, and a 0-false-positive oracle cannot be
+fooled — so this trains models to state exact, checkable numbers. `score_completion(...)` is the
+framework-free reward, usable without `verifiers`.

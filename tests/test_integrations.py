@@ -22,6 +22,7 @@ from concordance_integrations import deepeval as ce_deepeval  # noqa: E402
 from concordance_integrations import engine as ce_engine  # noqa: E402
 from concordance_integrations import guardrails as ce_guardrails  # noqa: E402
 from concordance_integrations import langgraph as ce_langgraph  # noqa: E402
+from concordance_integrations import primeintellect as ce_pi  # noqa: E402
 from concordance_integrations import verdict as ce_verdict  # noqa: E402
 
 _DOMAIN = "mathematics"   # always registered, fast, has a labelled true/false golden pair
@@ -132,6 +133,25 @@ def test_validate_text_blocks_only_counterexample():
     extract_true = {"extract": lambda value, meta: {"steps": TRUE_STEPS}}
     ok_pass, _, _ = ce_guardrails.validate_text("ignored", extract_true)
     assert ok_pass is True
+
+
+# ── PrimeIntellect reward (framework-free core): the engine as an un-hackable RL reward ──────
+
+def test_primeintellect_reward_is_the_verdict():
+    assert ce_pi.concordance_reward(completion="7 factorial is 5040") == 1.0      # HOLDS
+    assert ce_pi.concordance_reward(completion="7 factorial is 9999") == 0.0      # BROKEN
+    assert ce_pi.concordance_reward(completion=UNCHECKABLE) == 0.0                # abstain -> 0 for training
+
+
+def test_primeintellect_reward_reads_chat_and_honors_abstain():
+    assert ce_pi.score_completion([{"role": "assistant", "content": "15% of 200 is 30"}]) == 1.0
+    assert ce_pi.score_completion(UNCHECKABLE, abstain_reward=0.3) == 0.3
+
+
+def test_primeintellect_env_builds_when_verifiers_installed():
+    pytest.importorskip("verifiers")
+    env = ce_pi.load_environment()
+    assert env is not None and getattr(env, "rubric", None) is not None
 
 
 # ── framework shims — run only where the framework is installed ──────────────────────────────
