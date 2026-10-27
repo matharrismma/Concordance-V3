@@ -22,6 +22,7 @@ from concordance_integrations import deepeval as ce_deepeval  # noqa: E402
 from concordance_integrations import engine as ce_engine  # noqa: E402
 from concordance_integrations import guardrails as ce_guardrails  # noqa: E402
 from concordance_integrations import langgraph as ce_langgraph  # noqa: E402
+from concordance_integrations import models as ce_models  # noqa: E402
 from concordance_integrations import primeintellect as ce_pi  # noqa: E402
 from concordance_integrations import translate as ce_translate  # noqa: E402
 from concordance_integrations import verdict as ce_verdict  # noqa: E402
@@ -170,6 +171,12 @@ def test_the_model_cannot_make_a_false_claim_hold():
 def test_no_model_falls_back_to_an_honest_null():
     r = ce_translate.verify_text(_TIER2, model=None)
     assert r["reached_by"] == "none" and r["verdict"] != "HOLDS"
+
+
+def test_model_wrappers_construct_without_the_sdk():
+    # the SDK is imported lazily inside the call, so building a wrapper needs nothing installed
+    assert callable(ce_models.anthropic_model("claude-x"))
+    assert callable(ce_models.openai_model("gpt-x", base_url="https://openrouter.ai/api/v1"))
 
 
 # ── PrimeIntellect reward (framework-free core): the engine as an un-hackable RL reward ──────

@@ -42,7 +42,9 @@ r = verify_text("borrowing 12k at 6% over a year runs about 1032.80 a month", mo
 # r["reached_by"] is "extractor" (free), "model" (tail), or "none" (honest null)
 ```
 
-The core stays model-free; this layer sits in front of it.
+The core stays model-free; this layer sits in front of it. Ready-made wrappers
+(`concordance_integrations.models`) make it turnkey — `anthropic_model("…")` (uses `ANTHROPIC_API_KEY`),
+`openai_model("…", base_url=…)` for OpenAI or any compatible host — or pass your own `str -> str`.
 
 ## DeepEval / autoevals
 

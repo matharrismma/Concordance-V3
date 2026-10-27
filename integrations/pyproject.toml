@@ -34,6 +34,8 @@ deepeval = ["deepeval>=1.0"]
 langgraph = ["langgraph>=0.2"]
 guardrails = ["guardrails-ai>=0.4"]
 primeintellect = ["verifiers>=0.1"]
+anthropic = ["anthropic>=0.40"]       # a model backend for the edge translator (BYOM)
+openai = ["openai>=1.40"]             # OpenAI or any OpenAI-compatible host
 all = ["deepeval>=1.0", "langgraph>=0.2", "guardrails-ai>=0.4", "verifiers>=0.1"]
 dev = ["pytest>=8"]
 
