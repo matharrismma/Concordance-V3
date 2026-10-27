@@ -195,12 +195,16 @@ def _call_tool(name: str, args: dict, config: EngineConfig) -> Any:
         return _d.discern(str(args.get("text") or ""))
     if name == "find_verifier":
         from .. import domain_resolver as _dr, schema as _schema
-        r = _dr.resolve_domain(str(args.get("query") or ""))
+        # Breadth: ask the resolver for more candidates and serve more schemas, so the edge translator's
+        # planner can plan over more actions (the decision is k-independent; only the candidate LIST
+        # widens). resolve_domain's default k stays 3 everywhere else, so the confidence/entropy meta
+        # other callers read is unchanged.
+        r = _dr.resolve_domain(str(args.get("query") or ""), k=6)
         if isinstance(r, dict):
             doms = [r.get("decision")] + [c.get("domain") for c in (r.get("candidates") or [])]
             doms = [d for i, d in enumerate(doms) if d and d not in doms[:i]]
             r["domain"] = r.get("decision")
-            r["schemas"] = {d: _schema.schema_for(d) for d in doms[:3]}
+            r["schemas"] = {d: _schema.schema_for(d) for d in doms[:6]}
         return r
     if name == "seal_fetch":
         h = str(args.get("hash", ""))

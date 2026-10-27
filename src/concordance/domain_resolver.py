@@ -112,7 +112,13 @@ _SYNONYMS: Dict[str, Tuple[str, ...]] = {
                     "percent", "percentage"),
     "geometry": ("triangle", "rectangle", "circle", "area", "perimeter", "angle", "angles",
                  "radius", "diameter", "hypotenuse", "pythagorean", "cube", "volume", "cubic",
-                 "sphere", "cylinder", "prism", "surface area"),
+                 "sphere", "cylinder", "prism", "surface area", "circumference",
+                 # the implicit framings a geometric WORD PROBLEM uses without naming the shape
+                 # (reach, 2026-10-27): the classic right-triangle setup ("a ladder ... reaches ... up"),
+                 # triangle types, named polygons the angle-sum verifier handles, and the interior-angle cue.
+                 "right triangle", "right angle", "isosceles", "equilateral", "scalene", "legs",
+                 "ladder", "leaning", "interior angles", "polygon", "quadrilateral", "pentagon",
+                 "hexagon", "heptagon", "octagon", "nonagon", "decagon"),
     "number_theory": ("prime", "primes", "factor", "factors", "divisible", "remainder", "modulo",
                       "divisor", "divisors", "number of divisors", "factorial"),
     "combinatorics": ("choose", "combination", "combinations", "permutation", "permutations",
