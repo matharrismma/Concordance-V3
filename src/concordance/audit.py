@@ -189,6 +189,15 @@ def _x_grammar(text: str, want: str):
         if toks[i][0] not in ("num", "lp", "neg"):
             i += 1
             continue
+        # An exponent operand — the digit in "x^3" or "x**3" — belongs to the power the grammar
+        # disclaims ("^ ends an expression"); it must not seed a fresh expression, or a polynomial like
+        # "x^3 - 8 = 0" is misread as the false arithmetic "3 - 8 = 0". ^ precedes it, or ** (two stars —
+        # a single * is multiplication, e.g. "2*3", and must still start an expression).
+        if toks[i][0] == "num":
+            st = toks[i][2]
+            if st >= 1 and (text[st - 1] == "^" or (st >= 2 and text[st - 1] == "*" and text[st - 2] == "*")):
+                i += 1
+                continue
         r = _parse_expr(toks, i, text)
         if r is None:
             i += 1
@@ -1966,6 +1975,249 @@ def _x_rational_roots(text: str):
     return out
 
 
+# ── NONLINEAR-ALGEBRA SOLUTION CHECK (2026-10-27) ────────────────────────────────────────────────
+# "x^2 = 2 has solution x = 1.41421356", "x^3 - 8 = 0 has root x = 2", and the small system
+# "x^2 + y^2 = 25 and y = x has solution (3.5355, 3.5355)" all returned INCOMPLETE: the mathematics
+# domain is modes, not a fillable packet (schema.schema_for's mathematics branch), so the edge
+# translator could not reach it and no extractor built the packet. These extractors VERIFY BY
+# SUBSTITUTION — never by solving. A claimed value is put into the equation's residual field
+# R = LHS - RHS; a true root is where that field vanishes, R(value) == 0 (harmony); a wrong value
+# leaves R(value) != 0 (dissonance) -> MISMATCH.
+#
+# THE WINDOW is the claim's OWN stated precision, propagated through the equation. A value V written
+# to its last place is accurate to +/- half a unit there (base.stated_window); substituting it leaves
+# a residual of about |R'(V)| * (that half-unit), because the equation amplifies V's error by its local
+# slope (the divergence of the residual field at V). So the residual is divided by the local slope
+# |R'(V)| (a pure constant computed here, in plain Python, from the parsed polynomial) BEFORE it is
+# compared to the half-unit window: R(V)/|R'(V)| is, to first order, V's own distance from the true
+# root (one Newton step), judged against the precision V was written to. A value wrong beyond that place
+# lands past the window. The division is only the window's scale; the verifier still RECOMPUTES the
+# substitution R(V) itself (verify_numeric reads numeric_expr). When the slope is ~0 — a flat or
+# degenerate point (a double root) where first-order propagation is meaningless — nothing is extracted:
+# a miss stays a miss, never a guessed verdict. A one-significant-figure value earns no window (too
+# coarse to judge an irrational either way, cf. _x_sqrt) and is skipped UNLESS it is an exact root. The
+# expression must parse as a strict polynomial (the parser below rejects anything else, so another
+# letter from a surrounding word can never be read as a variable), which makes the substituted string
+# handed to the verifier always valid, guarded sympy input.
+
+def _parse_poly(expr: str, varlist):
+    """A polynomial over the given single-letter variables -> {exponent-tuple: coefficient} (exponents
+    in varlist order), or None when `expr` is not a clean sum of monomials over EXACTLY those variables.
+    Conservative (0-FP): an optional numeric coefficient (with or without '*'), variables with optional
+    integer powers (<=12), terms joined by + / -, no parentheses, no division, and NO other letter —
+    anything else returns None, so a word's letters are never mistaken for a variable."""
+    t = (expr or "").strip().replace("**", "^").replace(" ", "")
+    if not t:
+        return None
+    varalt = "|".join(re.escape(v) for v in varlist)
+    vp = r"(?:" + varalt + r")(?:\^\d+)?(?:\*(?:" + varalt + r")(?:\^\d+)?)*"   # a product of var^power factors
+    mono = re.compile(r"^(\d+(?:\.\d+)?)?(" + vp + r")?$")                      # [coeff] [vars]
+    mono_star = re.compile(r"^(\d+(?:\.\d+)?)\*(" + vp + r")$")                 # coeff * vars
+    fac = re.compile(r"(" + varalt + r")(?:\^(\d+))?")
+    terms: Dict[tuple, float] = {}
+    for raw in re.findall(r"[+-]?[^+-]+", t):
+        if raw in ("+", "-"):
+            return None
+        sign = -1.0 if raw[0] == "-" else 1.0
+        body = raw.lstrip("+-")
+        if not body:
+            return None
+        m = mono.match(body) or mono_star.match(body)
+        if not m:
+            return None
+        if m.group(1) is None and not m.group(2):
+            return None
+        coeff = (float(m.group(1)) if m.group(1) else 1.0) * sign
+        exps = [0] * len(varlist)
+        for fm in fac.finditer(m.group(2) or ""):
+            p = int(fm.group(2)) if fm.group(2) else 1
+            if p > 12:                              # cap the degree: never emit an expression bomb
+                return None
+            exps[varlist.index(fm.group(1))] += p
+        key = tuple(exps)
+        terms[key] = terms.get(key, 0.0) + coeff
+    return terms or None
+
+
+def _poly_add(a, b):
+    r = dict(a)
+    for k, v in b.items():
+        r[k] = r.get(k, 0.0) + v
+    return r
+
+
+def _poly_scale(a, f):
+    return {k: v * f for k, v in a.items()}
+
+
+def _poly_value(terms, point):
+    """R evaluated at `point` — pure Python float arithmetic (for the exactness/slope guards here; the
+    verifier recomputes the authoritative value from numeric_expr)."""
+    s = 0.0
+    for exps, c in terms.items():
+        p = c
+        for xi, e in zip(point, exps):
+            p *= xi ** e
+        s += p
+    return s
+
+
+def _poly_sensitivity(terms, point):
+    """Sum over the variables of |dR/dvar_i| at `point` — the residual field's local slope. Division by
+    this scales the raw residual to V's own distance from the root, so the stated-precision window applies
+    in the natural unit (and a flat point, slope ~0, is declined upstream)."""
+    total = 0.0
+    for i in range(len(point)):
+        d = 0.0
+        for exps, c in terms.items():
+            if exps[i] == 0:
+                continue
+            p = c * exps[i]
+            for j, (xj, e) in enumerate(zip(point, exps)):
+                p *= xj ** (e - 1 if j == i else e)
+            d += p
+        total += abs(d)
+    return total
+
+
+def _poly_sub_expr(terms, var_strs):
+    """Reconstruct the polynomial as a sympy-valid string with each variable replaced by its claimed
+    value string — the substitution the verifier recomputes. Deterministic from the parse, so it is
+    always valid guarded input (no implicit multiplication to mishandle)."""
+    parts = []
+    for exps, c in sorted(terms.items()):
+        fac = [repr(c)]
+        for vs, e in zip(var_strs, exps):
+            if e:
+                fac.append(vs + "**" + str(e))
+        parts.append("*".join(fac))
+    return " + ".join(parts) if parts else "0"
+
+
+_SOL_TAIL = re.compile(
+    r"\bhas\s+(?:an?\s+|the\s+)?(?:solution|root)\s+(?:of\s+)?"
+    r"(?P<var>[A-Za-z])\s*=\s*(?P<val>-?\d+(?:\.\d+)?)(?![A-Za-z0-9])", re.I)
+
+_SYS_TAIL = re.compile(
+    r"\bhas\s+(?:an?\s+|the\s+)?solutions?\s+(?:of\s+)?"
+    r"\(\s*(?P<v1>-?\d+(?:\.\d+)?)\s*,\s*(?P<v2>-?\d+(?:\.\d+)?)\s*\)", re.I)
+
+_SYS_EQS = re.compile(
+    r"(?P<e1l>[-+0-9A-Za-z*/^.\s]{1,80}?)=(?P<e1r>[-+0-9A-Za-z*/^.\s]{1,80}?)"
+    r"\s+and\s+"
+    r"(?P<e2l>[-+0-9A-Za-z*/^.\s]{1,80}?)=(?P<e2r>[-+0-9A-Za-z*/^.\s]{1,80}?)\s*$", re.I)
+
+
+def _x_equation_solution(text: str):
+    """"<poly in v> = <number> has (a/the)? (solution|root) (of)? v = <value>" -> a mathematics `numeric`
+    packet that substitutes the value into the residual R = LHS - RHS and checks R(value) == 0 within
+    the value's stated precision (propagated through |R'(value)|). Single variable, strict polynomial,
+    unambiguous "has (solution|root) v = value" connective; anything else extracts nothing (0-FP)."""
+    import math
+    from .verifiers.base import stated_window, hedged_before
+    out = []
+    for tm in _SOL_TAIL.finditer(text):
+        var, val = tm.group("var"), tm.group("val")
+        pre = text[:tm.start()]
+        VARE = re.escape(var)
+        term = r"(?:\d+(?:\.\d+)?\s*\*?\s*)?" + VARE + r"(?:\s*(?:\^|\*\*)\s*\d+)?|\d+(?:\.\d+)?"
+        poly = r"(?:[+\-]?\s*(?:" + term + r"))(?:\s*[+\-]\s*(?:" + term + r"))*"
+        em = re.search(r"(?P<expr>" + poly + r")\s*=\s*(?P<rhs>-?\d+(?:\.\d+)?)\s*$", pre)
+        if not em:
+            continue
+        expr, rhs = em.group("expr").strip(), em.group("rhs").strip()
+        if var not in expr or len(expr) > 120:
+            continue
+        lhs = _parse_poly(expr, [var])
+        rside = _parse_poly(rhs, [var])
+        if lhs is None or rside is None:
+            continue
+        resid = _poly_add(lhs, _poly_scale(rside, -1.0))
+        try:
+            point = [float(val)]
+        except ValueError:
+            continue
+        rval, s = _poly_value(resid, point), _poly_sensitivity(resid, point)
+        if not (math.isfinite(s) and math.isfinite(rval)) or abs(s) < 1e-12:
+            continue                                   # flat/degenerate: cannot propagate, a miss stays a miss
+        exact = abs(rval) <= 1e-9
+        if stated_window(val, hedged_before(text[:tm.start("val")])) is None and not exact:
+            continue                                   # one figure and not an exact root: too coarse to judge
+        vstr = ["(" + val + ")"]
+        numerator = "(" + _poly_sub_expr(lhs, vstr) + ") - (" + _poly_sub_expr(rside, vstr) + ")"
+        numeric_expr = "(" + numerator + ") / (" + repr(abs(s)) + ")"
+        quote = re.sub(r"\s+", " ", text[em.start("expr"):tm.end("val")]).strip()[:160]
+        out.append((quote, "mathematics",
+                    {"mode": "numeric",
+                     "params": {"numeric_expr": numeric_expr, "claimed_value": 0, "claimed_literal": val}}))
+    return out
+
+
+def _x_equation_system(text: str):
+    """"<eq1> and <eq2> has solution (a, b)" -> one residual-substitution check per equation, collapsed
+    into Max(|R_j(point)|/|slope_j|) so ALL must hold, judged at the (shared) stated precision. The two
+    single-letter variables are read off the equations (any multi-letter word -> decline, so a sentence's
+    words are never mistaken for variables) and the tuple is mapped to them in alphabetical order (the
+    standard "(x, y)"; a wrong order fails a non-symmetric system honestly). Values must share one stated
+    precision, or decline — one window cannot weight two. 0-FP: a wrong solution leaves a residual past
+    the window; any unparsed side, degenerate slope, or ambiguous form extracts nothing."""
+    import math
+    from .verifiers.base import stated_window, stated_precision, hedged_before
+    out = []
+    for tm in _SYS_TAIL.finditer(text):
+        vals = [tm.group("v1"), tm.group("v2")]
+        em = _SYS_EQS.search(text[:tm.start()])
+        if not em:
+            continue
+        sides = [em.group(g).strip() for g in ("e1l", "e1r", "e2l", "e2r")]
+        if any(len(s) > 120 for s in sides):
+            continue
+        letters, ok = [], True
+        for s in sides:
+            for run in re.findall(r"[A-Za-z]+", s):
+                if len(run) != 1:                       # a word (not a one-letter variable) -> not an equation
+                    ok = False
+                    break
+                letters.append(run)
+            if not ok:
+                break
+        varset = sorted(set(letters))
+        if not ok or len(varset) != 2:
+            continue
+        if stated_precision(vals[0]) != stated_precision(vals[1]):
+            continue                                    # mixed precision: one window cannot weight two -> decline
+        try:
+            point = [float(v) for v in vals]            # tuple -> variables in alphabetical order
+        except ValueError:
+            continue
+        vstr = ["(" + v + ")" for v in vals]
+        checks, all_exact, bad = [], True, False
+        for lstr, rstr in ((sides[0], sides[1]), (sides[2], sides[3])):
+            lhs, rside = _parse_poly(lstr, varset), _parse_poly(rstr, varset)
+            if lhs is None or rside is None:
+                bad = True
+                break
+            resid = _poly_add(lhs, _poly_scale(rside, -1.0))
+            rval, s = _poly_value(resid, point), _poly_sensitivity(resid, point)
+            if not (math.isfinite(s) and math.isfinite(rval)) or abs(s) < 1e-12:
+                bad = True
+                break
+            if abs(rval) > 1e-9:
+                all_exact = False
+            num = "(" + _poly_sub_expr(lhs, vstr) + ") - (" + _poly_sub_expr(rside, vstr) + ")"
+            checks.append("Abs((" + num + ") / (" + repr(abs(s)) + "))")
+        if bad or len(checks) != 2:
+            continue
+        if stated_window(vals[0], hedged_before(text[:tm.start()])) is None and not all_exact:
+            continue                                    # one figure and not exact: too coarse to judge
+        numeric_expr = "Max(" + ", ".join(checks) + ")"
+        quote = re.sub(r"\s+", " ", text[em.start("e1l"):tm.end()]).strip()[:160]
+        out.append((quote, "mathematics",
+                    {"mode": "numeric",
+                     "params": {"numeric_expr": numeric_expr, "claimed_value": 0, "claimed_literal": vals[0]}}))
+    return out
+
+
 _SUB_PHASE = re.compile(
     r"\bthe\s+(?P<prop>boiling|melting|freezing)\s+point\s+of\s+(?P<sub>[a-z][a-z ]{1,28}?)\s+"
     r"(?:is|are|=|equals?)\s+(?P<num>-?\d+(?:\.\d+)?)\s*(?:°|º|deg(?:rees?)?)?\s*(?:c\b|celsius|centigrade)\b", re.I)
@@ -2581,6 +2833,7 @@ def _x_archaeology(text: str):
 _EXTRACTORS: Tuple[Tuple[str, Callable], ...] = (
     ("sum", _x_sum), ("product", _x_product), ("quotient", _x_quotient), ("arith_words", _x_arith_words),
     ("rational_roots", _x_rational_roots), ("substance", _x_substance),
+    ("equation_solution", _x_equation_solution), ("equation_system", _x_equation_system),
     ("expression", _x_expression),      # THE CLAIM GRAMMAR (Gen 3 · 3): a mixed/parenthesised expression
     ("power", _x_power), ("factorial", _x_factorial), ("sqrt", _x_sqrt),
     ("combinations", _x_combinations), ("permutations", _x_permutations),
