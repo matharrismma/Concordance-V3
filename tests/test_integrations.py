@@ -23,6 +23,7 @@ from concordance_integrations import engine as ce_engine  # noqa: E402
 from concordance_integrations import guardrails as ce_guardrails  # noqa: E402
 from concordance_integrations import langgraph as ce_langgraph  # noqa: E402
 from concordance_integrations import primeintellect as ce_pi  # noqa: E402
+from concordance_integrations import translate as ce_translate  # noqa: E402
 from concordance_integrations import verdict as ce_verdict  # noqa: E402
 
 _DOMAIN = "mathematics"   # always registered, fast, has a labelled true/false golden pair
@@ -133,6 +134,42 @@ def test_validate_text_blocks_only_counterexample():
     extract_true = {"extract": lambda value, meta: {"steps": TRUE_STEPS}}
     ok_pass, _, _ = ce_guardrails.validate_text("ignored", extract_true)
     assert ok_pass is True
+
+
+# ── the edge translator: deterministic head, model tail, verdict always recomputed ──────────
+
+_GOOD = '{"loan_principal":12000,"annual_rate":0.06,"loan_term_months":12,"claimed_monthly_payment":1032.80}'
+_TIER2 = "mortgage: loan twelve thousand, rate six percent, term one year, claimed payment 1032.80 a month"
+
+
+class _Mock:
+    def __init__(self, text): self.text = text; self.calls = 0
+    def __call__(self, prompt): self.calls += 1; return "sure: " + self.text
+
+
+def test_tier1_uses_the_extractor_and_never_calls_the_model():
+    m = _Mock(_GOOD)
+    r = ce_translate.verify_text("a 12,000 loan at 6% annual over 12 months is 1032.80 a month", model=m)
+    assert r["verdict"] == "HOLDS" and r["reached_by"] == "extractor"
+    assert m.calls == 0   # the deterministic head handled it — the model is not paid for
+
+
+def test_tier2_lets_the_model_reach_the_verifier():
+    m = _Mock(_GOOD)
+    r = ce_translate.verify_text(_TIER2, model=m)   # word-number phrasing the extractors miss
+    assert r["verdict"] == "HOLDS" and r["reached_by"] == "model" and m.calls == 1
+    assert r["proposed_packet"]["RE_VERIFY"]["claimed_monthly_payment"] == 1032.80  # what was checked, shown
+
+
+def test_the_model_cannot_make_a_false_claim_hold():
+    m = _Mock(_GOOD.replace("1032.80", "5000"))   # the model proposes a false packet
+    r = ce_translate.verify_text(_TIER2, model=m)
+    assert r["verdict"] == "BROKEN"               # the engine recomputed — 0 FP preserved
+
+
+def test_no_model_falls_back_to_an_honest_null():
+    r = ce_translate.verify_text(_TIER2, model=None)
+    assert r["reached_by"] == "none" and r["verdict"] != "HOLDS"
 
 
 # ── PrimeIntellect reward (framework-free core): the engine as an un-hackable RL reward ──────

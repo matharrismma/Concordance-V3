@@ -23,6 +23,27 @@ A claim the engine could not check is **never** scored as a failure. Punishing t
 saying "I could not test this" would reward a model that answers only checkable things. That
 honesty is in the metadata every time.
 
+## Edge translator (natural language in)
+
+The core refuses to guess — it extracts only phrasings it recognises exactly. This puts a model in
+front of it to reach the rest, as a cascade: the deterministic extractors first (free, exact), then
+the model only for what they miss. The model **proposes what to check** (it fills the resolved
+domain's packet schema); the **engine always recomputes the verdict**, so the model cannot make a
+false claim HOLD — the zero-false-positive guarantee is untouched, and the result carries
+`proposed_packet` so you can see exactly what was checked.
+
+```python
+from concordance_integrations.translate import verify_text
+
+def my_model(prompt):              # bring your own — any str -> str
+    return client.responses.create(model="...", input=prompt).output_text
+
+r = verify_text("borrowing 12k at 6% over a year runs about 1032.80 a month", model=my_model)
+# r["reached_by"] is "extractor" (free), "model" (tail), or "none" (honest null)
+```
+
+The core stays model-free; this layer sits in front of it.
+
 ## DeepEval / autoevals
 
 ```python
