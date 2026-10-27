@@ -92,6 +92,13 @@ def verify_text(text: str, *, model: Optional[Model] = None, seal: bool = False,
         if out.get("verdict") in ("HOLDS", "BROKEN"):   # reached the band — done, never flip it
             out["reached_by"] = "model"
             out["proposed_packet"] = merged[0]["spec"]
+            # Carry the provenance (the covenant): the LLM predicted TEXT -> a candidate structure; the
+            # VERDICT is the engine's exact recompute. The prediction is a proposal, never trusted; the
+            # math is the only source of truth. This line is why a confident wrong packet still BREAKS.
+            out["provenance"] = {
+                "structure": "model-predicted from text (a proposal — not trusted)",
+                "verdict": "engine-recomputed by exact math (the only source of truth)",
+            }
             return out
         feedback = _feedback(best["ctx"], "not reached yet (verdict " + str(out.get("verdict"))
                              + "); fields so far: " + ", ".join(acc.keys()))

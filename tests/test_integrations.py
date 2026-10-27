@@ -270,6 +270,19 @@ def test_candidates_one_is_backward_compatible():
     assert r["verdict"] == "HOLDS" and r["reached_by"] == "model" and m.calls == 1
 
 
+def test_the_llm_predicts_text_the_math_is_the_verdict():
+    # "an LLM predicts text; we work with math." The model's packet is a predicted STRUCTURE; the
+    # verdict is the engine's exact recompute. A true claim carries that provenance explicitly...
+    r = ce_translate.verify_text(_TIER2, model=_Mock(_GOOD))
+    assert r["verdict"] == "HOLDS" and r["reached_by"] == "model"
+    assert r["provenance"]["verdict"].startswith("engine-recomputed")
+    assert "predicted" in r["provenance"]["structure"]
+    # ...and when the model confidently predicts a FALSE packet, the math overrides the text — BROKEN,
+    # no provenance of a pass, because the prediction is never the source of truth.
+    f = ce_translate.verify_text(_TIER2, model=_Mock(_GOOD.replace("1032.80", "5000")))
+    assert f["verdict"] == "BROKEN"
+
+
 # ── PrimeIntellect reward (framework-free core): the engine as an un-hackable RL reward ──────
 
 def test_primeintellect_reward_is_the_verdict():
