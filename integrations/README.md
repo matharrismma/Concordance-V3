@@ -46,6 +46,17 @@ The core stays model-free; this layer sits in front of it. Ready-made wrappers
 (`concordance_integrations.models`) make it turnkey — `anthropic_model("…")` (uses `ANTHROPIC_API_KEY`),
 `openai_model("…", base_url=…)` for OpenAI or any compatible host — or pass your own `str -> str`.
 
+**Onboard, no key.** The task is small (fill a JSON schema) and the engine is the backstop, so a tiny
+local model is the right fit: `ollama_model("qwen2.5:0.5b")` (`pip install ollama`, then
+`ollama pull qwen2.5:0.5b`) or `llamacpp_model("…/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf")`
+(`pip install llama-cpp-python` + a GGUF). A 0.5–1.5B model runs on CPU with no account.
+
+**PID correction loop.** `verify_text(…, model=…, max_rounds=3)` closes the loop: when the model's
+packet does not reach a verifier, the engine's error is fed back and the model tries again — it corrects
+only the rectified error ("did we reach the check"), stops the instant a verdict is reached, and never
+loops to turn a BROKEN into a HOLDS. That lets a small onboard model be nudged to a complete packet with
+the 0-false-positive guarantee untouched.
+
 ## DeepEval / autoevals
 
 ```python

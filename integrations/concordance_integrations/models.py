@@ -48,3 +48,40 @@ def openai_model(model: str, *, api_key: Optional[str] = None, base_url: Optiona
             messages=[{"role": "system", "content": _SYSTEM}, {"role": "user", "content": prompt}])
         return resp.choices[0].message.content or ""
     return call
+
+
+# ── Onboard (local, no API key) ──────────────────────────────────────────────────────────────
+# The translator's job is tiny — fill a JSON schema with the numbers in a sentence — and the engine
+# is the backstop (a mis-fill costs recall, never trust), so a very small local model is the right
+# fit. A 0.5–1.5B instruct model runs fine on CPU: Qwen2.5-0.5B/1.5B-Instruct, Llama-3.2-1B-Instruct,
+# or SmolLM2-1.7B-Instruct. Two ways to run it with no key:
+
+def ollama_model(model: str, *, host: Optional[str] = None, temperature: float = 0.0,
+                 options: Optional[dict] = None) -> Callable[[str], str]:
+    """A local model served by Ollama — no API key. `pip install ollama`, then e.g.
+    `ollama pull qwen2.5:0.5b`. `model` is the Ollama tag (e.g. 'qwen2.5:0.5b', 'llama3.2:1b')."""
+    def call(prompt: str) -> str:
+        import ollama
+        client = ollama.Client(host=host) if host else ollama
+        resp = client.generate(model=model, prompt=prompt, system=_SYSTEM,
+                                options={"temperature": temperature, **(options or {})})
+        return resp.get("response", "") if isinstance(resp, dict) else getattr(resp, "response", "")
+    return call
+
+
+def llamacpp_model(model_path: str, *, n_ctx: int = 2048, temperature: float = 0.0,
+                   max_tokens: int = 512, **kwargs) -> Callable[[str], str]:
+    """A local GGUF model via llama.cpp — no API key, no server. `pip install llama-cpp-python`,
+    then download a small GGUF (e.g. Qwen2.5-0.5B-Instruct-Q4_K_M.gguf from Hugging Face) and pass its
+    path. The model loads once, lazily, and is reused across calls."""
+    holder: dict = {"llm": None}
+
+    def call(prompt: str) -> str:
+        from llama_cpp import Llama
+        if holder["llm"] is None:
+            holder["llm"] = Llama(model_path=model_path, n_ctx=n_ctx, verbose=False, **kwargs)
+        out = holder["llm"].create_chat_completion(
+            messages=[{"role": "system", "content": _SYSTEM}, {"role": "user", "content": prompt}],
+            temperature=temperature, max_tokens=max_tokens)
+        return out["choices"][0]["message"]["content"] or ""
+    return call

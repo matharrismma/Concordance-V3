@@ -179,6 +179,33 @@ def test_model_wrappers_construct_without_the_sdk():
     assert callable(ce_models.openai_model("gpt-x", base_url="https://openrouter.ai/api/v1"))
 
 
+class _Staged:
+    """A model that returns an incomplete packet first, then a complete one — a weak model the PID
+    loop should correct."""
+    def __init__(self): self.calls = 0
+    def __call__(self, prompt):
+        self.calls += 1
+        return '{"loan_principal":12000}' if self.calls == 1 else _GOOD
+
+
+def test_pid_loop_corrects_a_weak_model():
+    m = _Staged()
+    r = ce_translate.verify_text(_TIER2, model=m, max_rounds=3)
+    assert r["verdict"] == "HOLDS" and r["reached_by"] == "model" and m.calls == 2   # converged
+
+
+def test_pid_loop_default_is_single_shot():
+    m = _Staged()
+    r = ce_translate.verify_text(_TIER2, model=m)   # max_rounds=1 -> no correction
+    assert r["reached_by"] == "none" and m.calls == 1
+
+
+def test_pid_loop_never_flips_a_broken_verdict():
+    false_once = _Mock(_GOOD.replace("1032.80", "5000"))
+    r = ce_translate.verify_text(_TIER2, model=false_once, max_rounds=5)
+    assert r["verdict"] == "BROKEN" and false_once.calls == 1   # stops at the band, never retries to pass
+
+
 # ── PrimeIntellect reward (framework-free core): the engine as an un-hackable RL reward ──────
 
 def test_primeintellect_reward_is_the_verdict():
