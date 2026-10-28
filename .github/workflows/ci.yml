@@ -33,3 +33,13 @@ jobs:
       - run: pip install -e ".[math,scribe,signing,dev]"
       - run: PYTHONPATH=src python -m pytest -q -m slow
       - run: PYTHONPATH=src python tools/mutate.py --sample 20 --seed 3 || true   # reported, not yet a hard gate
+  integrations:
+    # the scorer adapters: outside the core closure, installed on their own, run against the in-process engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[math,signing]" -e integrations/concordance_client
+      - run: for p in integrations/*/pyproject.toml; do d=$(dirname "$p"); [ "$d" = integrations/concordance_client ] || pip install -e "$d"; done
+      - run: PYTHONPATH=src python -m pytest -q integrations

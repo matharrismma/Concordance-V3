@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "concordance-client"
+version = "0.1.0"
+description = "The one client Concordance integrations share: verify, score, trace, receipt."
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = []
+
+[project.optional-dependencies]
+local = ["concordance"]
+
+[tool.setuptools]
+packages = ["concordance_client"]
