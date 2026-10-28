@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepeval-concordance"
+version = "0.1.0"
+description = "A DeepEval metric that recomputes the claim with Concordance and scores the verdict — no LLM judge."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = ["deepeval>=1.0", "concordance-client>=0.1.0"]
+
+[project.optional-dependencies]
+local = ["concordance"]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["deepeval_concordance"]
