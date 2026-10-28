@@ -329,7 +329,9 @@ def test_primeintellect_reward_reads_chat_and_honors_abstain():
 
 
 def test_primeintellect_env_builds_when_verifiers_installed():
-    pytest.importorskip("verifiers")
+    vf = pytest.importorskip("verifiers")
+    if not hasattr(vf, "Rubric"):
+        pytest.skip("verifiers>=0.4 API; adapter targets <0.4")
     env = ce_pi.load_environment()
     assert env is not None and getattr(env, "rubric", None) is not None
 

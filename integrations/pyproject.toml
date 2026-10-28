@@ -35,10 +35,10 @@ autoevals = ["autoevals>=0.0.100"]
 langgraph = ["langgraph>=0.2"]
 langchain = ["langchain-core>=0.3"]
 guardrails = ["guardrails-ai>=0.4"]
-primeintellect = ["verifiers>=0.1"]
+primeintellect = ["verifiers>=0.1,<0.4"]   # 0.4 moved to a v1 API without Rubric/SingleTurnEnv
 anthropic = ["anthropic>=0.40"]       # a model backend for the edge translator (BYOM)
 openai = ["openai>=1.40"]             # OpenAI or any OpenAI-compatible host
-all = ["deepeval>=1.0", "autoevals>=0.0.100", "langgraph>=0.2", "langchain-core>=0.3", "guardrails-ai>=0.4", "verifiers>=0.1"]
+all = ["deepeval>=1.0", "autoevals>=0.0.100", "langgraph>=0.2", "langchain-core>=0.3", "guardrails-ai>=0.4", "verifiers>=0.1,<0.4"]
 dev = ["pytest>=8"]
 
 [project.urls]

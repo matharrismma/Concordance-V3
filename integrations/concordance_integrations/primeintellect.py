@@ -72,6 +72,8 @@ def load_environment(dataset: Any = None, *, abstain_reward: float = 0.0,
     0-false-positive, un-hackable. Pass your own `dataset` (a HF Dataset with a prompt column);
     without one, a small default task set is used. Requires the `verifiers` package."""
     import verifiers as vf
+    if not hasattr(vf, "Rubric") or not hasattr(vf, "SingleTurnEnv"):
+        raise ImportError("verifiers>=0.4 moved to a different API; install verifiers<0.4 for this adapter")
 
     def reward(completion: Any = None, answer: Any = None, **kw: Any) -> float:
         return score_completion(completion, abstain_reward=abstain_reward, seal=seal)
