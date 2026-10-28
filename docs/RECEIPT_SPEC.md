@@ -170,6 +170,17 @@ exactly these bytes. A reflection whose `stands_on` all passed gets a `fault_loc
 (the math beneath it held; the input did not), `rule` for a pure one. A HOLDS at 98% of its allowance is a pass you would
 redo before building on it; the trace is where you see that.
 
+### 4b. The smallest bucket
+
+A hash table is the floor's data structure, and the memo is built on it: a step is keyed by
+`sha256({spec_hash, domain, engine version, verifier source fingerprint})`. A hit serves the verdict, detail,
+data and refutations stored the first time — never a recompute — and says so: the trail entry carries
+`memo {hit, key, verified_at, engine, verifier}`, the trace event `bucket: hit | miss`, the sealed record
+`data.bucket {hit, verified_at, engine}`, and the page a "served from the bucket" line. The key carries the
+verifier's own source hash, so changed code can never serve a stale verdict; ERRORs (timeouts, malformed
+input) are never memoised. `CONCORDANCE_MEMO=0` disables it. Everything above is buckets composed: a band is a
+neighborhood of buckets, a chain is buckets linked by `uses`, a document is a bucket of chains.
+
 ## 5. Documents
 
 A `kind: document` record is a root over steps (`spec_hash`, status, `uses`), a `derivation_seal` and

@@ -121,7 +121,8 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
         spec = _cas.fetch_spec(str(d.get("spec_hash") or "")) or {}
         steps.append({"id": vr.get("name"), "status": vr.get("status"), "detail": vr.get("detail", ""),
                       "domain": d.get("domain"), "spec": spec, "refutations": d.get("refutations") or {},
-                      "uses": list(d.get("uses") or []), "stratum": _stratum_of(d.get("domain"))})
+                      "uses": list(d.get("uses") or []), "stratum": _stratum_of(d.get("domain")),
+                      "bucket": d.get("bucket")})
     # the connections, transitively — what each step stands on down to the floor
     stands: Dict[str, list] = {}
     for st in steps:
@@ -143,6 +144,7 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
 <section class="step" data-domain="{esc(st['domain'] or '')}" data-key="{esc(art_key or '')}" data-wrap="{esc(json.dumps({k: v for k, v in st['spec'].items() if k != art_key}))}">
   <h2>Step {esc(st['id'])} <span class="v {esc(st['status'])}">{esc(st['status'])}</span> <span class="muted">{esc(st['stratum'])}{(' · stands on ' + esc(', '.join(st['stands_on']))) if st['stands_on'] else ' · floor'}</span></h2>
   <p class="detail">{esc(st['detail'])}</p>
+  {('<p class="muted">Served from the bucket: this exact packet was verified under engine ' + esc(st['bucket'].get('engine') or '') + ' and not recomputed.</p>') if st.get('bucket') else ''}
   {_narrow_html(st['refutations'])}
   {('<form class="recheck">' + fields + '<button type="submit">Re-check with these inputs</button><output></output></form>') if art else '<p class="muted">The packet for this step was not kept beside the seal.</p>'}
 </section>""")

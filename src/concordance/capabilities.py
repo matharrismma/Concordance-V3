@@ -74,6 +74,14 @@ def _ledger() -> Dict[str, Any]:
         return {"entries": None, "means": "ledger not readable in this process"}
 
 
+def _bucket() -> Dict[str, Any]:
+    try:
+        from . import bucket as B
+        return B.stats()
+    except Exception:  # noqa: BLE001
+        return {"buckets": None, "means": "bucket store not readable in this process"}
+
+
 def _transparency() -> Dict[str, Any]:
     try:
         from . import transparency as T
@@ -90,7 +98,7 @@ def statement(surface: str = "secular") -> Dict[str, Any]:
     from . import __version__
     return {"engine": "concordance", "version": __version__, "note": NOTE,
             "verifiers": _verifiers(), "tools": _tools(), "benchmark": _benchmark(), "ledger": _ledger(),
-            "transparency": _transparency(),
+            "transparency": _transparency(), "bucket": _bucket(),
             "limits": ["verifies arithmetic and formula application only — never clinical, legal, or "
                        "financial suitability",
                        "a plain-text claim is checked only where an extractor recognised a tight span; "

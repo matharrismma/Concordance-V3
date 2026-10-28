@@ -307,6 +307,7 @@ def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
         st = t.get("status")
         kind = ("reflection" if st == "MISMATCH" else "dark" if st in ("NOT_APPLICABLE", "ERROR") else "pass")
         ev = {"id": sid, "distance": d, "stratum": _stratum(t), "stands_on": floor, "spec_hash": t.get("spec_hash"),
+              "bucket": ("hit" if (t.get("memo") or {}).get("hit") else "miss"),
               "event": kind, "status": st,
               "used": m.get("used"), "tightest": m.get("tightest"), "read": m.get("read")}
         if kind == "reflection":
@@ -316,6 +317,7 @@ def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
     scored = [e for e in events if isinstance(e.get("used"), (int, float))]
     worst = max(scored, key=lambda e: e["used"]) if scored else None
     budget = {"events": len(events), "scored": len(scored),
+              "bucket_hits": sum(1 for e in events if e["bucket"] == "hit"),
               "worst_used": worst["used"] if worst else None,
               "worst_step": worst["id"] if worst else None,
               "worst_what": worst.get("tightest") if worst else None,
@@ -442,7 +444,10 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
             sr: Dict[str, Any] = {"status": "NOT_APPLICABLE",
                                   "detail": "unresolved binding(s): " + ", ".join(unresolved), "data": {}}
         else:
-            sr = verify_step(domain, spec)
+            # the smallest bucket: exactly these bytes under exactly this verifier — a hit is served, not recomputed
+            from . import bucket as _bucket
+            _sh = _spec_hash(spec)
+            sr = _bucket.through(domain, _sh, lambda: verify_step(domain, spec))
         st = sr["status"]
 
         entry: Dict[str, Any] = {
@@ -459,6 +464,8 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         # travel out, never the verifier's whole internal data dict.
         if sr.get("refutations"):
             entry["refutations"] = sr["refutations"]
+        if sr.get("memo"):
+            entry["memo"] = sr["memo"]
         _g = sr.get("data") or {}
         _framing = {k: _g[k] for k in ("framing_question", "need", "example", "route") if k in _g}
         if _framing:

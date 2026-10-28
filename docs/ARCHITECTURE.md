@@ -1,4 +1,4 @@
-# Architecture (generated — `python tools/architecture_gen.py`, version 3.0.0a0)
+# Architecture (generated — `python tools/architecture_gen.py`, version 3.0.0a1)
 
 ## The floor — seven primitives
 
@@ -16,7 +16,7 @@
 
 | what | count | means |
 |---|---|---|
-| core modules reached from the 8 tools | 54 (15,079 lines) | lazy import closure, `tools/closure.py` |
+| core modules reached from the 8 tools | 55 (16,753 lines) | lazy import closure, `tools/closure.py` |
 | verifier modules | 78 | distinct verifier modules registered (a module is one domain) |
 | named checks | 395 | named checks across modules (from each module's docstring list, else its verify_* functions) |
 | domain names accepted | 194 | domain names the dispatcher accepts, aliases included |
@@ -38,7 +38,7 @@ returns `SCHEMA_ERROR` naming the field (and its nearest valid name) on a mismat
 
 ## Modules
 
-Top-level: `__main__`, `airlock`, `audit`, `capabilities`, `cas`, `chess`, `compose`, `compute`, `config`, `constraints`, `context`, `derivation`, `discern`, `domain_resolver`, `domains`, `engine`, `gates`, `http_api`, `layers`, `ledger`, `packet`, `receipts`, `record`, `redact`, `schema`, `scribe`, `signing`, `slotfill`, `telemetry`, `text`, `tool_registry`, `transparency`, `validate`, `verifiers`
+Top-level: `__main__`, `airlock`, `audit`, `bucket`, `capabilities`, `cas`, `chess`, `compose`, `compute`, `config`, `constraints`, `context`, `derivation`, `discern`, `domain_resolver`, `domains`, `engine`, `gates`, `http_api`, `layers`, `ledger`, `packet`, `receipts`, `record`, `redact`, `schema`, `scribe`, `signing`, `slotfill`, `telemetry`, `text`, `tool_registry`, `transparency`, `validate`, `verifiers`
 
 Packages: `domains/`, `mcp/`, `scribe/`, `verifiers/`
 

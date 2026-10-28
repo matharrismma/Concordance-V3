@@ -74,4 +74,6 @@ and the receipt format. See `docs/VERSIONING.md`.
 - Margin and trace: every band carries `used` (share of tolerance spent); each step a `margin`; each
   derivation a `trace` (OTDR view: distance = depth in `uses`, event = pass | reflection | dark, used, off_by)
   and a `budget` (the worst event), sealed into the gate details and shown on the receipt page.
+- `bucket.py` — the smallest bucket: a verdict memo keyed by (packet bytes, domain, engine version, verifier
+  source fingerprint); hits are served and labelled on the trail, trace, record and page; errors never memoised.
 - `CLAUDE.md`: working notes and the non-negotiables for anyone (or any agent) working in this repo.

@@ -97,7 +97,10 @@ def record_from_derivation(result: Dict[str, Any], *, domain: str = "mathematics
                   "spec_hash": str(e.get("spec_hash", "")),
                   # the inverted reading is sealed too: which refutations were attempted, the bands, and any
                   # counterexample — the strongest artifact a receipt can hold travels in the permanent record
-                  **({"refutations": e["refutations"]} if e.get("refutations") else {})},
+                  **({"refutations": e["refutations"]} if e.get("refutations") else {}),
+                  # served from the smallest bucket or recomputed — a reader should know which
+                  **({"bucket": {"hit": True, "verified_at": e["memo"].get("verified_at"), "engine": e["memo"].get("engine")}}
+                     if (e.get("memo") or {}).get("hit") else {})},
         )
         for i, e in enumerate(trail)
     )

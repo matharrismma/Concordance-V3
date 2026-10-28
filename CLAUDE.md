@@ -51,6 +51,7 @@ src/concordance/
   verifiers/      one module per domain; ARTIFACT_KEY packets; plugins via entry-point group concordance.verifiers
   schema.py       AST-derived packet schemas; validate_steps
   receipts.py cas.py ledger.py signing.py   seal, store, chain, keys
+  bucket.py       the smallest bucket: verdict memo keyed by (spec_hash, domain, engine, verifier fingerprint)
   transparency.py COSE_Sign1 statements, Rekor rekord publication, attest sidecars (docs/RECEIPT_SPEC.md)
   compose.py      documents: trees of sealed steps, one root
   audit.py slotfill.py text.py discern.py    plain-text → packets, with honest coverage
