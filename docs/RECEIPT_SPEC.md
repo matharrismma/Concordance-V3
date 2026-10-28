@@ -170,6 +170,14 @@ exactly these bytes. A reflection whose `stands_on` all passed gets a `fault_loc
 (the math beneath it held; the input did not), `rule` for a pure one. A HOLDS at 98% of its allowance is a pass you would
 redo before building on it; the trace is where you see that.
 
+### 4a′. Energy
+
+`trace.budget.energy = Σ min(used, 1)²` over scored events, plus one unit per unscored reflection: the chain's
+total prediction error, in the predictive-coding sense — a pass at the edge of its allowance costs nearly as
+much as a miss, which is why it gets redone. The scribe reports energy per claim and per pass, and its staged
+loop is a valve: a pass whose energy rose for a claim is backflow — its bracket is not carried, the earlier
+stage stands, `backflow_rejected` is recorded. Energy can only fall from stage to stage.
+
 ### 4b. The smallest bucket
 
 A hash table is the floor's data structure, and the memo is built on it: a step is keyed by

@@ -124,6 +124,7 @@ def verify_matrix(writers, claim_ids, M, packets: Dict[str, List[Dict[str, Any]]
                 b = ref["bands"][0]
                 cell["band"] = [b.get("low"), b.get("high")]
                 cell["off_by"] = b.get("off_by")
+                cell["used"] = b.get("used")
             out[w][cid] = cell
     return out
 
@@ -161,8 +162,12 @@ def narrow_way(writers, claim_ids, M, verdicts) -> Dict[str, Any]:
                 mn = max(mn, lo) if lo is not None else mn
                 mx = min(mx, hi) if hi is not None else mx
             bracket = {"min": mn, "max": mx, "from": "surviving" if surviving else "stated, unverified"}
+        # the claim's energy: prediction error of every stated value, clamped — an eliminated value is a full unit
+        used = [verdicts[w][cid].get("used") for w in writers if M[writers.index(w)][j] is not None]
+        energy = sum(min(float(u), 1.0) ** 2 if isinstance(u, (int, float)) else 0.0 for u in used) + \
+                 sum(1.0 for w in writers if verdicts[w][cid]["verdict"] == "MISMATCH" and not isinstance(verdicts[w][cid].get("used"), (int, float)))
         out[cid] = {"band": band, "bracket": bracket, "eliminated": eliminated, "surviving": surviving,
-                    "unnarrowed": unknown,
+                    "unnarrowed": unknown, "energy": energy,
                     "state": ("narrowed" if band and (surviving or eliminated) else "un-narrowed")}
     return out
 
@@ -197,7 +202,9 @@ def score_pass(drafts: List[Dict[str, Any]], packets: Optional[Dict[str, List[Di
     n_narrowed = sum(1 for c in nw.values() if c["state"] == "narrowed")
     read = (f"{n_elim} stated value{'s' if n_elim != 1 else ''} eliminated by counterexample, {n_surv} inside "
             f"the band, across {n_narrowed} of {len(ids)} claims narrowed; status {status}")
-    report = {"status": status, "read": read, "writers": writers, "claim_ids": ids, "matrix": M, "spectrum": spec,
+    energy = sum(c.get("energy", 0.0) for c in nw.values())
+    read += f"; energy {energy:.3g}"
+    report = {"status": status, "read": read, "energy": energy, "writers": writers, "claim_ids": ids, "matrix": M, "spectrum": spec,
               "verdicts": verdicts, "broken": broken, "broken_total": sum(len(v) for v in broken.values()),
               "narrow_way": nw,
               "clean_writers": clean, "center": center, "divergent": divergent,
@@ -242,12 +249,16 @@ def feedback(report: Dict[str, Any], writer: str) -> str:
 def _carry(prev: Optional[Dict[str, Any]], rep: Dict[str, Any]) -> Dict[str, Any]:
     """Stage the brackets: a claim's bracket can only tighten from pass to pass, and a value eliminated once
     stays eliminated. Each pass is a rocket stage — it sheds what the verifier killed and hands the next pass a
-    narrower window, never a wider one."""
+    narrower window, never a wider one. The Tesla valve: flow forward is free; a pass whose energy ROSE for a
+    claim is backflow — its bracket is not carried, the earlier stage stands, and the rejection is recorded."""
     out: Dict[str, Any] = {}
     for cid, nw in rep["narrow_way"].items():
         p = (prev or {}).get(cid) or {}
         br = nw.get("bracket")
         pb = p.get("bracket")
+        rose = p.get("energy") is not None and nw.get("energy", 0.0) > p["energy"] + 1e-12
+        if rose:
+            br = pb    # backflow: keep the earlier, lower-energy stage
         if br and pb:
             lo, hi = max(br["min"], pb["min"]), min(br["max"], pb["max"])
             br = {"min": lo, "max": hi, "from": br["from"]} if lo <= hi else pb   # inconsistent → keep the older, tighter stage
@@ -255,6 +266,8 @@ def _carry(prev: Optional[Dict[str, Any]], rep: Dict[str, Any]) -> Dict[str, Any
             br = pb
         out[cid] = {"band": nw.get("band") or p.get("band"), "bracket": br,
                     "eliminated": list(p.get("eliminated") or []) + [e["value"] for e in nw["eliminated"]],
+                    "energy": min(nw.get("energy", 0.0), p["energy"]) if p.get("energy") is not None else nw.get("energy", 0.0),
+                    "energy_this_pass": nw.get("energy", 0.0), "backflow_rejected": rose,
                     "stage": (p.get("stage") or 0) + 1}
     return out
 

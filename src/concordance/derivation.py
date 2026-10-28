@@ -329,7 +329,11 @@ def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
         events.append(ev)
     scored = [e for e in events if isinstance(e.get("used"), (int, float))]
     worst = max(scored, key=lambda e: e["used"]) if scored else None
-    budget = {"events": len(events), "scored": len(scored),
+    # energy — the predictive-coding reading: each event's prediction error is its margin used (clamped to 1,
+    # squared), a reflection is a full unit of error. The chain's energy is what the scribe loop drives down;
+    # a pass at the edge costs almost as much as a miss, which is why it gets redone.
+    energy = sum(min(float(e["used"]), 1.0) ** 2 for e in scored) + sum(1.0 for e in events if e["event"] == "reflection" and not isinstance(e.get("used"), (int, float)))
+    budget = {"events": len(events), "scored": len(scored), "energy": energy,
               "bucket_hits": sum(1 for e in events if e["bucket"] == "hit"),
               "worst_used": worst["used"] if worst else None,
               "worst_step": worst["id"] if worst else None,
@@ -354,7 +358,9 @@ def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
                 e["fault_locus"] = ("data" if e["stratum"] == "applied" else "rule") + \
                                    f": every step it stands on passed ({', '.join(b['id'] for b in below)})"
     return {"events": events, "budget": budget, "strata": strata,
-            "means": "an OTDR trace of the derivation: distance is depth in the dependency graph, stands_on is every "
+            "means": "energy = Σ min(used,1)² over scored events (+1 per unscored reflection): the chain's total prediction "
+                     "error, which a correction loop must drive down; "
+                     "an OTDR trace of the derivation: distance is depth in the dependency graph, stands_on is every "
                      "step beneath it down to the floor, stratum is pure (commits to a rulebook, no tolerance) or "
                      "applied (commits to data and a band), used is the share of a step's tolerance the claim spent, "
                      "a reflection is a counterexample, dark is a step that could not run; the worst event is the "

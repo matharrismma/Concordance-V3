@@ -184,3 +184,38 @@ def test_holds_carries_a_bayesian_trust_from_benchmark_counts(tmp_path, monkeypa
     assert r["verdict"] == "HOLDS" and r["trust"]["read"].startswith("on 1,")
     bad = {"PUBFIN_VERIFY": dict(PKT["PUBFIN_VERIFY"], claimed_monthly_pi=1)}
     assert S._call_tool("verify", {"steps": [{"id": "m", "domain": "public_finance", "spec": bad}]}, EngineConfig())["trust"] is None
+
+
+def test_energy_and_the_valve():
+    from concordance.derivation import verify_derivation
+    from concordance.scribe import run
+    par = {"id": "par", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {
+        "net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}}
+    def debt(sid, claim):
+        return {"id": sid, "domain": "public_finance", "bind": {"PUBFIN_VERIFY.par": "par.actual_par"},
+                "spec": {"PUBFIN_VERIFY": {"par": 0, "annual_rate": 0.045, "term_months": 240, "interest_only_months": 24, "claimed_monthly_pi": claim}}}
+    e_clean = verify_derivation([par, debt("ok", 82815.95)])["trace"]["budget"]["energy"]
+    e_edge = verify_derivation([par, debt("edge", 82816.00)])["trace"]["budget"]["energy"]
+    e_miss = verify_derivation([par, debt("bad", 82900)])["trace"]["budget"]["energy"]
+    assert e_clean < e_edge < e_miss and e_miss >= 1.0            # a miss is a full unit; the edge costs most of one
+
+    pk = {"pi": [{"id": "m", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {
+        "par": 12_000_000, "annual_rate": 0.045, "term_months": 240, "claimed_monthly_pi": 0}}}]}
+
+    class W:
+        def __init__(self, name, seq):
+            self.name, self.seq, self.i = name, seq, 0
+
+        def write(self, spec, feedback=None):
+            v = self.seq[min(self.i, len(self.seq) - 1)]
+            self.i += 1
+            return {"claims": [{"id": "pi", "value": v}]}
+
+    # pass 1: one miss (energy 1, OPEN); pass 2: that writer corrects but two others regress (energy 2) →
+    # energy rose → the valve rejects the backflow and the pass-1 stage stands
+    reps = run([W("a", [75917.93, 70000]), W("b", [70000, 75917.92]), W("c", [75917.92, 71000])], "spec", pk, passes=2,
+               claim_ids=["pi"], value_key="claimed_monthly_pi")
+    s1, s2 = reps[0]["stages"]["pi"], reps[1]["stages"]["pi"]
+    assert s2["energy_this_pass"] > s1["energy"] and s2["backflow_rejected"] is True
+    assert s2["bracket"] == s1["bracket"] and s2["energy"] == s1["energy"]        # the earlier stage stands
+    assert reps[1]["energy"] >= 1.0 and "energy" in reps[1]["read"]
