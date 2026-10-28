@@ -47,7 +47,9 @@ def test_find_verifier_returns_the_schema():
 def test_every_registered_domain_has_a_schema():
     from concordance import verifiers as V
     V._load_plugins()
-    for mod in sorted({v.rsplit(".", 1)[-1] for v in V.VERIFIERS.values()}):
+    # core modules are addressed by basename; an installed plugin (entry point) by its registered domain
+    names = {v.rsplit(".", 1)[-1] if v.startswith("concordance.") else k for k, v in V.VERIFIERS.items()}
+    for mod in sorted(names):
         s = schema.schema_for(mod)
         assert "error" not in s, mod
         if mod != "mathematics":
