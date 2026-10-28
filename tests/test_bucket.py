@@ -8,8 +8,15 @@ from concordance.config import EngineConfig
 from concordance.derivation import verify_derivation
 from concordance.mcp import server as S
 
+import pytest
+
 STEP = {"id": "m", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {
     "par": 12_000_000, "annual_rate": 0.045, "term_months": 240, "claimed_monthly_pi": 75917.93}}}
+
+
+@pytest.fixture(autouse=True)
+def _memo_on(monkeypatch):
+    monkeypatch.setenv("CONCORDANCE_MEMO", "1")
 
 
 def test_hit_serves_the_same_verdict_and_says_so(tmp_path, monkeypatch):

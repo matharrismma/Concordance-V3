@@ -43,7 +43,7 @@ def mutate_once(path: str, rnd: random.Random):
 
 def run_domain_tests(mod: str) -> bool:
     """The per-domain tests are half of the gate (tools/check.py runs benchmark + suite). Detected if red."""
-    env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "src"))
+    env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "src"), CONCORDANCE_MEMO="0")   # a measurement is never served from the bucket
     tests = [t for t in glob.glob(os.path.join(ROOT, "tests", f"test_{mod}*.py"))]
     if not tests:
         return False
@@ -53,7 +53,7 @@ def run_domain_tests(mod: str) -> bool:
 
 
 def run_benchmark() -> bool:
-    env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "src"))
+    env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "src"), CONCORDANCE_MEMO="0")   # a measurement is never served from the bucket
     r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "benchmark.py"), "--json"],
                        capture_output=True, text=True, env=env, timeout=600)
     if r.returncode != 0:

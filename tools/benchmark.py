@@ -258,6 +258,7 @@ def emit_json(results, false_pos, false_neg, banded=None):
 
 def run(verbose: bool = True, as_json: bool = False):
     import os as _os
+    _os.environ["CONCORDANCE_MEMO"] = "0"      # the benchmark measures verifiers, never the bucket
     _os.environ.setdefault("CONCORDANCE_DATA_DIR",
                            _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "data"))
     cats = {"equality": [0, 0, 0, 0], "inequality": [0, 0, 0, 0], "derivative": [0, 0, 0, 0], "domain": [0, 0, 0, 0],

@@ -29,6 +29,9 @@ or vocabulary) enters this repo, its fixtures, its docs, or its examples. The fi
 - **Not a truth engine.** A numeric check names the band (`band()`) or bound (`bound()`) a true claim must
   respect; HOLDS is a survived refutation, BROKEN a re-runnable counterexample. New checks use these, never a bare
   `confirm`/`mismatch` on a numeric comparison. `read` and `refutations` travel with every verdict and into the seal.
+- **A measurement is never served from the bucket.** `bucket.py` memoises verdicts for production; the suite
+  (conftest), the benchmark, the coverage gate and the mutation tool all run with `CONCORDANCE_MEMO=0`. A gate
+  that reads a memo measures nothing — the coverage gate dropped to 2/443 the first time this was forgotten.
 - **Benchmark 0 false positives.** `tools/benchmark.py --check` (1,796 cases, four tiers). A verifier change
   that drops a case must be explained in `MEASURED.md`, not deleted from the data.
 - **Coverage gate.** `tools/unreached.py`: every `verify_*` function either executes under the benchmark or

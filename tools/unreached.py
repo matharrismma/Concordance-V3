@@ -24,7 +24,7 @@ ALLOWED = {
     "pressure_fighting.card": "data-bound: the combat grammar's card tables",
     "governance.domain_profile": "called by the engine's gate path, not by a verifier packet",
 }
-env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "src"))
+env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "src"), CONCORDANCE_MEMO="0")   # a measurement is never served from the bucket
 subprocess.run([sys.executable, "-m", "coverage", "run", "--include=src/concordance/verifiers/*",
                 "tools/benchmark.py", "--json"], cwd=ROOT, env=env, capture_output=True)
 subprocess.run([sys.executable, "-m", "coverage", "json", "-o", ".coverage.json", "-q"], cwd=ROOT, env=env, capture_output=True)

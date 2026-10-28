@@ -20,6 +20,10 @@ os.environ["WEB_FIND_DISABLED"] = "1"
 # clears the var and proves the refusal still holds.
 os.environ["CONCORDANCE_ALLOW_CODE_EXEC"] = "1"
 
+# Tests measure verifiers; a verdict served from the bucket (bucket.py) would hide a regression behind a memo.
+# Off suite-wide; tests/test_bucket.py turns it on for itself.
+os.environ["CONCORDANCE_MEMO"] = "0"
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 
