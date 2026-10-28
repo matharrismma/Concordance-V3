@@ -76,4 +76,7 @@ and the receipt format. See `docs/VERSIONING.md`.
   and a `budget` (the worst event), sealed into the gate details and shown on the receipt page.
 - `bucket.py` — the smallest bucket: a verdict memo keyed by (packet bytes, domain, engine version, verifier
   source fingerprint); hits are served and labelled on the trail, trace, record and page; errors never memoised.
+- `trust` on every HOLDS: Beta(1+FP, 1+n−FP) from `data/benchmark_last.json` (`tools/benchmark.py --record`),
+  mean and 95% upper bound on the false-pass rate, in capabilities and the verify response.
+- Plugins declare `STRATUM`; the scripture verifier pack (witness/canon) registers as `scripture`, pure.
 - `CLAUDE.md`: working notes and the non-negotiables for anyone (or any agent) working in this repo.

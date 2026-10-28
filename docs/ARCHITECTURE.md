@@ -17,9 +17,9 @@
 | what | count | means |
 |---|---|---|
 | core modules reached from the 8 tools | 55 (16,753 lines) | lazy import closure, `tools/closure.py` |
-| verifier modules | 78 | distinct verifier modules registered (a module is one domain) |
+| verifier modules | 79 | distinct verifier modules registered (a module is one domain) |
 | named checks | 395 | named checks across modules (from each module's docstring list, else its verify_* functions) |
-| domain names accepted | 194 | domain names the dispatcher accepts, aliases included |
+| domain names accepted | 195 | domain names the dispatcher accepts, aliases included |
 | MCP tools | 8 | verify, discern, find_verifier, seal_fetch, audit, scribe, capabilities, ledger_verify |
 | benchmark v2.2.0 | 1796 cases, 0 FP, 0 FN | `tools/benchmark.py --json` |
 

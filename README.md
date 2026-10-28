@@ -49,6 +49,11 @@ counterexample is the strongest thing a receipt can hold; a survival is only the
 response carries `read` (one sentence saying what the verdict is *not*) and `refutations`
 (`attempted / survived / counterexamples / not_applicable`, with every band); both are sealed into the record.
 
+A HOLDS also carries `trust`: the Bayesian discount on a survival, from the recorded benchmark counts —
+Beta(1+FP, 1+n−FP) on the false-pass rate (today: 1,796 cases, 0 FP → mean 0.06%, 95% upper 0.17%). A
+survival updates belief; a counterexample sets it to zero; `trust` is the prior on survival itself, from
+counts rather than confidence.
+
 HOLDS is not binary either. Every band carries `used` — the share of its tolerance the claim spent — and the
 derivation returns a `trace`: the chain shot like an OTDR, one event per step with its depth, its loss, and
 whether it reflected (a counterexample) or went dark. `trace.budget` names the tightest step; a chain that

@@ -1,0 +1,15 @@
+{
+ "version": "2.2.0",
+ "total": 1796,
+ "correct": 1796,
+ "false_positives": 0,
+ "false_negatives": 0,
+ "bands": {
+  "attempted": 2949,
+  "with_band": 1433,
+  "counterexamples_with_band": 414,
+  "counterexamples": 954
+ },
+ "recorded_at": "2026-10-28",
+ "means": "tools/benchmark.py --record; capabilities.trust() turns these counts into a Beta posterior"
+}

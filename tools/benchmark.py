@@ -12,6 +12,7 @@ Run: python tools/benchmark.py
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -256,7 +257,7 @@ def emit_json(results, false_pos, false_neg, banded=None):
                    ensure_ascii=False, indent=1))
 
 
-def run(verbose: bool = True, as_json: bool = False):
+def run(verbose: bool = True, as_json: bool = False, want_bands: bool = False):
     import os as _os
     _os.environ["CONCORDANCE_MEMO"] = "0"      # the benchmark measures verifiers, never the bucket
     _os.environ.setdefault("CONCORDANCE_DATA_DIR",
@@ -325,6 +326,8 @@ def run(verbose: bool = True, as_json: bool = False):
         print(f"FALSE-NEGATIVES (rejected a truth): {len(false_neg)}")
         for d, v in false_neg:
             print(f"  -- {d}  (verdict={v})")
+    if want_bands:
+        return n, corr, fp, fn, banded
     return n, corr, fp, fn
 
 
@@ -336,6 +339,18 @@ if __name__ == "__main__":
             raise SystemExit(1)
         print("every registered domain has a golden pair")
         raise SystemExit(0)
+    if "--record" in sys.argv:
+        # write data/benchmark_last.json — what capabilities.trust() reads to put a posterior on every HOLDS
+        import os as _os, time as _time
+        n, corr, fp, fn, banded = run(verbose=False, as_json=False, want_bands=True)
+        rec = {"version": BENCHMARK_VERSION, "total": n, "correct": corr, "false_positives": fp, "false_negatives": fn,
+               "bands": banded, "recorded_at": _time.strftime("%Y-%m-%d"),
+               "means": "tools/benchmark.py --record; capabilities.trust() turns these counts into a Beta posterior"}
+        out = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "data", "benchmark_last.json")
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(rec, f, indent=1)
+        print(json.dumps(rec))
+        raise SystemExit(1 if fp else 0)
     if "--json" in sys.argv:
         raise SystemExit(run(verbose=False, as_json=True))
     n, corr, fp, fn = run()

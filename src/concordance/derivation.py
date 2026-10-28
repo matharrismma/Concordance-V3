@@ -21,7 +21,7 @@ import json
 import logging
 import os
 import threading as _threading
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from . import verifiers as _verifiers
 from .validate import canonical_json_bytes, sha256_bytes
@@ -361,6 +361,15 @@ def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
                      "link budget; the floor under every step is its spec_hash — the commitment to exactly these bytes"}
 
 
+def _trust() -> Optional[Dict[str, Any]]:
+    try:
+        from .capabilities import trust
+        t = trust()
+        return t if t.get("available") else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _read(verdict: str, agg: Dict[str, int]) -> str:
     """One sentence that says what the verdict is NOT. HOLDS is not truth: it is the set of refutations that
     failed. BROKEN is a counterexample, which is a finding. The rest are facts about the engine."""
@@ -561,6 +570,8 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         "read": _read(verdict, agg),
         "refutations": agg,
         "trace": _trace(trail),
+        # the Bayesian discount on a survival, from the recorded benchmark counts — only a HOLDS carries one
+        "trust": _trust() if verdict == "HOLDS" else None,
         "steps": len(steps),
         "confirmed_steps": len(confirmed_ids),
         "broken_at": broken_at,

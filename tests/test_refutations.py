@@ -2,6 +2,8 @@
 BROKEN a re-runnable counterexample; the manifest is sealed into the record and read by the page."""
 from __future__ import annotations
 
+import pytest
+
 from concordance import cas
 from concordance.config import EngineConfig
 from concordance.derivation import refutations, verify_derivation
@@ -168,3 +170,17 @@ def test_trace_strata_and_connections_locate_the_fault():
     assert ev["bad"]["fault_locus"].startswith("data: every step it stands on passed")
     assert r["trace"]["strata"] == {"pure": 1, "applied": 2}
     assert all(e["spec_hash"] for e in r["trace"]["events"])                      # the floor under each event
+
+
+def test_holds_carries_a_bayesian_trust_from_benchmark_counts(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONCORDANCE_DATA_DIR", str(tmp_path))
+    from concordance.capabilities import _beta_upper, trust
+    t = trust()
+    if not t.get("available"):
+        pytest.skip("no recorded benchmark (tools/benchmark.py --record)")
+    assert t["false_positives"] == 0 and abs(t["p_false_pass_upper95"] - (1 - 0.05 ** (1 / (t["cases"] + 1)))) < 1e-9
+    assert abs(_beta_upper(3, 117) - 0.0628) < 1e-3
+    r = S._call_tool("verify", {"steps": [{"id": "m", "domain": "public_finance", "spec": PKT}]}, EngineConfig())
+    assert r["verdict"] == "HOLDS" and r["trust"]["read"].startswith("on 1,")
+    bad = {"PUBFIN_VERIFY": dict(PKT["PUBFIN_VERIFY"], claimed_monthly_pi=1)}
+    assert S._call_tool("verify", {"steps": [{"id": "m", "domain": "public_finance", "spec": bad}]}, EngineConfig())["trust"] is None
