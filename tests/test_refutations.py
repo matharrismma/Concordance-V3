@@ -151,3 +151,20 @@ def test_bound_reports_headroom():
     assert abs(bound("d", 1.60, 1.25, "min", "dscr").data["band"]["used"] - 1.25 / 1.60) < 1e-9   # 78% of the way to the floor
     assert abs(bound("d", 0.60, 0.80, "max", "ltv").data["band"]["used"] - 0.75) < 1e-9
     assert bound("d", 0.90, 0.80, "max", "ltv").data["band"]["used"] > 1
+
+
+def test_trace_strata_and_connections_locate_the_fault():
+    from concordance.derivation import verify_derivation
+    steps = [{"id": "n", "domain": "mathematics", "spec": {"mode": "numeric", "params": {"numeric_expr": "12000000*0.02", "claimed_value": 240000}}},
+             {"id": "par", "domain": "public_finance", "uses": ["n"], "spec": {"PUBFIN_VERIFY": {
+                 "net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}},
+             {"id": "bad", "domain": "public_finance", "bind": {"PUBFIN_VERIFY.par": "par.actual_par"}, "spec": {"PUBFIN_VERIFY": {
+                 "par": 0, "annual_rate": 0.045, "term_months": 240, "interest_only_months": 24, "claimed_monthly_pi": 82900}}}]
+    r = verify_derivation(steps)
+    ev = {e["id"]: e for e in r["trace"]["events"]}
+    assert ev["n"]["stratum"] == "pure" and ev["n"]["used"] is not None          # pure steps carry a margin too
+    assert ev["par"]["stratum"] == "applied" and ev["par"]["stands_on"] == ["n"]
+    assert ev["bad"]["stands_on"] == ["par", "n"] and ev["bad"]["distance"] == 3   # transitive, down to the floor
+    assert ev["bad"]["fault_locus"].startswith("data: every step it stands on passed")
+    assert r["trace"]["strata"] == {"pure": 1, "applied": 2}
+    assert all(e["spec_hash"] for e in r["trace"]["events"])                      # the floor under each event

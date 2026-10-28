@@ -55,6 +55,11 @@ def _read_of(rec: Dict[str, Any]) -> str:
     return "Not a truth engine: a check computes what can be computed and narrows the rest; HOLDS means survived, never proven."
 
 
+def _stratum_of(domain: Any) -> str:
+    from .derivation import _EXACT_DOMAINS
+    return "pure" if str(domain or "").lower() in _EXACT_DOMAINS else "applied"
+
+
 def _budget_html(rec: Dict[str, Any]) -> str:
     """The link budget line: the worst event on the chain, as a fiber tech would read an OTDR summary."""
     from html import escape as esc
@@ -115,7 +120,18 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
         d = vr.get("data") or {}
         spec = _cas.fetch_spec(str(d.get("spec_hash") or "")) or {}
         steps.append({"id": vr.get("name"), "status": vr.get("status"), "detail": vr.get("detail", ""),
-                      "domain": d.get("domain"), "spec": spec, "refutations": d.get("refutations") or {}})
+                      "domain": d.get("domain"), "spec": spec, "refutations": d.get("refutations") or {},
+                      "uses": list(d.get("uses") or []), "stratum": _stratum_of(d.get("domain"))})
+    # the connections, transitively — what each step stands on down to the floor
+    stands: Dict[str, list] = {}
+    for st in steps:
+        floor: list = []
+        for u in st["uses"]:
+            for x in [u] + stands.get(u, []):
+                if x not in floor:
+                    floor.append(x)
+        stands[st["id"]] = floor
+        st["stands_on"] = floor
     blocks = []
     for n, st in enumerate(steps):
         art_key = next((k for k, v in st["spec"].items() if isinstance(v, dict)), None)
@@ -125,7 +141,7 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
             for k, v in (art or {}).items())
         blocks.append(f"""
 <section class="step" data-domain="{esc(st['domain'] or '')}" data-key="{esc(art_key or '')}" data-wrap="{esc(json.dumps({k: v for k, v in st['spec'].items() if k != art_key}))}">
-  <h2>Step {esc(st['id'])} <span class="v {esc(st['status'])}">{esc(st['status'])}</span></h2>
+  <h2>Step {esc(st['id'])} <span class="v {esc(st['status'])}">{esc(st['status'])}</span> <span class="muted">{esc(st['stratum'])}{(' · stands on ' + esc(', '.join(st['stands_on']))) if st['stands_on'] else ' · floor'}</span></h2>
   <p class="detail">{esc(st['detail'])}</p>
   {_narrow_html(st['refutations'])}
   {('<form class="recheck">' + fields + '<button type="submit">Re-check with these inputs</button><output></output></form>') if art else '<p class="muted">The packet for this step was not kept beside the seal.</p>'}

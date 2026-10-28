@@ -149,7 +149,8 @@ def verify_math(spec: Dict[str, Any]) -> Dict[str, str]:
     except _Saturated:
         _log.warning("verify pool saturated mode=%s — shed to ERROR (errs safe)", mode)
         return {"status": "ERROR", "detail": "verifier busy (too many concurrent verifications) — retry shortly"}
-    return {"status": res.status, "detail": (res.detail or "")[:300], "data": dict(res.data or {})}
+    return {"status": res.status, "detail": (res.detail or "")[:300], "data": dict(res.data or {}),
+            "refutations": refutations([res])}
 
 
 def _reduce_domain_results(results: List[Any]) -> Dict[str, str]:
@@ -266,22 +267,47 @@ def verify_step(domain: str, spec: Dict[str, Any]) -> Dict[str, str]:
         return {"status": "ERROR", "detail": f"verifier raised: {type(exc).__name__}: {str(exc)[:200]}"}
 
 
+# The strata. Nothing is "applied" at the bottom: the substrate is commitment (these exact bytes, this hash,
+# these bindings) — the floor the system can see. Pure steps commit to a rulebook and carry no tolerance.
+# Applied steps commit to data and a band. The connections between them are the `uses`/`bind` edges, and
+# the trace shows them so an applied fault can be followed down to the exact steps it stood on.
+_EXACT_DOMAINS = frozenset({"mathematics", "math", "number_theory", "combinatorics", "polynomial", "formal_logic",
+                            "cryptography", "networking", "linear_algebra", "information_theory", "geometry",
+                            "probability", "statistics", "elliptic_curves", "riemann_accel"})
+
+
+def _stratum(t: Dict[str, Any]) -> str:
+    """By domain: pure domains commit to a rulebook (any tolerance there is a float-comparison concession,
+    not world data); everything else commits to data."""
+    return "pure" if str(t.get("domain") or "").lower() in _EXACT_DOMAINS else "applied"
+
+
 def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
     """The OTDR view of a derivation. Shoot the chain: every step is an event at a distance (its depth in the
     `uses` graph), with the loss it registered (margin used) and whether it reflected (a counterexample) or
     went dark (could not run). The link budget is the worst event on the chain — the tightest step decides
     whether the whole derivation clears, exactly as the worst splice decides a span."""
     depth: Dict[str, int] = {}
+    stands: Dict[str, List[str]] = {}
     events = []
     for t in trail:
         sid = str(t.get("id"))
-        d = 1 + max([depth.get(u, 0) for u in (t.get("uses") or [])] or [0])
+        uses = [str(u) for u in (t.get("uses") or [])]
+        d = 1 + max([depth.get(u, 0) for u in uses] or [0])
         depth[sid] = d
+        # the connections: everything this step stands on, transitively, down to the floor
+        floor: List[str] = []
+        for u in uses:
+            for x in [u] + stands.get(u, []):
+                if x not in floor:
+                    floor.append(x)
+        stands[sid] = floor
         ref = t.get("refutations") or {}
         m = ref.get("margin") or {}
         st = t.get("status")
         kind = ("reflection" if st == "MISMATCH" else "dark" if st in ("NOT_APPLICABLE", "ERROR") else "pass")
-        ev = {"id": sid, "distance": d, "event": kind, "status": st,
+        ev = {"id": sid, "distance": d, "stratum": _stratum(t), "stands_on": floor, "spec_hash": t.get("spec_hash"),
+              "event": kind, "status": st,
               "used": m.get("used"), "tightest": m.get("tightest"), "read": m.get("read")}
         if kind == "reflection":
             cx = (ref.get("counterexamples") or [{}])[0]
@@ -302,10 +328,22 @@ def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
     else:
         budget["read"] = (f"chain clears; tightest event {worst['id']} ({worst.get('tightest')}) at "
                           f"{worst['used']:.0%} of its allowance")
-    return {"events": events, "budget": budget,
-            "means": "an OTDR trace of the derivation: distance is depth in the dependency graph, used is the share of "
-                     "a step's tolerance the claim spent, a reflection is a counterexample, dark is a step that "
-                     "could not run; the worst event is the link budget"}
+    strata = {"pure": sum(1 for e in events if e["stratum"] == "pure"),
+              "applied": sum(1 for e in events if e["stratum"] == "applied")}
+    # where a fault sits relative to the floor: an applied reflection standing on clean pure steps is a data
+    # fault, not a math fault — the connections say so
+    for e in events:
+        if e["event"] == "reflection" and e["stands_on"]:
+            below = [x for x in events if x["id"] in e["stands_on"]]
+            if below and all(b["event"] == "pass" for b in below):
+                e["fault_locus"] = ("data" if e["stratum"] == "applied" else "rule") + \
+                                   f": every step it stands on passed ({', '.join(b['id'] for b in below)})"
+    return {"events": events, "budget": budget, "strata": strata,
+            "means": "an OTDR trace of the derivation: distance is depth in the dependency graph, stands_on is every "
+                     "step beneath it down to the floor, stratum is pure (commits to a rulebook, no tolerance) or "
+                     "applied (commits to data and a band), used is the share of a step's tolerance the claim spent, "
+                     "a reflection is a counterexample, dark is a step that could not run; the worst event is the "
+                     "link budget; the floor under every step is its spec_hash — the commitment to exactly these bytes"}
 
 
 def _read(verdict: str, agg: Dict[str, int]) -> str:

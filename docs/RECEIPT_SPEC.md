@@ -163,7 +163,11 @@ reports headroom as value/limit folded onto its constrained side). A step's `ref
 tightest band. The derivation's `trace` is the chain shot like a fiber span: one event per step with
 `distance` (depth in the `uses` graph), `event` (`pass` | `reflection` = counterexample | `dark` = could not
 run), `used`, and for a reflection `off_by`. `trace.budget` is the worst event — the link budget — and its
-`read` is sealed into `gate_results[0].details.budget`. A HOLDS at 98% of its allowance is a pass you would
+`read` is sealed into `gate_results[0].details.budget`. Each event also carries its `stratum` — `pure`
+(commits to a rulebook: mathematics, number theory, logic, …) or `applied` (commits to data and a band) — and
+`stands_on`, every step beneath it transitively; the floor under each is its `spec_hash`, the commitment to
+exactly these bytes. A reflection whose `stands_on` all passed gets a `fault_locus`: `data` for an applied step
+(the math beneath it held; the input did not), `rule` for a pure one. A HOLDS at 98% of its allowance is a pass you would
 redo before building on it; the trace is where you see that.
 
 ## 5. Documents
