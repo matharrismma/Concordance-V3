@@ -56,8 +56,8 @@ def _read_of(rec: Dict[str, Any]) -> str:
 
 
 def _stratum_of(domain: Any) -> str:
-    from .derivation import _EXACT_DOMAINS
-    return "pure" if str(domain or "").lower() in _EXACT_DOMAINS else "applied"
+    from .derivation import _stratum
+    return _stratum({"domain": domain})
 
 
 def _budget_html(rec: Dict[str, Any]) -> str:

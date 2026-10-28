@@ -158,7 +158,8 @@ def schema_for(domain: str) -> Dict[str, Any]:
     # unrecognised local (input_fields empty), so no domain loses its schema.
     inp = a.get("input_fields") or a["fields"]
     props = {f: {"type": ["number", "string", "boolean", "array", "object"]} for f in inp}
-    return {"domain": a["module"], "artifact_key": a["artifact_key"],
+    return {"domain": d if mod not in _V.VERIFIERS.get("_core", ()) and not mod.startswith("concordance.") else a["module"],
+            "artifact_key": a["artifact_key"],
             "packet": {"type": "object", "properties": {a["artifact_key"] or "SPEC": {
                 "type": "object", "properties": props, "additionalProperties": True}}},
             "checks": a["checks"], "named_checks": a["named_checks"], "example": a["example"],

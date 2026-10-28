@@ -278,8 +278,21 @@ _EXACT_DOMAINS = frozenset({"mathematics", "math", "number_theory", "combinatori
 
 def _stratum(t: Dict[str, Any]) -> str:
     """By domain: pure domains commit to a rulebook (any tolerance there is a float-comparison concession,
-    not world data); everything else commits to data."""
-    return "pure" if str(t.get("domain") or "").lower() in _EXACT_DOMAINS else "applied"
+    not world data); everything else commits to data. A plugin declares its own with a module-level
+    `STRATUM = "pure"` — a canon that is checked by hash is as exact as arithmetic."""
+    dom = str(t.get("domain") or "").lower()
+    if dom in _EXACT_DOMAINS:
+        return "pure"
+    try:
+        from . import verifiers as _V
+        _V._load_plugins()
+        path = _V.VERIFIERS.get(dom)
+        if path:
+            import importlib
+            return str(getattr(importlib.import_module(path), "STRATUM", "applied"))
+    except Exception:  # noqa: BLE001
+        pass
+    return "applied"
 
 
 def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
