@@ -41,7 +41,8 @@ def test_geometry_schema_serves_inputs_not_outputs():
 
 def test_every_domain_has_a_nonempty_input_schema():
     V._load_plugins()
-    for mod in sorted({v.rsplit(".", 1)[-1] for v in V.VERIFIERS.values()}):
+    names = {v.rsplit(".", 1)[-1] if v.startswith("concordance.") else k for k, v in V.VERIFIERS.items()}
+    for mod in sorted(names):   # core by basename; an installed plugin by its registered domain
         if mod in ("mathematics", "math"):
             continue
         props = _input_props(mod)
