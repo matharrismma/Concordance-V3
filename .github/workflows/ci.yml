@@ -40,6 +40,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install -e ".[math,signing]" -e integrations/concordance_client
-      - run: for p in integrations/*/pyproject.toml; do d=$(dirname "$p"); [ "$d" = integrations/concordance_client ] || pip install -e "$d"; done
-      - run: PYTHONPATH=src python -m pytest -q integrations
+      - run: pip install -e ".[math,signing]" -e "integrations[all,dev]" autoevals langchain-core
+      - run: PYTHONPATH=src python -m pytest -q tests/test_integrations.py integrations

@@ -4,12 +4,16 @@ Thin adapters that wrap one engine call (``engine.verify`` → ``verdict.read``)
 evaluation and agent frameworks teams already run. Each is a few lines of glue; the value is
 the receipt they carry back. Importing any adapter module never requires its framework.
 
-  - ``deepeval``   — a DeepEval metric + an autoevals/Braintrust scorer
-  - ``langgraph``  — a verify node for any callable-over-dict graph (LangGraph, AutoGen, …)
-  - ``guardrails`` — a Guardrails validator that blocks only a provably-wrong number
+  - ``deepeval``      — a DeepEval metric (+ the dict-shaped autoevals scorer)
+  - ``autoevals``     — an autoevals/Braintrust ``Scorer``
+  - ``langgraph``     — a verify node for any callable-over-dict graph, a verdict router, a LangChain tool
+  - ``guardrails``    — a Guardrails validator that blocks only a provably-wrong number
+  - ``primeintellect`` — the verdict as an RL reward
+  - ``translate`` / ``models`` — a model in front of the engine so loose phrasing reaches a verifier
 
 The one rule they share (``verdict``): HOLDS passes, BROKEN fails, everything else abstains —
-a claim the engine could not test is never scored as a failure.
+a claim the engine could not test is never scored as a failure. The one number they share
+(``Outcome.score``): HOLDS → 1 − 0.5·worst_used, BROKEN → 0.0, not checked → None.
 """
 from __future__ import annotations
 

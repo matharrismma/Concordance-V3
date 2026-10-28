@@ -31,12 +31,14 @@ dependencies = ["concordance>=3.0.0a0"]
 
 [project.optional-dependencies]
 deepeval = ["deepeval>=1.0"]
+autoevals = ["autoevals>=0.0.100"]
 langgraph = ["langgraph>=0.2"]
+langchain = ["langchain-core>=0.3"]
 guardrails = ["guardrails-ai>=0.4"]
 primeintellect = ["verifiers>=0.1"]
 anthropic = ["anthropic>=0.40"]       # a model backend for the edge translator (BYOM)
 openai = ["openai>=1.40"]             # OpenAI or any OpenAI-compatible host
-all = ["deepeval>=1.0", "langgraph>=0.2", "guardrails-ai>=0.4", "verifiers>=0.1"]
+all = ["deepeval>=1.0", "autoevals>=0.0.100", "langgraph>=0.2", "langchain-core>=0.3", "guardrails-ai>=0.4", "verifiers>=0.1"]
 dev = ["pytest>=8"]
 
 [project.urls]

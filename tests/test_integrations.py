@@ -18,6 +18,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "integrations"))
 
+from concordance_integrations import autoevals as ce_autoevals  # noqa: E402
 from concordance_integrations import deepeval as ce_deepeval  # noqa: E402
 from concordance_integrations import engine as ce_engine  # noqa: E402
 from concordance_integrations import guardrails as ce_guardrails  # noqa: E402
@@ -69,6 +70,25 @@ def test_verify_requires_exactly_one_input():
         ce_engine.verify(steps=TRUE_STEPS, claim="x")
 
 
+def test_score_is_margin_scaled_and_none_on_abstain():
+    # HOLDS: 1 - 0.5*worst_used (a chain with no banded checks spent nothing -> 1.0); BROKEN: 0.0; else None
+    held = ce_verdict.read(ce_engine.verify(steps=TRUE_STEPS, seal=False))
+    assert held.score == 1.0 and held.receipt()["score"] == 1.0 and held.counterexample is None
+    broke = ce_verdict.read(ce_engine.verify(steps=FALSE_STEPS, seal=False))
+    assert broke.score == 0.0 and broke.receipt()["budget"] is not None
+    assert ce_verdict.read({"verdict": "INCOMPLETE"}).score is None
+    banded = ce_verdict.Outcome("HOLDS", True, True, "", None, None, None, {"worst_used": 0.5}, None)
+    assert banded.score == 0.75
+
+
+def test_json_dispatch_default_extract():
+    assert ce_engine.payload_for(json.dumps({"steps": TRUE_STEPS})) == {"steps": TRUE_STEPS}
+    assert ce_engine.payload_for(UNCHECKABLE) == {"claim": UNCHECKABLE}
+    assert ce_engine.payload_for('{"mode": "x", "params": {"a": 1}}') == {"mode": "x", "params": {"a": 1}}
+    m = ce_deepeval.ConcordanceMetric()
+    assert m.measure(_Case(json.dumps({"steps": FALSE_STEPS}))) == 0.0 and m.metadata["verdict"] == "BROKEN"
+
+
 # ── DeepEval / autoevals scorer (framework-free core) ────────────────────────────────────────
 
 class _Case:
@@ -111,6 +131,18 @@ def test_node_writes_receipt():
     node = ce_langgraph.make_verify_node(lambda s: {"steps": s["steps"]})
     assert node({"steps": TRUE_STEPS})["concordance"]["passed"] is True
     assert node({"steps": FALSE_STEPS})["concordance"]["passed"] is False
+
+
+def test_node_input_key_form_and_router():
+    node = ce_langgraph.make_verify_node(input_key="answer", result_key="cc")
+    held = node({"answer": json.dumps({"steps": TRUE_STEPS})})
+    assert held["cc"]["passed"] is True and ce_langgraph.route_on_verdict(held, "cc") == "holds"
+    broke = node({"answer": "x", "packets": FALSE_STEPS})
+    assert ce_langgraph.route_on_verdict(broke, "cc") == "broken"
+    miss = node({"answer": UNCHECKABLE})
+    assert miss["cc"]["score"] is None and ce_langgraph.route_on_verdict(miss, "cc") == "unchecked"
+    with pytest.raises(KeyError):
+        node({})
 
 
 def test_node_fail_fast_raises_only_on_counterexample():
@@ -303,6 +335,24 @@ def test_primeintellect_env_builds_when_verifiers_installed():
 
 
 # ── framework shims — run only where the framework is installed ──────────────────────────────
+
+def test_autoevals_scorer_core_and_class():
+    r = ce_autoevals.score_output(json.dumps({"steps": TRUE_STEPS}))
+    assert r["name"] == "Concordance" and r["score"] == 1.0 and r["metadata"]["route"] == "steps"
+    assert ce_autoevals.score_output(UNCHECKABLE)["score"] is None
+    pytest.importorskip("autoevals")
+    from autoevals import Score
+    assert isinstance(ce_autoevals.Concordance()(output=UNCHECKABLE), Score)
+
+
+def test_langchain_tool_defined_only_when_installed():
+    try:
+        import langchain_core  # noqa: F401
+    except ImportError:
+        assert ce_langgraph.concordance_verify is None
+    else:
+        assert ce_langgraph.concordance_verify is not None
+
 
 def test_deepeval_basemetric_subclass_when_installed():
     pytest.importorskip("deepeval")
