@@ -40,5 +40,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install -e ".[math,signing]" -e "integrations[all,dev]" autoevals langchain-core
+      - run: pip install -e ".[math,signing]" -e "integrations[deepeval,autoevals,langgraph,langchain,guardrails,dev]"   # verifiers (PrimeIntellect) pulls a pytest plugin needing langchain; its test skips when absent
       - run: PYTHONPATH=src python -m pytest -q tests/test_integrations.py integrations
