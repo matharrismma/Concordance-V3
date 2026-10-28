@@ -214,6 +214,11 @@ def main() -> int:
         for p in record.get("parents") or []:
             print(f"  parent {p}")
         print("  re-check each spec_hash and the derivation seal with this tool to walk the tree.")
+    # the link budget — the worst event on the chain — then the trace step by step
+    for g in record.get("gate_results") or []:
+        b = (g.get("details") or {}).get("budget")
+        if b and b.get("read"):
+            print(f"BUDGET     {b['read']}")
     # the inverted reading: what was attempted, what survived, and any counterexample (the finding)
     for vr in record.get("verifier_results") or []:
         ref = (vr.get("data") or {}).get("refutations")
@@ -223,8 +228,9 @@ def main() -> int:
               f"survived {len(ref.get('survived') or [])}, counterexamples {len(ref.get('counterexamples') or [])}, "
               f"not attempted {len(ref.get('not_applicable') or [])}")
         for b in ref.get("bands") or []:
+            u = b.get("used")
             print(f"    {b.get('what')}: claim {b.get('claimed')} {'inside' if b.get('inside') else 'OUTSIDE'} "
-                  f"[{b.get('low')}, {b.get('high')}]")
+                  f"[{b.get('low')}, {b.get('high')}]" + (f"  used {u:.0%}" if isinstance(u, (int, float)) and u != float('inf') else ""))
         for c in ref.get("counterexamples") or []:
             print(f"    COUNTEREXAMPLE {c.get('what')}: claimed {c.get('claimed')}, recomputed {c.get('recomputed')}, off by {c.get('off_by')}")
     hard = [r for r in results if r[1] is False]

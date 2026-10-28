@@ -49,6 +49,11 @@ counterexample is the strongest thing a receipt can hold; a survival is only the
 response carries `read` (one sentence saying what the verdict is *not*) and `refutations`
 (`attempted / survived / counterexamples / not_applicable`, with every band); both are sealed into the record.
 
+HOLDS is not binary either. Every band carries `used` — the share of its tolerance the claim spent — and the
+derivation returns a `trace`: the chain shot like an OTDR, one event per step with its depth, its loss, and
+whether it reflected (a counterexample) or went dark. `trace.budget` names the tightest step; a chain that
+clears at 98% of its allowance is one you redo before you build on it.
+
 | verdict | meaning |
 |---|---|
 | `HOLDS` | survived every attempted refutation — shown **not false** by these checks, silent on anything they did not test |

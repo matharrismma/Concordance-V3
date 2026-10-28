@@ -117,3 +117,37 @@ def test_scribe_run_is_staged_brackets_only_tighten():
     assert reps[1]["stages"]["pi"]["stage"] == 2 and reps[1]["stages"]["pi"]["eliminated"] == [75000.0]
     br0, br1 = reps[0]["stages"]["pi"]["bracket"], reps[1]["stages"]["pi"]["bracket"]
     assert br1["min"] >= br0["min"] and br1["max"] <= br0["max"]
+
+
+def test_margin_and_trace_read_like_an_otdr(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONCORDANCE_DATA_DIR", str(tmp_path))
+    par = {"id": "par", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {
+        "net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}}
+    def debt(sid, claim):
+        return {"id": sid, "domain": "public_finance", "bind": {"PUBFIN_VERIFY.par": "par.actual_par"},
+                "spec": {"PUBFIN_VERIFY": {"par": 0, "annual_rate": 0.045, "term_months": 240,
+                                           "interest_only_months": 24, "claimed_monthly_pi": claim}}}
+    r = S._call_tool("verify", {"steps": [par, debt("tight", 82816.00), debt("bad", 82900)]}, EngineConfig())
+    ev = {e["id"]: e for e in r["trace"]["events"]}
+    assert ev["par"]["distance"] == 1 and ev["tight"]["distance"] == 2       # depth from `uses`
+    assert ev["par"]["event"] == "pass" and ev["par"]["used"] == 0.0
+    assert ev["tight"]["event"] == "pass" and 0.5 < ev["tight"]["used"] < 1   # inside, most of the cent spent
+    assert ev["bad"]["event"] == "reflection" and ev["bad"]["used"] > 1 and ev["bad"]["off_by"] > 80
+    b = r["trace"]["budget"]
+    assert b["worst_step"] == "bad" and b["reflections"] == 1 and b["read"].startswith("chain fails at bad")
+    # sealed: the budget is in the record and on the page
+    rec = cas.fetch(r["seal"]["content_hash"])
+    assert rec["gate_results"][0]["details"]["budget"]["worst_step"] == "bad"
+    from concordance import http_api
+    html = http_api._receipt_html(rec, r["seal"]["content_hash"]).decode()
+    assert "Link budget: chain fails at bad" in html and "margin:" in html
+    # a clean chain reports its tightest splice
+    r2 = S._call_tool("verify", {"steps": [par, debt("ok", 82815.95)]}, EngineConfig())
+    assert r2["trace"]["budget"]["read"].startswith("chain clears; tightest event ok")
+
+
+def test_bound_reports_headroom():
+    from concordance.verifiers.base import bound
+    assert abs(bound("d", 1.60, 1.25, "min", "dscr").data["band"]["used"] - 1.25 / 1.60) < 1e-9   # 78% of the way to the floor
+    assert abs(bound("d", 0.60, 0.80, "max", "ltv").data["band"]["used"] - 0.75) < 1e-9
+    assert bound("d", 0.90, 0.80, "max", "ltv").data["band"]["used"] > 1

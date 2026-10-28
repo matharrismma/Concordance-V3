@@ -55,6 +55,16 @@ def _read_of(rec: Dict[str, Any]) -> str:
     return "Not a truth engine: a check computes what can be computed and narrows the rest; HOLDS means survived, never proven."
 
 
+def _budget_html(rec: Dict[str, Any]) -> str:
+    """The link budget line: the worst event on the chain, as a fiber tech would read an OTDR summary."""
+    from html import escape as esc
+    for g in rec.get("gate_results") or []:
+        b = (g.get("details") or {}).get("budget")
+        if b and b.get("read"):
+            return f'<p class="muted">Link budget: {esc(b["read"])}.</p>'
+    return ""
+
+
 def _narrow_html(ref: Dict[str, Any]) -> str:
     """The narrow way for one step: the bands every true claim must lie in, the counterexample if there is
     one, and which refutations were attempted. Empty when the verifier has not yet adopted band()."""
@@ -80,6 +90,9 @@ def _narrow_html(ref: Dict[str, Any]) -> str:
         for b in ref.get("bands") or [])
     att, sur, cx = len(ref.get("attempted") or []), len(ref.get("survived") or []), ref.get("counterexamples") or []
     line = f"{att} refutation{'s' if att != 1 else ''} attempted, {sur} survived"
+    m = ref.get("margin") or {}
+    if m.get("read"):
+        line += f"; margin: {esc(m['read'])}"
     if cx:
         line += f", {len(cx)} counterexample{'s' if len(cx) != 1 else ''}"
     if ref.get("not_applicable"):
@@ -137,6 +150,7 @@ output{{grid-column:1/-1;white-space:pre-wrap;font-size:.9rem}}
 </style>
 <h1>Sealed record <span class="v {overall}">{overall}</span></h1>
 <p class="muted">{esc(_read_of(rec))}</p>
+{_budget_html(rec)}
 <p>Content hash <code>{esc(h)}</code>. The JSON at <a href="/s/{esc(h)}">/s/{esc(h)}</a>, hashed canonically with SHA-256, reproduces this hash — that is the whole claim of the seal. Changing inputs below recomputes a fresh verdict; it does not alter this record.</p>
 {_provenance_html(rec)}
 {''.join(blocks)}

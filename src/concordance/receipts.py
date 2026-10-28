@@ -106,6 +106,7 @@ def record_from_derivation(result: Dict[str, Any], *, domain: str = "mathematics
         status="PASS" if overall == "PASS" else "REJECT",
         reasons=[f"derivation verdict: {verdict}"],
         details={"verdict": verdict, "read": result.get("read"), "refutations": result.get("refutations"),
+                 "budget": (result.get("trace") or {}).get("budget"),
                  "steps": result.get("steps"),
                  "confirmed_steps": result.get("confirmed_steps"),
                  # error_at travels with the seal too: for a SYSTEM_ERROR, broken_at is correctly

@@ -68,8 +68,11 @@ def band(name: str, actual: float, claimed: float, tol: float, what: str = "valu
     lo, hi = actual - tol, actual + tol
     inside = lo <= claimed <= hi
     off = claimed - actual
+    # margin: how much of the allowance the claim spent — 0 is dead centre, 1 is the edge, >1 is outside.
+    # The OTDR reading of a check: a pass at 0.98 is a pass, but it is a splice you would redo.
+    used = (abs(off) / tol) if tol > 0 else (0.0 if off == 0 else float("inf"))
     bd = {"what": what, "low": lo, "high": hi, "actual": actual, "claimed": claimed, "tolerance": tol,
-          "inside": inside, "off_by": off, "unit": unit}
+          "inside": inside, "off_by": off, "used": used, "unit": unit}
     d = dict(data or {}, **{f"actual_{what}": actual, f"claimed_{what}": claimed, "band": bd})
     u = f" {unit}" if unit else ""
     if inside:
@@ -92,8 +95,15 @@ def bound(name: str, value: float, limit: float, kind: str, what: str = "value",
     lo, hi = (limit, None) if kind == "min" else (None, limit)
     inside = (value >= limit - tol) if kind == "min" else (value <= limit + tol)
     off = (value - limit)
+    # headroom for a bound: how close to the limit, as a share of the limit (0 = far, 1 = at the limit, >1 = over).
+    # A bound has no allowance to spend, so `used` is the ratio value/limit folded onto the constrained side.
+    if limit != 0:
+        used = (limit / value) if (kind == "min" and value != 0) else ((value / limit) if kind == "max" else float("inf"))
+        used = max(0.0, used)
+    else:
+        used = 0.0 if inside else float("inf")
     bd = {"what": what, "low": lo, "high": hi, "actual": value, "claimed": value, "tolerance": tol,
-          "inside": inside, "off_by": off, "unit": unit, "kind": kind}
+          "inside": inside, "off_by": off, "used": used, "unit": unit, "kind": kind}
     d = dict(data or {}, **{what: value, "band": bd})
     u = f" {unit}" if unit else ""
     sym = "≥" if kind == "min" else "≤"

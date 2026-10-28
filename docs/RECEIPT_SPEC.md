@@ -156,6 +156,16 @@ never as "true"; a counterexample is re-runnable from the sealed packet (`spec_h
 of survivals. Verifiers that have not yet adopted `band()` report status only; their `refutations` lists are
 still correct, their `bands` empty.
 
+### 4a. Margin and the trace — the OTDR view
+
+Every band carries `used = |off_by| / tolerance` (0 = dead centre, 1 = the edge, >1 = outside; a bound
+reports headroom as value/limit folded onto its constrained side). A step's `refutations.margin` is its
+tightest band. The derivation's `trace` is the chain shot like a fiber span: one event per step with
+`distance` (depth in the `uses` graph), `event` (`pass` | `reflection` = counterexample | `dark` = could not
+run), `used`, and for a reflection `off_by`. `trace.budget` is the worst event — the link budget — and its
+`read` is sealed into `gate_results[0].details.budget`. A HOLDS at 98% of its allowance is a pass you would
+redo before building on it; the trace is where you see that.
+
 ## 5. Documents
 
 A `kind: document` record is a root over steps (`spec_hash`, status, `uses`), a `derivation_seal` and

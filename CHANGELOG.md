@@ -71,4 +71,7 @@ and the receipt format. See `docs/VERSIONING.md`.
   documents with one stable map; `reveal_deep` puts context back into the response (never the seal);
   `context` in every verify/discern/scribe result names what travelled and where it was reapplied. Scribe
   writers see only the skeleton; `drafts_revealed` is the user's copy. compose strips title/labels/prose.
+- Margin and trace: every band carries `used` (share of tolerance spent); each step a `margin`; each
+  derivation a `trace` (OTDR view: distance = depth in `uses`, event = pass | reflection | dark, used, off_by)
+  and a `budget` (the worst event), sealed into the gate details and shown on the receipt page.
 - `CLAUDE.md`: working notes and the non-negotiables for anyone (or any agent) working in this repo.

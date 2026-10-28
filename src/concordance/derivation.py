@@ -193,7 +193,7 @@ def refutations(results: List[Any]) -> Dict[str, Any]:
     def _d(r):
         return (getattr(r, "data", None) if not isinstance(r, dict) else r.get("data")) or {}
     out = {"attempted": [], "survived": [], "counterexamples": [], "errored": [], "not_applicable": [],
-           "bands": []}
+           "bands": [], "margin": None}
     for r in results:
         n, st, d = _n(r), _st(r), _d(r)
         if st in ("CONFIRMED", "MISMATCH"):
@@ -208,7 +208,25 @@ def refutations(results: List[Any]) -> Dict[str, Any]:
             out["bands"].extend({"check": n, **b} for b in d["bands"] if isinstance(b, dict))
         elif isinstance(d.get("band"), dict):
             out["bands"].append({"check": n, **d["band"]})
+    # the step's margin: the tightest band is the one that decides whether this splice gets redone
+    scored = [b for b in out["bands"] if isinstance(b.get("used"), (int, float))]
+    if scored:
+        worst = max(scored, key=lambda b: b["used"])
+        out["margin"] = {"used": worst["used"], "tightest": worst.get("what"), "bands": len(scored),
+                         "read": _margin_read(worst["used"])}
     return out
+
+
+def _margin_read(used: float) -> str:
+    if used == float("inf"):
+        return "exact check: outside"
+    if used > 1:
+        return f"outside the allowance by {used - 1:.0%}"
+    if used >= 0.9:
+        return f"inside, but {used:.0%} of the allowance spent — redo this splice before building on it"
+    if used >= 0.5:
+        return f"inside, {used:.0%} of the allowance spent"
+    return f"inside with margin ({used:.0%} spent)"
 
 
 def verify_domain(domain: str, spec: Dict[str, Any]) -> Dict[str, str]:
@@ -246,6 +264,48 @@ def verify_step(domain: str, spec: Dict[str, Any]) -> Dict[str, str]:
         return verify_domain(domain, spec or {})     # a MATH_VERIFY packet routes like any other domain
     except Exception as exc:  # noqa: BLE001 — fail closed
         return {"status": "ERROR", "detail": f"verifier raised: {type(exc).__name__}: {str(exc)[:200]}"}
+
+
+def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The OTDR view of a derivation. Shoot the chain: every step is an event at a distance (its depth in the
+    `uses` graph), with the loss it registered (margin used) and whether it reflected (a counterexample) or
+    went dark (could not run). The link budget is the worst event on the chain — the tightest step decides
+    whether the whole derivation clears, exactly as the worst splice decides a span."""
+    depth: Dict[str, int] = {}
+    events = []
+    for t in trail:
+        sid = str(t.get("id"))
+        d = 1 + max([depth.get(u, 0) for u in (t.get("uses") or [])] or [0])
+        depth[sid] = d
+        ref = t.get("refutations") or {}
+        m = ref.get("margin") or {}
+        st = t.get("status")
+        kind = ("reflection" if st == "MISMATCH" else "dark" if st in ("NOT_APPLICABLE", "ERROR") else "pass")
+        ev = {"id": sid, "distance": d, "event": kind, "status": st,
+              "used": m.get("used"), "tightest": m.get("tightest"), "read": m.get("read")}
+        if kind == "reflection":
+            cx = (ref.get("counterexamples") or [{}])[0]
+            ev["off_by"] = cx.get("off_by")
+        events.append(ev)
+    scored = [e for e in events if isinstance(e.get("used"), (int, float))]
+    worst = max(scored, key=lambda e: e["used"]) if scored else None
+    budget = {"events": len(events), "scored": len(scored),
+              "worst_used": worst["used"] if worst else None,
+              "worst_step": worst["id"] if worst else None,
+              "worst_what": worst.get("tightest") if worst else None,
+              "reflections": sum(1 for e in events if e["event"] == "reflection"),
+              "dark": sum(1 for e in events if e["event"] == "dark")}
+    if worst is None:
+        budget["read"] = "no banded checks on this chain; nothing to budget"
+    elif worst["used"] > 1:
+        budget["read"] = f"chain fails at {worst['id']} ({worst.get('tightest')}): outside its allowance"
+    else:
+        budget["read"] = (f"chain clears; tightest event {worst['id']} ({worst.get('tightest')}) at "
+                          f"{worst['used']:.0%} of its allowance")
+    return {"events": events, "budget": budget,
+            "means": "an OTDR trace of the derivation: distance is depth in the dependency graph, used is the share of "
+                     "a step's tolerance the claim spent, a reflection is a counterexample, dark is a step that "
+                     "could not run; the worst event is the link budget"}
 
 
 def _read(verdict: str, agg: Dict[str, int]) -> str:
@@ -442,6 +502,7 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         "verdict": verdict,
         "read": _read(verdict, agg),
         "refutations": agg,
+        "trace": _trace(trail),
         "steps": len(steps),
         "confirmed_steps": len(confirmed_ids),
         "broken_at": broken_at,
