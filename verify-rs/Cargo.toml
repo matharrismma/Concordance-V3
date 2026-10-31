@@ -1,0 +1,36 @@
+[package]
+name = "concordance-verify"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Independent, dependency-light re-checker for concordance-receipt/3.x seals (hash, Ed25519/COSE, ML-DSA, and the exact-arithmetic certificate)."
+
+[[bin]]
+name = "concordance-verify"
+path = "src/main.rs"
+
+[lib]
+name = "concordance_verify"
+path = "src/lib.rs"
+
+[dependencies]
+# arbitrary_precision preserves a number's original text, so re-serializing the record reproduces
+# Python's json.dumps bytes exactly (floats included) — the content_hash matches byte-for-byte.
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+ciborium = "0.2"        # CBOR: decode COSE_Sign1, build the Sig_structure
+num-bigint = "0.4"
+num-rational = "0.4"
+num-traits = "0.2"
+ed25519-dalek = "2"
+# Post-quantum (FIPS-204) — enable to verify attest.pq (ML-DSA-65). Pending:
+# ml-dsa = "0.1"            # RustCrypto (preferred once stable)
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+panic = "abort"
+codegen-units = 1
