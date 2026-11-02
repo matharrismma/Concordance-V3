@@ -47,3 +47,96 @@ Not done: PyPI publish and the GitHub Release (both need the owner's credentials
 an issuer key on the production box (`python -m concordance keygen`, see RUNBOOK) — until then production
 receipts say "self-attested"; 
 Tests skipped from v2 are listed in tests/SKIPPED_FROM_V2.txt (all org-module tests).
+
+## Halting and order-freedom of the derivation closure (2026-11-02, at 94b55dd)
+
+The benchmark's 1,796 cases are single steps, so the closure that composes steps is measured on the derivation
+tier, `tests/fixtures/derivation_tier.py`: every listing of two or more steps, or a cycle, that the tests hand to
+`verify_derivation`, each as its source writes it. One more, a body whose test stubs the verifier, is excluded
+and not measured. Both tools force the memo off, keep every store in a temporary directory, warm the verifiers
+first and measure one derivation at a time. `tests/test_measured_derivations.py` computes every number below
+again from the tools and fails if one is stale.
+
+**Measurement 1, how the closure halts:** `PYTHONPATH=src python tools/halt_telemetry.py --json halt.json`
+
+| halting | benchmark | tier |
+|---|---|---|
+| derivations | 1,796 | 63 |
+| by halt.passes | 2: 1,796 | 1: 1, 2: 53, 3: 6, 4: 1, 7: 1, 1501: 1 |
+| cap fired | 0 | 0 |
+| INCOMPLETE | 1 | 15 |
+| SYSTEM_ERROR | 2 | 2 |
+
+A pass in which nothing moves ends the closure, so a single step takes 2 passes and a chain of k steps listed in
+reverse takes k + 1. The cap is k + 1 passes and fires only where `halt.reason` is "cap": it never did. Every
+INCOMPLETE and SYSTEM_ERROR, with the causes its trail shows:
+
+- benchmark INCOMPLETE `lighthouse:d6a2ca4b1a8a:mathematics:incorrect`: status: NOT_APPLICABLE
+- benchmark SYSTEM_ERROR `golden:agriculture:false`: status: ERROR
+- benchmark SYSTEM_ERROR `golden:oceanography:false`: status: ERROR
+- tier INCOMPLETE `ORDER_FREE['bridge INCOMPLETE']`: bridge
+- tier INCOMPLETE `CYCLE`: unsettled: cycle
+- tier INCOMPLETE `SELF_CYCLE`: unsettled: cycle
+- tier INCOMPLETE `CYCLE_AND_RESTING`: unsettled: cycle, unsettled: rests on a cycle
+- tier INCOMPLETE `REPEATED['two true a, nobody uses a']`: repeated_id
+- tier INCOMPLETE `REPEATED['two true a, b binds a']`: unresolved_binding, repeated_id
+- tier INCOMPLETE `DEFAULT_ID_COLLISION`: unresolved_binding, repeated_id
+- tier INCOMPLETE `DERIVATIONS[3]`: unsettled: cycle, unsettled: rests on a cycle, missing_refs
+- tier INCOMPLETE `DERIVATIONS[4]`: unsettled: cycle, unresolved_binding
+- tier INCOMPLETE `DERIVATIONS[5]`: repeated_id
+- tier INCOMPLETE `SELF_BIND`: unsettled: cycle, unresolved_binding
+- tier INCOMPLETE `TRACE_CYCLE`: unsettled: cycle, unsettled: rests on a cycle
+- tier INCOMPLETE `GAP_DEPENDENCY`: status: NOT_APPLICABLE
+- tier INCOMPLETE `RECEIPT_REPEATED`: repeated_id
+- tier INCOMPLETE `RECEIPT_CYCLE`: unsettled: cycle
+- tier SYSTEM_ERROR `ORDER_FREE['erroring dependency']`: status: ERROR
+- tier SYSTEM_ERROR `SORTED['mixed error and missing']`: missing_refs, status: ERROR
+
+Product line: it shows whether ordering work is worth anything. Every benchmark case settles in 2 passes, so an
+evaluation order would buy the benchmark nothing; only listings written against their edges take more passes
+(measurement 3).
+
+**Measurement 2, order-freedom:** `PYTHONPATH=src python tools/order_replica.py --json replica.json`
+
+63 rows under 1,857 evaluation orders and 1,795 listings: 3,652 compared, 3,652 identical (100%). Every row runs
+under every permutation of `_evaluation_order` up to 6 steps, else the listed, the reverse and 8 seeded orders,
+and is compared on the whole response except `halt.passes` and on what `_transfer` settles for each step by listed
+position. A row whose every step carries an explicit unique id is also run under every listing by the same rule and
+compared by step id. These rows run on the evaluation order only, since permuting their listing would rename steps:
+
+- evaluation order only `REPEATED['a false and a true a, b uses a']`: a repeated id
+- evaluation order only `REPEATED['two s, m proof uses s']`: a repeated id
+- evaluation order only `REPEATED['s statistics, s geometry, m proof uses s']`: a repeated id
+- evaluation order only `REPEATED['two true a, nobody uses a']`: a repeated id
+- evaluation order only `REPEATED['two true a, b binds a']`: a repeated id
+- evaluation order only `DEFAULT_ID_COLLISION`: a step with no id
+- evaluation order only `DERIVATIONS[5]`: a repeated id
+- evaluation order only `RECEIPT_REPEATED`: a repeated id
+
+Product line: it licenses any future ranker and catches non-monotone rules. Whatever a ranker or a topological sort
+puts in `_evaluation_order` must return this same result, and a rule that settles on the absence of evidence shows
+up as a mismatch: `tests/test_order_replica.py` plants one such defect per compared field, verdict-neutral, and one
+that moves the verdict, and the tool catches each.
+
+**Measurement 3, decided by the rule stated before the tools ran:** 9 of 63 tier rows (14.3%) need more than 2
+passes, every one listed in reverse or against its edges:
+
+- more than 2 passes `TWO_STEP, listed in reverse`
+- more than 2 passes `chain_of(6), listed in reverse`
+- more than 2 passes `HALTING`
+- more than 2 passes `chain_of(1500), listed in reverse`
+- more than 2 passes `README document, listed in reverse`
+- more than 2 passes `BIND, listed in reverse`
+- more than 2 passes `BIND_FALSE_SOURCE, listed in reverse`
+- more than 2 passes `AUDIT_TEXTS[0], listed in reverse`
+- more than 2 passes `RECEIPT_REVERSE_CHAIN`
+
+The threshold was 10%, so a topological evaluation order is warranted, as a measurement only. The population is
+test fixtures, several deliberately listed in reverse, not callers' traffic: this licenses measuring how many
+passes such an order saves under measurement 2's identity gate, never shipping one. Product line: cheaper
+derivations for callers who list against their edges, with no model, or no change if the saving is immaterial.
+
+**Open verifier gap:** the false goldens for agriculture and oceanography return SYSTEM_ERROR, not BROKEN. Each
+claims a value outside its verifier's vocabulary (`claimed_zone: "7b_NOT"`, `claimed_classification:
+"marine_NOT"`), and the verifier answers ERROR, which a derivation reads as our own failure, not a falsehood. The
+benchmark counts both correct, since neither HOLDS, so no number here moves; a false claim should read BROKEN.

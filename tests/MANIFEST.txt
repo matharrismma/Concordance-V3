@@ -90,6 +90,7 @@ test_materials_science.py
 test_math_expansion.py
 test_mathematics.py
 test_mc_fuzz.py
+test_measured_derivations.py
 test_measurement_consistency.py
 test_medicine.py
 test_meteorology.py
