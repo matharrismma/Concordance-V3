@@ -42,6 +42,8 @@ test_core.py
 test_coverage_tight_spans.py
 test_cryptography.py
 test_cybersecurity.py
+test_derivation_laws.py
+test_derivation_order_free.py
 test_document_validation.py
 test_domain_goldens.py
 test_domain_resolver.py

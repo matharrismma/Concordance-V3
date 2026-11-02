@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import concurrent.futures as _futures
 import copy
+import heapq
 import json
 import logging
 import os
 import threading as _threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, FrozenSet, Iterable, List, NamedTuple, Optional, Tuple
 
 from . import verifiers as _verifiers
 from .validate import canonical_json_bytes, sha256_bytes
@@ -162,8 +163,9 @@ def _reduce_domain_results(results: List[Any]) -> Dict[str, str]:
     if not applicable:
         return {"status": "NOT_APPLICABLE",
                 "detail": "no applicable secular verifier for this domain/artifact"}
-    # merged verifier outputs, so a later step can BIND to a confirmed prior result (3b). Only ever read
-    # for a CONFIRMED source (verify_derivation gates that), so merging all applicable data is harmless.
+    # merged verifier outputs, so another step can BIND to this result once it is confirmed (3b), wherever
+    # either is listed. Only ever read for a CONFIRMED source (verify_derivation gates that), so merging all
+    # applicable data is harmless.
     merged: Dict[str, Any] = {}
     for r in applicable:
         if getattr(r, "data", None):
@@ -295,26 +297,71 @@ def _stratum(t: Dict[str, Any]) -> str:
     return "applied"
 
 
+def _depth_and_floor(trail: List[Dict[str, Any]]) -> Tuple[List[Optional[int]], List[List[str]]]:
+    """Each event's distance (its depth in the `uses` graph) and stands_on (everything beneath it, transitively,
+    down to the floor), read from the graph by id, so where a step is listed changes neither. An id resolves to
+    a step only when exactly one step carries it; one no step carries, or several do, is named and walked no
+    further (it adds 0 to the depth), so the work stays in proportion to the body. No recursion: a step is
+    placed once the step carrying each id it uses is placed (distance 1 + the deepest of them), and its floor is
+    each used id followed by that id's own floor, first occurrence kept. A step on a cycle, or resting on one,
+    is never placed: its distance is None and its stands_on names what it reaches, walked with an explicit
+    stack (so a step on a cycle names itself)."""
+    n = len(trail)
+    ids = [str(t.get("id")) for t in trail]
+    uses = [[str(u) for u in (t.get("uses") or [])] for t in trail]
+    carriers: Dict[str, List[int]] = {}
+    for i, sid in enumerate(ids):
+        carriers.setdefault(sid, []).append(i)
+    single = {u: js[0] for u, js in carriers.items() if len(js) == 1}
+    below = [list(dict.fromkeys(single[u] for u in uses[i] if u in single)) for i in range(n)]
+    above: List[List[int]] = [[] for _ in range(n)]
+    for i, js in enumerate(below):
+        for j in js:
+            above[j].append(i)
+    waiting = [len(js) for js in below]
+    depth: List[Optional[int]] = [None] * n
+    floor: List[Optional[List[str]]] = [None] * n
+    ready = [i for i in range(n) if not waiting[i]]
+    while ready:
+        i = ready.pop()
+        depth[i] = 1 + max([depth[single[u]] if u in single else 0 for u in uses[i]] or [0])
+        out: List[str] = []
+        seen: set = set()
+        for u in uses[i]:
+            for x in [u] + (floor[single[u]] if u in single else []):
+                if x not in seen:
+                    seen.add(x)
+                    out.append(x)
+        floor[i] = out
+        for a in above[i]:
+            waiting[a] -= 1
+            if not waiting[a]:
+                ready.append(a)
+    for i in range(n):
+        if floor[i] is None:
+            out, seen, stack = [], set(), [iter(uses[i])]
+            while stack:
+                for u in stack[-1]:
+                    if u not in seen:
+                        seen.add(u)
+                        out.append(u)
+                        stack.append(iter(uses[single[u]] if u in single else ()))
+                        break
+                else:
+                    stack.pop()
+            floor[i] = out
+    return depth, [f or [] for f in floor]
+
+
 def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
     """The OTDR view of a derivation. Shoot the chain: every step is an event at a distance (its depth in the
-    `uses` graph), with the loss it registered (margin used) and whether it reflected (a counterexample) or
-    went dark (could not run). The link budget is the worst event on the chain — the tightest step decides
-    whether the whole derivation clears, exactly as the worst splice decides a span."""
-    depth: Dict[str, int] = {}
-    stands: Dict[str, List[str]] = {}
+    `uses` graph; None on a cycle), with the loss it registered (margin used) and whether it reflected (a
+    counterexample) or went dark (could not run). The link budget is the worst event on the chain — the
+    tightest step decides whether the whole derivation clears, exactly as the worst splice decides a span."""
+    depths, floors = _depth_and_floor(trail)
     events = []
-    for t in trail:
+    for t, d, floor in zip(trail, depths, floors):
         sid = str(t.get("id"))
-        uses = [str(u) for u in (t.get("uses") or [])]
-        d = 1 + max([depth.get(u, 0) for u in uses] or [0])
-        depth[sid] = d
-        # the connections: everything this step stands on, transitively, down to the floor
-        floor: List[str] = []
-        for u in uses:
-            for x in [u] + stands.get(u, []):
-                if x not in floor:
-                    floor.append(x)
-        stands[sid] = floor
         ref = t.get("refutations") or {}
         m = ref.get("margin") or {}
         st = t.get("status")
@@ -351,9 +398,13 @@ def _trace(trail: List[Dict[str, Any]]) -> Dict[str, Any]:
               "applied": sum(1 for e in events if e["stratum"] == "applied")}
     # where a fault sits relative to the floor: an applied reflection standing on clean pure steps is a data
     # fault, not a math fault — the connections say so
+    at: Dict[str, List[int]] = {}
+    for n, e in enumerate(events):
+        at.setdefault(e["id"], []).append(n)
     for e in events:
-        if e["event"] == "reflection" and e["stands_on"]:
-            below = [x for x in events if x["id"] in e["stands_on"]]
+        # a step standing on an id several steps carry stands on no step anyone can name: no locus is claimed
+        if e["event"] == "reflection" and e["stands_on"] and all(len(at.get(x, ())) <= 1 for x in e["stands_on"]):
+            below = [events[n] for n in sorted(n for x in e["stands_on"] for n in at.get(x, ()))]
             if below and all(b["event"] == "pass" for b in below):
                 e["fault_locus"] = ("data" if e["stratum"] == "applied" else "rule") + \
                                    f": every step it stands on passed ({', '.join(b['id'] for b in below)})"
@@ -390,10 +441,189 @@ def _read(verdict: str, agg: Dict[str, int]) -> str:
     return "the engine failed, not the claim; nothing here is a finding"
 
 
+# ── the composition law ───────────────────────────────────────────────────────────────────────────────────
+# A step's effective outcome rides on two rails that only switch on: P, a check holds, and R, a check breaks.
+# CONFIRMED is P, BROKEN is R, and ERROR and a gap are both not-checkable (P=0, R=0), told apart only by the
+# cause kept beside the rails. Three pure functions carry the law, and verify_derivation computes through
+# them: _transfer (the per-step rule the closure iterates), _meet (Kleene's strong meet, for the composite
+# only) and _readout (Moisil's r1 and r2, the one place a rail is read off, then the precedence). Both rails on
+# at once would be Belnap's "both"; no rule produces it.
+class _Rails(NamedTuple):
+    p: bool                 # a check holds
+    r: bool                 # a check breaks
+    why: FrozenSet[str]     # beside the rails: "confirmed", "broken", "error" (our failure), "gap", "cap"
+
+
+_CONFIRMED = _Rails(True, False, frozenset({"confirmed"}))
+_BROKEN = _Rails(False, True, frozenset({"broken"}))
+_ERROR = _Rails(False, False, frozenset({"error"}))
+_GAP = _Rails(False, False, frozenset({"gap"}))
+_CUT = _Rails(False, False, frozenset({"cap"}))       # a gap the pass cap left unsettled
+# a verifier's status as the step's own check; an unknown status is our failure, never the caller's
+_OWN = {"CONFIRMED": _CONFIRMED, "MISMATCH": _BROKEN, "ERROR": _ERROR, "NOT_APPLICABLE": _GAP}
+
+
+def _transfer(node: Dict[str, Any], own: Optional[_Rails], deps: List[Optional[_Rails]],
+              halt: str = "") -> Optional[Tuple[_Rails, bool, Optional[Dict[str, Any]]]]:
+    """The per-step rule the closure iterates: 45fcd3c's rule, made to wait for evidence instead of reading
+    its absence. A step's own non-confirmed check governs it; a seam MISMATCH breaks it, even over its own
+    ERROR; a dependency's break reaches it only through its own confirmed check; standing on our failure it
+    is ERROR and standing on a gap it is a gap, never BROKEN.
+
+    `node` is what the listing fixes about the step: its `id` and listed position `at`, the ids it uses that
+    resolve to no single step because no step or several steps carry them (`missing`), the bridge results on
+    its cross-domain `uses` edges that can decide it, its first MISMATCH and first INCOMPLETE (`seams`), and
+    whether another step carries its id (`repeated`). `own` is its own check, or None until that check can run
+    (a bind's source is unsettled). `deps` holds the value of the one step carrying each other id it uses, None
+    while that step is unsettled.
+
+    Returns None while the outcome still turns on something unsettled, else (value, originates, bridge).
+    `originates` says the outcome is the step's own (its check, its seam, an id that resolves to no single step,
+    its repeated id, a cycle or the cap) and did not come only from a dependency of that kind. `halt` is set only once the
+    closure has halted: "cycle" for a step on a cycle of unsettled steps, "rests on a cycle" for one with such
+    a cycle beneath it, "cap" for one the pass cap cut off; a step still waiting then becomes a gap. No rail
+    is negated here, so a step never settles on the absence of evidence."""
+    if halt == "cap":
+        return _CUT, True, None                             # the pass cap cut it off before it settled
+    for seam in node["seams"]:
+        if seam.get("status") == "MISMATCH":
+            return _BROKEN, True, seam                      # a category error at the join: the seam breaks it
+    if own is None:                                         # its own check has not run: a bind awaits its source
+        return (_GAP, True, None) if halt else None
+    if own.r:
+        return own, True, None                              # its own check breaks
+    if own.p:                                               # its own check holds, so its ground decides
+        if any(d and d.r for d in deps):
+            return _BROKEN, False, None                     # a break beneath it reaches it through its check
+        if any(d is None for d in deps):                    # something beneath it is unsettled: wait
+            if halt:
+                return _GAP, halt == "cycle" or bool(node["missing"]) or node["repeated"], None
+            return None
+        if all(d.p for d in deps):
+            if node["missing"]:
+                return _GAP, True, None                     # it names an id that resolves to no single step
+            for seam in node["seams"]:
+                if seam.get("status") == "INCOMPLETE":
+                    return _GAP, True, seam                 # the crossing's justification is absent: unproven
+            if node["repeated"]:
+                return _GAP, True, None                     # another step carries its id: which one is meant?
+            return own, False, None                         # it holds, and so does everything it stands on
+        if any("error" in d.why for d in deps):
+            return _ERROR, False, None                      # it stands on our failure, never a falsehood
+        if node["missing"]:
+            return _GAP, True, None
+        return _GAP, node["repeated"], None                 # it stands on a gap
+    return own, True, None                                  # its own ERROR or gap governs
+
+
+def _meet(values: Iterable[_Rails]) -> _Rails:
+    """Kleene's strong meet, for the composite only. On the rails the composite holds only if every step holds
+    (P is the AND of the P rails) and breaks if any step breaks (R is the OR of the R rails); the causes ride
+    beside. Monotone in the information order: refining a not-checkable step to holds or to broken never flips
+    a definite composite. The meet of nothing is not-checkable: with nothing checked, nothing holds."""
+    vs = list(values)
+    return _Rails(bool(vs) and all(v.p for v in vs), any(v.r for v in vs),
+                  frozenset().union(*(v.why for v in vs)))
+
+
+def _r1(v: _Rails) -> bool:
+    """Moisil's r1, 'certainly holds': the P rail."""
+    return v.p
+
+
+def _r2(v: _Rails) -> bool:
+    """Moisil's r2, 'not broken': the R rail read off. The one negation of a rail; only _readout calls it."""
+    return not v.r
+
+
+def _readout(c: _Rails) -> str:
+    """The composite verdict, read off the rails at the output and nowhere else: r2 false is BROKEN, r1 true is
+    HOLDS, and the causes beside the rails give the precedence BROKEN > SYSTEM_ERROR > INCOMPLETE > HOLDS. A run
+    the pass cap cut off reads INCOMPLETE rather than SYSTEM_ERROR: a step it left unsettled could still break."""
+    if not _r2(c):
+        return "BROKEN"
+    if "cap" in c.why:
+        return "INCOMPLETE"
+    if "error" in c.why:
+        return "SYSTEM_ERROR"
+    if _r1(c):
+        return "HOLDS"
+    return "INCOMPLETE"
+
+
+def _pass_cap(k: int) -> int:
+    """The most passes the closure may take over k steps: k + 1. Each step settles once and its verifier runs
+    once, and the closure halts on its own within k + 1 passes (tests/test_derivation_laws.py holds that bound,
+    tight on a chain listed in reverse), so the cap is a backstop, never a verdict: a run it cuts off is
+    INCOMPLETE, never HOLDS. Tests inject a smaller cap here to drive the cut-off."""
+    return k + 1
+
+
+def _evaluation_order(k: int) -> List[int]:
+    """The order the closure visits steps within a pass: listed order. The result never depends on it (the
+    order-replica test swaps in others); only the number of passes does."""
+    return list(range(k))
+
+
+def _cycles(succ: Dict[int, List[int]]) -> Dict[int, List[int]]:
+    """Every node of `succ` that lies on a cycle, mapped to the members of its strongly connected group.
+    Tarjan's algorithm with an explicit stack, so a long chain cannot exhaust the recursion limit."""
+    index: Dict[int, int] = {}
+    low: Dict[int, int] = {}
+    on: set = set()
+    stack: List[int] = []
+    out: Dict[int, List[int]] = {}
+    for root in succ:
+        if root in index:
+            continue
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on.add(root)
+        work = [(root, iter(succ[root]))]
+        while work:
+            v, it = work[-1]
+            for w in it:
+                if w not in index:
+                    index[w] = low[w] = len(index)
+                    stack.append(w)
+                    on.add(w)
+                    work.append((w, iter(succ[w])))
+                    break
+                if w in on:
+                    low[v] = min(low[v], index[w])
+            else:
+                work.pop()
+                if work:
+                    low[work[-1][0]] = min(low[work[-1][0]], low[v])
+                if low[v] == index[v]:
+                    group = []
+                    while True:
+                        w = stack.pop()
+                        on.discard(w)
+                        group.append(w)
+                        if w == v:
+                            break
+                    if len(group) > 1 or v in succ[v]:
+                        for w in group:
+                            out[w] = group
+    return out
+
+
 def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Verify an ordered derivation. The full trail is always returned; the COMPOSITE verdict
-    reports the most serious thing that happened, and `broken_at` / `error_at` / `gap_at` each
-    name the FIRST step of their kind — where trust stopped, and why.
+    """Verify a derivation, in whatever order its steps are listed. The full trail is always returned, in
+    listed order; the COMPOSITE verdict reports the most serious thing that happened, and `broken_at` /
+    `error_at` / `gap_at` each name the FIRST step, in listed order, where that kind of outcome ORIGINATES —
+    where trust stopped, and why — never a step that only inherited it.
+
+    The steps resolve as a monotone closure. A step settles only from settled evidence (its own check, the
+    settled outcomes of the steps it uses, its seams), never from the absence of a dependency not yet settled.
+    Its verifier runs exactly once, on its final spec, as soon as every source it binds from has settled, or
+    never if a bind stays unresolved. The closure halts on the first pass in which nothing settles and no
+    verifier runs, within k + 1 passes for k steps, and only then does a step still unsettled become a gap:
+    one on a cycle, or one the pass cap cut off (INCOMPLETE, never HOLDS). `halt` says how it stopped. The
+    rule is monotone, so each step's outcome, the set of steps originating each kind and the verdict do not
+    depend on the order the steps are listed in (only which originator a pointer names, when a kind has
+    several), and nothing but the pass count depends on the order they are visited in.
 
     "Our engine could not check this" is NOT "your claim is false." Those are different
     sentences about different things, and only one of them is about the caller. A verifier
@@ -412,75 +642,207 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         return {"verdict": "SYSTEM_ERROR", "detail": "no steps provided", "trail": [],
                 "means": "the engine was given nothing to check — this says nothing about any claim"}
 
-    trail: List[Dict[str, Any]] = []
-    seen_ids: set = set()
-    confirmed_ids: set = set()
-    outcome_by_id: Dict[str, str] = {}   # sid -> effective outcome (CONFIRMED|BROKEN|ERROR|GAP)
-    domain_by_id: Dict[str, str] = {}    # sid -> domain, so a cross-domain `uses` edge can be gated
-    data_by_id: Dict[str, Dict[str, Any]] = {}  # sid -> a CONFIRMED step's verifier outputs, for value-binding
-    broken_at = None
-    gap_at = None
-    error_at = None
-
-    def _worst_dep_outcome(dep_ids: List[str]) -> str:
-        # A step confirmed in isolation but standing on unconfirmed ground inherits the WORST of
-        # what it stands on — but our-failure (ERROR) and a gap (NOT_APPLICABLE / a missing ref)
-        # must NEVER be manufactured into BROKEN. Only a genuine MISMATCH below carries a break up.
-        sev = {"BROKEN": 3, "ERROR": 2, "GAP": 1, "CONFIRMED": 0}
-        worst, wv = "GAP", 1
-        for u in dep_ids:
-            o = outcome_by_id.get(u, "GAP")   # a missing/unseen ref -> cannot evaluate -> GAP
-            if sev.get(o, 1) > wv:
-                worst, wv = o, sev[o]
-        return worst if worst != "CONFIRMED" else "GAP"
-
-    for i, step in enumerate(steps):
-        sid = str(step.get("id") or f"s{i}")
-        domain = str(step.get("domain", ""))
-        spec = step.get("spec") or {}
+    from . import bucket as _bucket
+    k = len(steps)
+    # ── what the listing fixes before anything runs ──
+    ids = [str(step.get("id") or f"s{i}") for i, step in enumerate(steps)]
+    carriers: Dict[str, List[int]] = {}           # id -> every listed step carrying it
+    for i, sid in enumerate(ids):
+        carriers.setdefault(sid, []).append(i)
+    domains = [str(step.get("domain", "")) for step in steps]
+    # VALUE-BINDING (3b): a step may BUILD an input from another step's CONFIRMED output, wherever that step
+    # is listed — bind = {"<spec path>": "<srcId>.<outputKey>"} (outputKey defaults to "actual"). A bind IS a
+    # dependency, so its source joins `uses`. Fail-closed: if the source is not confirmed, is carried by no
+    # step or by more than one, or lacks the output key, the binding is UNRESOLVED and the step is NOT verified
+    # with a fabricated value — it becomes a GAP, never a guessed HOLDS and never a MISMATCH manufactured from
+    # our own inability to resolve a ref. Substitution is into a deep copy, so the caller's spec is never
+    # mutated and the spec_hash binds the seal to exactly what was checked.
+    uses_of: List[List[str]] = []
+    binds_of: List[List[Tuple[Any, Any, str, str]]] = []
+    for step in steps:
         uses = [str(u) for u in (step.get("uses") or [])]
-
-        # VALUE-BINDING (3b): a step may BUILD an input from a CONFIRMED prior step's output —
-        # bind = {"<spec path>": "<srcId>.<outputKey>"} (outputKey defaults to "actual"). A bind IS a
-        # dependency, so its source joins `uses`. Fail-closed: if the source is not confirmed or the
-        # output key is absent, the binding is UNRESOLVED and the step is NOT verified with a fabricated
-        # value — it becomes a GAP, never a guessed HOLDS and never a MISMATCH manufactured from our own
-        # inability to resolve a ref. Substitution is into a deep copy, so the caller's spec is never
-        # mutated and the spec_hash below binds the seal to exactly what was checked.
+        binds: List[Tuple[Any, Any, str, str]] = []
         bind = step.get("bind")
-        unresolved: List[str] = []
         if isinstance(bind, dict) and bind:
-            spec = copy.deepcopy(spec)
             for path, ref in bind.items():
                 src_id, _, key = str(ref).partition(".")
-                key = key or "actual"
                 if src_id not in uses:
                     uses.append(src_id)
-                src_data = data_by_id.get(src_id)
-                if src_id not in confirmed_ids or not isinstance(src_data, dict) or key not in src_data:
-                    unresolved.append("%s<-%s" % (path, ref))
+                binds.append((path, ref, src_id, key or "actual"))
+        uses_of.append(uses)
+        binds_of.append(binds)
+    # An id resolves to a step only when exactly one listed step carries it. A reference to an id several steps
+    # carry resolves to none of them — like a bind from it, and like an id no step carries — so its user stands
+    # on a gap of its own and never waits on, or is wired to, each carrier: the work stays in proportion to the
+    # body, not to (step, carrier) pairs.
+    single = {u: js[0] for u, js in carriers.items() if len(js) == 1}
+    below = [[single[u] for u in uses_of[i] if u in single] for i in range(k)]
+    above: List[List[int]] = [[] for _ in range(k)]
+    for i in range(k):
+        for j in dict.fromkeys(below[i]):
+            above[j].append(i)
+    # THE SEAM — a cross-domain BRIDGE (registry §4). A step that CONSUMES a step from another domain must not
+    # launder rigor across the boundary: a p-value asserted as PROOF, a scaling law with no dimensional
+    # analysis. The single-domain verifier cannot see the join; this does. A category error at the seam BREAKS;
+    # a crossing whose justification is absent is a GAP (unproven, never a false HOLDS). Checked on every
+    # genuine cross-domain `uses` edge, against the domain of each step carrying the id (a repeated id too),
+    # wherever it is listed. A bridge result reads only the two domains and the crossing step, so each step is
+    # checked once per distinct dependency domain, and keeps only what _transfer reads: its first MISMATCH and
+    # its first INCOMPLETE.
+    carrier_domains: Dict[str, List[str]] = {}          # id -> one domain per canonical name, in listed order
+    named: Dict[str, set] = {}
+    for j in range(k):
+        c = _bridges._canon(domains[j])
+        if c and c not in named.setdefault(ids[j], set()):
+            named[ids[j]].add(c)
+            carrier_domains.setdefault(ids[j], []).append(domains[j])
+
+    def _seams(i: int) -> List[Dict[str, Any]]:
+        own = _bridges._canon(domains[i])
+        seen: set = set()
+        kept: List[Dict[str, Any]] = []
+        for u in uses_of[i]:
+            for dom in carrier_domains.get(u, ()):
+                c = _bridges._canon(dom)
+                if not own or c == own or c in seen:
+                    continue                            # the same domain, or one already checked: no new seam
+                seen.add(c)
+                res = _bridges.check(domains[i], steps[i], dom)
+                if res.get("status") == "MISMATCH":
+                    kept.append(res)
+                    return kept
+                if res.get("status") == "INCOMPLETE" and not kept:
+                    kept.append(res)
+        return kept
+
+    nodes = [{"id": ids[i], "at": i,
+              "missing": [u for u in uses_of[i] if u not in single],      # resolves to no single step
+              "seams": _seams(i),
+              "repeated": len(carriers[ids[i]]) > 1}
+             for i in range(k)]
+
+    sr: List[Optional[Dict[str, Any]]] = [None] * k     # each step's own check, once it has run
+    checked: List[Any] = [None] * k                     # the exact spec its verifier ran on
+    # a bind from an id no step carries, or one several steps carry, can never resolve
+    blocked = [any(len(carriers.get(src, ())) != 1 for _, _, src, _ in binds_of[i]) for i in range(k)]
+    val: List[Optional[_Rails]] = [None] * k            # each step's effective outcome, once settled
+    origin = [False] * k
+    bridge: List[Optional[Dict[str, Any]]] = [None] * k
+
+    def _resolve(i: int) -> Tuple[List[Tuple[Any, Any]], List[str], bool]:
+        """Step i's binds against what has settled: (resolved (path, value) pairs, unresolved, pending)."""
+        resolved, unresolved, pending = [], [], False
+        for path, ref, src, key in binds_of[i]:
+            js = carriers.get(src, ())
+            if len(js) == 1:
+                v = val[js[0]]
+                if v is None:
+                    pending = True                      # its source has not settled: wait, never guess
                     continue
-                _set_spec_path(spec, str(path), src_data[key])
+                data = (sr[js[0]] or {}).get("data") or {}
+                if v.p and isinstance(data, dict) and key in data:
+                    resolved.append((path, data[key]))
+                    continue
+            unresolved.append("%s<-%s" % (path, ref))
+        return resolved, unresolved, pending
 
-        missing = [u for u in uses if u not in seen_ids]
-        unconfirmed = [u for u in uses if u in seen_ids and u not in confirmed_ids]
-        link_ok = not missing and not unconfirmed and not unresolved
+    def _built(i: int, resolved: List[Tuple[Any, Any]]) -> Any:
+        spec = steps[i].get("spec") or {}
+        if binds_of[i]:
+            spec = copy.deepcopy(spec)
+            for path, value in resolved:
+                _set_spec_path(spec, str(path), value)
+        return spec
 
-        if unresolved:
-            # the step could not be BUILT — we cannot check what we could not assemble. A gap, never a
-            # false verdict; the dependency gating below still records what it stood on.
-            sr: Dict[str, Any] = {"status": "NOT_APPLICABLE",
-                                  "detail": "unresolved binding(s): " + ", ".join(unresolved), "data": {}}
+    def _own(i: int) -> Optional[_Rails]:
+        if blocked[i]:
+            return _GAP                                 # it could not be BUILT: we cannot check what we could not assemble
+        return _OWN.get(sr[i]["status"], _ERROR) if sr[i] is not None else None
+
+    # ── the closure: visit the steps a change could move, in evaluation order, until a pass moves nothing ──
+    order = _evaluation_order(k)
+    rank = [0] * k
+    for r, i in enumerate(order):
+        rank[i] = r
+    cap = _pass_cap(k)
+    passes, how = 0, "settled"
+    frontier = list(range(k))
+    while True:
+        if passes >= cap:
+            how = "cap"
+            break
+        passes += 1
+        heap = [rank[i] for i in frontier]
+        heapq.heapify(heap)
+        queued = set(frontier)
+        later: set = set()
+        moved = False
+        while heap:
+            i = order[heapq.heappop(heap)]
+            if sr[i] is None and not blocked[i]:
+                resolved, unresolved, pending = _resolve(i)
+                if unresolved:
+                    blocked[i] = True
+                elif not pending:
+                    # the smallest bucket: exactly these bytes under exactly this verifier — a hit is served
+                    spec = checked[i] = _built(i, resolved)
+                    sr[i] = _bucket.through(domains[i], _spec_hash(spec), lambda: verify_step(domains[i], spec))
+                    moved = True
+            if val[i] is None:
+                res = _transfer(nodes[i], _own(i), [val[j] for j in below[i]])
+                if res is not None:
+                    val[i], origin[i], bridge[i] = res
+                    moved = True
+                    for a in above[i]:
+                        if rank[a] > rank[i]:
+                            if a not in queued:
+                                queued.add(a)
+                                heapq.heappush(heap, rank[a])
+                        else:
+                            later.add(a)
+        if not moved:
+            break
+        frontier = sorted(later)
+
+    # ── only now does a step still unsettled become a gap: on a cycle, resting on one, or cut off by the cap ──
+    unsettled: Dict[int, str] = {}
+    on_cycle: Dict[int, List[int]] = {}
+    cycle_names: Dict[int, List[str]] = {}
+    still = [i for i in range(k) if val[i] is None]
+    if still:
+        if how == "cap":
+            unsettled = {i: "cap" for i in still}
         else:
-            # the smallest bucket: exactly these bytes under exactly this verifier — a hit is served, not recomputed
-            from . import bucket as _bucket
-            _sh = _spec_hash(spec)
-            sr = _bucket.through(domain, _sh, lambda: verify_step(domain, spec))
-        st = sr["status"]
+            on_cycle = _cycles({i: sorted({j for j in below[i] if val[j] is None}) for i in still})
+            unsettled = {i: ("cycle" if i in on_cycle else "rests on a cycle") for i in still}
+            for group in {id(g): g for g in on_cycle.values()}.values():
+                names = sorted({ids[j] for j in group})        # once per cycle, not once per member
+                for j in group:
+                    cycle_names[j] = names
+        last = {i: _transfer(nodes[i], _own(i), [val[j] for j in below[i]], unsettled[i]) for i in still}
+        for i, res in last.items():
+            val[i], origin[i], bridge[i] = res
 
+    confirmed_ids = {ids[i] for i in range(k) if val[i].p}
+    trail: List[Dict[str, Any]] = []
+    for i, step in enumerate(steps):
+        resolved, unresolved, _ = _resolve(i)
+        if sr[i] is not None:
+            spec, s = checked[i], sr[i]
+        else:
+            # the step could not be BUILT (or the cap stopped the closure before its check ran) — a gap, never
+            # a false verdict; the dependency gating still records what it stood on
+            spec = _built(i, resolved)
+            s = {"status": "NOT_APPLICABLE", "data": {},
+                 "detail": ("unresolved binding(s): " + ", ".join(unresolved)) if unresolved else
+                           "not checked: the pass cap stopped the closure before this step's check ran"}
+        uses = uses_of[i]
+        missing = [u for u in uses if u not in carriers]       # an id no step carries, as at 45fcd3c
+        unconfirmed = [u for u in uses if u in carriers and u not in confirmed_ids]
         entry: Dict[str, Any] = {
-            "id": sid, "domain": domain, "claim": str(step.get("claim", "")),
-            "uses": uses, "status": st, "detail": sr.get("detail", ""), "link_ok": link_ok,
+            "id": ids[i], "domain": domains[i], "claim": str(step.get("claim", "")),
+            "uses": uses, "status": s["status"], "detail": s.get("detail", ""),
+            "link_ok": not missing and not unconfirmed and not unresolved,
             # the fingerprint of exactly what was checked — travels into the seal so the verdict is bound
             # to its artifact, not the free-text label. For a bound step this is the SUBSTITUTED spec, so
             # the seal binds to what was actually verified.
@@ -490,12 +852,12 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Kind B — surface a verifier's framing (explanation + the question that would let us
         # calculate) so a decline is actionable, not a dead end. Only the curated framing fields
         # travel out, never the verifier's whole internal data dict.
-        if sr.get("refutations"):
-            entry["refutations"] = sr["refutations"]
-        if sr.get("memo"):
-            entry["memo"] = sr["memo"]
-        _g = sr.get("data") or {}
-        _framing = {k: _g[k] for k in ("framing_question", "need", "example", "route") if k in _g}
+        if s.get("refutations"):
+            entry["refutations"] = s["refutations"]
+        if s.get("memo"):
+            entry["memo"] = s["memo"]
+        _g = s.get("data") or {}
+        _framing = {kk: _g[kk] for kk in ("framing_question", "need", "example", "route") if kk in _g}
         if _framing:
             entry["guidance"] = _framing
         if missing:
@@ -504,73 +866,29 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
             entry["builds_on_unconfirmed"] = unconfirmed
         if unresolved:
             entry["unresolved_binding"] = unresolved
+        if bridge[i]:
+            entry["bridge"] = bridge[i]
+        if nodes[i]["repeated"]:
+            entry["repeated_id"] = len(carriers[ids[i]])      # how many listed steps carry this id
+        if i in unsettled:
+            entry["unsettled"] = unsettled[i]
+            if i in on_cycle:
+                entry["cycle"] = list(cycle_names[i])
         trail.append(entry)
-        seen_ids.add(sid)
-        domain_by_id[sid] = domain
 
-        # Classify this step's EFFECTIVE outcome. A step that builds on unconfirmed ground cannot
-        # stand — but WHY its ground is unconfirmed decides the honest verdict. Collapsing "our
-        # engine failed on a step you depend on" (ERROR) or "we had no verifier for it" (gap) into
-        # BROKEN would downgrade the caller's claim on the strength of our own failure — the very
-        # inversion of the kernel's fifth clause. Only a genuine MISMATCH may propagate a break.
-        if st == "MISMATCH":
-            outcome = "BROKEN"
-        elif st == "ERROR":
-            outcome = "ERROR"             # our failure, never the caller's falsehood
-        elif st == "NOT_APPLICABLE":
-            outcome = "GAP"               # no verifier applied — a gap, never a falsehood
-        elif st == "CONFIRMED":
-            outcome = "CONFIRMED" if link_ok else _worst_dep_outcome(uses)
-        else:
-            outcome = "ERROR"             # unknown status = our failure, never the caller's
+    # where trust stopped: the first step, in listed order, where each kind of outcome originates
+    def _first(kind: str) -> Optional[str]:
+        return next((ids[i] for i in range(k) if origin[i] and kind in val[i].why), None)
 
-        # THE SEAM — a cross-domain BRIDGE (registry §4). A step that CONSUMES a step from another
-        # domain must not launder rigor across the boundary: a p-value asserted as PROOF, a scaling
-        # law with no dimensional analysis. The single-domain verifier above cannot see the join; this
-        # does. A category error at the seam BREAKS; a crossing whose justification is absent is a GAP
-        # (unproven, never a false HOLDS). Only checked on a genuine cross-domain `uses` edge.
-        for u in uses:
-            dep_dom = domain_by_id.get(u)
-            if not dep_dom or dep_dom == domain:
-                continue
-            bres = _bridges.check(domain, step, dep_dom)
-            bst = bres.get("status")
-            if bst == "MISMATCH":
-                entry["bridge"] = bres
-                outcome = "BROKEN"
-                break
-            if bst == "INCOMPLETE" and outcome == "CONFIRMED":
-                entry["bridge"] = bres
-                outcome = "GAP"
-
-        outcome_by_id[sid] = outcome
-        if outcome == "CONFIRMED":
-            confirmed_ids.add(sid)
-            data_by_id[sid] = sr.get("data") or {}   # this step's outputs, available to bind downstream
-        elif outcome == "BROKEN":
-            if broken_at is None:
-                broken_at = sid
-        elif outcome == "ERROR":
-            if error_at is None:
-                error_at = sid
-        else:  # GAP
-            if gap_at is None:
-                gap_at = sid
-
-    # Precedence: a real falsehood governs even if our engine also stumbled elsewhere.
-    if broken_at is not None:
-        verdict = "BROKEN"
-    elif error_at is not None:
-        verdict = "SYSTEM_ERROR"
-    elif gap_at is not None:
-        verdict = "INCOMPLETE"
-    else:
-        verdict = "HOLDS"
+    broken_at = _first("broken")
+    error_at = _first("error")
+    gap_at = next((ids[i] for i in range(k) if origin[i] and val[i].why & {"gap", "cap"}), None)
+    verdict = _readout(_meet(val))
 
     agg = {"attempted": 0, "survived": 0, "counterexamples": 0, "errored": 0, "not_applicable": 0}
     for t in trail:
-        for k in agg:
-            agg[k] += len((t.get("refutations") or {}).get(k) or [])
+        for kk in agg:
+            agg[kk] += len((t.get("refutations") or {}).get(kk) or [])
     out = {
         "verdict": verdict,
         "read": _read(verdict, agg),
@@ -584,9 +902,12 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         "gap_at": gap_at,
         "error_at": error_at,
         "trail": trail,
-        "note": ("The trail is the trust: each step is machine-verified and may build "
-                 "only on confirmed prior steps. The engine verifies a provided "
-                 "derivation; it does not generate the answer."),
+        "note": ("The trail is the trust: each step is machine-verified and stands only on "
+                 "steps that are themselves confirmed, wherever they are listed. The engine "
+                 "verifies a provided derivation; it does not generate the answer."),
+        # how the closure stopped. Response only: record_from_derivation names the fields it seals, and this
+        # is not one of them, so SEAL_SPEC and RECEIPT_SPEC are unchanged.
+        "halt": {"passes": passes, "reason": how, "cap": cap},
     }
     if verdict == "SYSTEM_ERROR":
         out["means"] = ("OUR engine could not perform this check — this is a failure on our side "
