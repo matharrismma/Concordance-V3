@@ -107,6 +107,7 @@ test_nutrition.py
 test_oceanography.py
 test_operations_research.py
 test_optics.py
+test_order_replica.py
 test_periodic_table.py
 test_philosophy.py
 test_photography.py
