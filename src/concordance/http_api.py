@@ -110,6 +110,7 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
     under its spec_hash) is shown as editable inputs; "Re-check" posts the edited packet to /verify with
     seal=0 and shows the fresh verdict. The sealed record itself is never changed by this page."""
     from . import cas as _cas
+    from .derivation import _depth_and_floor
 
     def esc(x: Any) -> str:
         return str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
@@ -123,15 +124,9 @@ def _receipt_html(rec: Dict[str, Any], h: str) -> bytes:
                       "domain": d.get("domain"), "spec": spec, "refutations": d.get("refutations") or {},
                       "uses": list(d.get("uses") or []), "stratum": _stratum_of(d.get("domain")),
                       "bucket": d.get("bucket")})
-    # the connections, transitively — what each step stands on down to the floor
-    stands: Dict[str, list] = {}
-    for st in steps:
-        floor: list = []
-        for u in st["uses"]:
-            for x in [u] + stands.get(u, []):
-                if x not in floor:
-                    floor.append(x)
-        stands[st["id"]] = floor
+    # the connections, transitively — what each step stands on down to the floor, read by id exactly as the
+    # derivation's own trace reads it (the sealed record keeps ids and uses, not the trace's events)
+    for st, floor in zip(steps, _depth_and_floor(steps)[1]):
         st["stands_on"] = floor
     blocks = []
     for n, st in enumerate(steps):
