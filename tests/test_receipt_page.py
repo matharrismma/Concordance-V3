@@ -1,13 +1,21 @@
 """The receipt page: the sealed packet is filed beside the seal under its spec_hash; the page shows the
 inputs and re-checks without touching the record; `_spec` never leaves the engine."""
+import copy
 import json
+import sys
+from pathlib import Path
 from concordance import cas, http_api, receipts
 from concordance.config import EngineConfig
 from concordance.mcp.server import _call_tool
 
+# the derivations live in the tier (tests/fixtures/derivation_tier.py), their one home
+_FIXTURES = str(Path(__file__).resolve().parent / "fixtures")
+if _FIXTURES not in sys.path:
+    sys.path.insert(0, _FIXTURES)
+from derivation_tier import (RECEIPT_CYCLE, RECEIPT_REPEATED, RECEIPT_REVERSE_CHAIN,  # noqa: E402
+                             RECEIPT_SORTED_CHAIN, RECEIPT_STEP as STEP, RECEIPT_WIDE)
+
 C = EngineConfig()
-STEP = {"id": "m", "domain": "real_estate", "spec": {"RE_VERIFY": {
-    "loan_principal": 12_000_000, "annual_rate": 0.045, "loan_term_months": 240, "claimed_monthly_payment": 75917.93}}}
 
 
 def test_spec_sidecar_matches_the_trail_spec_hash_and_is_not_returned():
@@ -28,7 +36,7 @@ def test_receipt_page_shows_inputs_and_recheck_form():
 def test_receipt_page_stands_on_matches_the_trace_for_a_reverse_listed_chain():
     # c uses b, b uses a, listed top-down: the page must read the floor by id, as the trace does, not by
     # listed order (which once showed c standing on b alone). Nothing is sealed: the record is built in memory.
-    chain = [{**STEP, "id": "c", "uses": ["b"]}, {**STEP, "id": "b", "uses": ["a"]}, {**STEP, "id": "a"}]
+    chain = copy.deepcopy(RECEIPT_REVERSE_CHAIN)      # [c uses b, b uses a, a], each STEP's packet
     r = _call_tool("verify", {"steps": chain, "seal": False}, C)
     assert r["verdict"] == "HOLDS" and r.get("seal") is None
     floor = {e["id"]: e["stands_on"] for e in r["trace"]["events"]}
@@ -86,15 +94,14 @@ def _trace(r):
 def test_receipt_page_renders_a_sorted_chain_of_unique_ids_exactly_as_at_d47d692():
     # [a, b uses a, c uses b]: every id carried by one step, each listed after what it uses. Reading the floor
     # from the trace changes nothing here: the headers are pinned whole, and equal the old formula's reading.
-    chain = [{**STEP, "id": "a"}, {**STEP, "id": "b", "uses": ["a"]}, {**STEP, "id": "c", "uses": ["b"]}]
+    chain = copy.deepcopy(RECEIPT_SORTED_CHAIN)       # [a, b uses a, c uses b]
     r, listed, heads = _unsealed_page(chain)
     assert r["verdict"] == "HOLDS"
     v = '<span class="v CONFIRMED">CONFIRMED</span> <span class="muted">applied'
     assert heads == [f"a {v} · floor</span>", f"b {v} · stands on a</span>", f"c {v} · stands on b, a</span>"]
     assert [_shown(h)[1] for h in heads] == _stands_on_at_d47d692(listed) == [f for _, f in _trace(r)]
     # wider, still sorted with unique ids: steps using several, so first-occurrence order and dedup are read too
-    wide = [{**STEP, "id": "a"}, {**STEP, "id": "b"}, {**STEP, "id": "c", "uses": ["a", "b"]},
-            {**STEP, "id": "d", "uses": ["c", "a"]}, {**STEP, "id": "e", "uses": ["d"]}]
+    wide = copy.deepcopy(RECEIPT_WIDE)                # [a, b, c uses a and b, d uses c and a, e uses d]
     r, listed, heads = _unsealed_page(wide)
     assert [_shown(h) for h in heads] == [("a", []), ("b", []), ("c", ["a", "b"]), ("d", ["c", "a", "b"]),
                                           ("e", ["d", "c", "a", "b"])]
@@ -104,8 +111,7 @@ def test_receipt_page_renders_a_sorted_chain_of_unique_ids_exactly_as_at_d47d692
 def test_receipt_page_repeated_id_stands_on_reads_as_the_trace():
     # [x, a, a uses x, b uses a]: two steps carry a, so b's a names no one step and the trace walks it no
     # further: b stands on a. An intended change: at d47d692 the page kept the last a listed (b on a, x).
-    chain = [{**STEP, "id": "x"}, {**STEP, "id": "a"}, {**STEP, "id": "a", "uses": ["x"]},
-             {**STEP, "id": "b", "uses": ["a"]}]
+    chain = copy.deepcopy(RECEIPT_REPEATED)           # [x, a, a uses x, b uses a]
     r, listed, heads = _unsealed_page(chain)
     assert _trace(r) == [("x", []), ("a", []), ("a", ["x"]), ("b", ["a"])]
     assert [_shown(h) for h in heads] == _trace(r)
@@ -116,7 +122,7 @@ def test_receipt_page_repeated_id_stands_on_reads_as_the_trace():
 def test_receipt_page_cycle_stands_on_reads_as_the_trace():
     # [a uses b, b uses a]: neither step is ever placed, and the trace names what each reaches, itself included:
     # a stands on b, a. An intended change: at d47d692 the page read b's floor before b was listed (a on b).
-    chain = [{**STEP, "id": "a", "uses": ["b"]}, {**STEP, "id": "b", "uses": ["a"]}]
+    chain = copy.deepcopy(RECEIPT_CYCLE)              # [a uses b, b uses a]
     r, listed, heads = _unsealed_page(chain)
     assert _trace(r) == [("a", ["b", "a"]), ("b", ["a", "b"])]
     assert [_shown(h) for h in heads] == _trace(r)

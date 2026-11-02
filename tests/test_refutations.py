@@ -2,6 +2,10 @@
 BROKEN a re-runnable counterexample; the manifest is sealed into the record and read by the page."""
 from __future__ import annotations
 
+import copy
+import sys
+from pathlib import Path
+
 import pytest
 
 from concordance import cas
@@ -9,6 +13,12 @@ from concordance.config import EngineConfig
 from concordance.derivation import refutations, verify_derivation
 from concordance.mcp import server as S
 from concordance.verifiers.base import band, merge_checks
+
+# the derivations live in the tier (tests/fixtures/derivation_tier.py), their one home
+_FIXTURES = str(Path(__file__).resolve().parent / "fixtures")
+if _FIXTURES not in sys.path:
+    sys.path.insert(0, _FIXTURES)
+from derivation_tier import CLEAN, EDGE, FAULT_LOCUS, MISS, OTDR  # noqa: E402
 
 PKT = {"PUBFIN_VERIFY": {"par": 12_000_000, "annual_rate": 0.045, "term_months": 240,
                          "claimed_monthly_pi": 75917.93, "claimed_total_interest": 6220302.03}}
@@ -123,13 +133,8 @@ def test_scribe_run_is_staged_brackets_only_tighten():
 
 def test_margin_and_trace_read_like_an_otdr(tmp_path, monkeypatch):
     monkeypatch.setenv("CONCORDANCE_DATA_DIR", str(tmp_path))
-    par = {"id": "par", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {
-        "net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}}
-    def debt(sid, claim):
-        return {"id": sid, "domain": "public_finance", "bind": {"PUBFIN_VERIFY.par": "par.actual_par"},
-                "spec": {"PUBFIN_VERIFY": {"par": 0, "annual_rate": 0.045, "term_months": 240,
-                                           "interest_only_months": 24, "claimed_monthly_pi": claim}}}
-    r = S._call_tool("verify", {"steps": [par, debt("tight", 82816.00), debt("bad", 82900)]}, EngineConfig())
+    # [par, tight (82816.00) and bad (82900), each binding par.actual_par]
+    r = S._call_tool("verify", {"steps": copy.deepcopy(OTDR)}, EngineConfig())
     ev = {e["id"]: e for e in r["trace"]["events"]}
     assert ev["par"]["distance"] == 1 and ev["tight"]["distance"] == 2       # depth from `uses`
     assert ev["par"]["event"] == "pass" and ev["par"]["used"] == 0.0
@@ -144,7 +149,7 @@ def test_margin_and_trace_read_like_an_otdr(tmp_path, monkeypatch):
     html = http_api._receipt_html(rec, r["seal"]["content_hash"]).decode()
     assert "Link budget: chain fails at bad" in html and "margin:" in html
     # a clean chain reports its tightest splice
-    r2 = S._call_tool("verify", {"steps": [par, debt("ok", 82815.95)]}, EngineConfig())
+    r2 = S._call_tool("verify", {"steps": copy.deepcopy(CLEAN)}, EngineConfig())
     assert r2["trace"]["budget"]["read"].startswith("chain clears; tightest event ok")
 
 
@@ -157,11 +162,8 @@ def test_bound_reports_headroom():
 
 def test_trace_strata_and_connections_locate_the_fault():
     from concordance.derivation import verify_derivation
-    steps = [{"id": "n", "domain": "mathematics", "spec": {"mode": "numeric", "params": {"numeric_expr": "12000000*0.02", "claimed_value": 240000}}},
-             {"id": "par", "domain": "public_finance", "uses": ["n"], "spec": {"PUBFIN_VERIFY": {
-                 "net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}},
-             {"id": "bad", "domain": "public_finance", "bind": {"PUBFIN_VERIFY.par": "par.actual_par"}, "spec": {"PUBFIN_VERIFY": {
-                 "par": 0, "annual_rate": 0.045, "term_months": 240, "interest_only_months": 24, "claimed_monthly_pi": 82900}}}]
+    # [n: 12000000*0.02 = 240000, par uses n, bad binds par.actual_par and claims 82900]
+    steps = copy.deepcopy(FAULT_LOCUS)
     r = verify_derivation(steps)
     ev = {e["id"]: e for e in r["trace"]["events"]}
     assert ev["n"]["stratum"] == "pure" and ev["n"]["used"] is not None          # pure steps carry a margin too
@@ -189,14 +191,10 @@ def test_holds_carries_a_bayesian_trust_from_benchmark_counts(tmp_path, monkeypa
 def test_energy_and_the_valve():
     from concordance.derivation import verify_derivation
     from concordance.scribe import run
-    par = {"id": "par", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {
-        "net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}}
-    def debt(sid, claim):
-        return {"id": sid, "domain": "public_finance", "bind": {"PUBFIN_VERIFY.par": "par.actual_par"},
-                "spec": {"PUBFIN_VERIFY": {"par": 0, "annual_rate": 0.045, "term_months": 240, "interest_only_months": 24, "claimed_monthly_pi": claim}}}
-    e_clean = verify_derivation([par, debt("ok", 82815.95)])["trace"]["budget"]["energy"]
-    e_edge = verify_derivation([par, debt("edge", 82816.00)])["trace"]["budget"]["energy"]
-    e_miss = verify_derivation([par, debt("bad", 82900)])["trace"]["budget"]["energy"]
+    # [par, debt claiming 82815.95 (ok), 82816.00 (edge) or 82900 (bad), binding par.actual_par]
+    e_clean = verify_derivation(copy.deepcopy(CLEAN))["trace"]["budget"]["energy"]
+    e_edge = verify_derivation(copy.deepcopy(EDGE))["trace"]["budget"]["energy"]
+    e_miss = verify_derivation(copy.deepcopy(MISS))["trace"]["budget"]["energy"]
     assert e_clean < e_edge < e_miss and e_miss >= 1.0            # a miss is a full unit; the edge costs most of one
 
     pk = {"pi": [{"id": "m", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {

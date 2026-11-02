@@ -1,24 +1,21 @@
 """compose — receipts that stand on receipts. Driven by the SYNTHETIC memo (invented company, invented
 numbers): no real deal is used anywhere in this repository."""
-import copy, json
+import copy, json, sys
+from pathlib import Path
 from concordance import cas, compose, http_api
 from concordance.config import EngineConfig
 from concordance.mcp.server import _call_tool
 from concordance.validate import canonical_json_bytes, sha256_bytes
 
+# the derivations live in the tier (tests/fixtures/derivation_tier.py), their one home
+_FIXTURES = str(Path(__file__).resolve().parent / "fixtures")
+if _FIXTURES not in sys.path:
+    sys.path.insert(0, _FIXTURES)
+from derivation_tier import COMPOSE_DOC as DOC, COMPOSE_DOC_UPSTREAM_CHANGED  # noqa: E402
+
 C = EngineConfig()
 PF = "PUBFIN_VERIFY"
-DOC = {"title": "Synthetic bond memo", "steps": [
-    {"id": "par", "domain": "public_finance", "label": "gross-up",
-     "spec": {PF: {"net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}},
-    {"id": "debt", "domain": "public_finance", "label": "P&I after IO",
-     "spec": {PF: {"par": 0, "annual_rate": 0.045, "term_months": 240, "interest_only_months": 24,
-                   "claimed_monthly_pi": 82815.95, "claimed_total_interest": 6745294.80}},
-     "bind": {"PUBFIN_VERIFY.par": "par.actual_par"}},
-    {"id": "dscr", "domain": "real_estate", "label": "coverage",
-     "spec": {"RE_VERIFY": {"net_operating_income": 1_500_000, "annual_debt_service": 0, "claimed_dscr": 1.5093}},
-     "bind": {"RE_VERIFY.annual_debt_service": "debt.annual_pi"}},
-], "text": "Par {par}; P&I {debt}; DSCR {dscr}."}
+# DOC: par (gross-up) -> debt (P&I after IO, binds par.actual_par) -> dscr (coverage, binds debt.annual_pi)
 
 
 def test_a_chained_document_seals_as_one_root_that_rehashes():
@@ -32,8 +29,7 @@ def test_a_chained_document_seals_as_one_root_that_rehashes():
 
 
 def test_an_upstream_change_breaks_the_root_and_starves_what_rested_on_it():
-    d = copy.deepcopy(DOC)
-    d["steps"][0]["spec"][PF]["issuance_cost_pct"] = 0.03
+    d = copy.deepcopy(COMPOSE_DOC_UPSTREAM_CHANGED)      # DOC with par's issuance_cost_pct 0.03
     r = compose.seal_document(d, C, seal=False)
     assert r["verdict"] == "BROKEN"
     st = {s["id"]: s["status"] for s in r["steps"]}

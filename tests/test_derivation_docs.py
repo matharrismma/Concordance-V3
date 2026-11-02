@@ -16,8 +16,8 @@ from __future__ import annotations
 import ast
 import copy
 import inspect
-import json
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,6 +28,12 @@ from concordance import derivation as D
 from concordance.config import EngineConfig
 
 ROOT = Path(__file__).resolve().parent.parent
+# the derivations live in the tier (tests/fixtures/derivation_tier.py), their one home; README's document stays in
+# README.md, read there by readme_document()
+_FIXTURES = str(ROOT / "tests" / "fixtures")
+if _FIXTURES not in sys.path:
+    sys.path.insert(0, _FIXTURES)
+from derivation_tier import AUDIT_TEXTS, BIND, BIND_FALSE_SOURCE, readme_document  # noqa: E402
 ORDERED = re.compile(r"\b(earlier|prior|previous|preceding)\b", re.I)      # an order put on a step's sources
 ANYWHERE = re.compile(r"\bwherever\b[^.;]*\blisted\b", re.I)                 # what is true instead
 # a processing order said to be needed: "must process a used step before", "so a `uses` ref is processed first"
@@ -48,16 +54,6 @@ def clause(text, lead):
     hits = re.findall(re.escape(lead) + r"\s+([^.;(]*)", flat(text))
     assert len(hits) == 1, (lead, hits)
     return hits[0]
-
-
-def readme_document():
-    """README's Documents section and the document its curl example sends."""
-    text = (ROOT / "README.md").read_text(encoding="utf-8")
-    sections = [s for s in text.split("\n## ") if s.startswith("Documents")]
-    assert len(sections) == 1
-    body = re.search(r"-d '(\{.*?\})'", sections[0], re.S)
-    assert body, "the Documents section's curl example"
-    return sections[0], json.loads(body.group(1))["document"]
 
 
 def fields(r):
@@ -118,15 +114,12 @@ def test_architecture_matches_its_generator_and_says_what_compose_does():
 
 def test_binding_docstring_holds_with_the_source_listed_after_its_user():
     doc = ast.get_docstring(ast.parse((ROOT / "tests" / "test_binding.py").read_text(encoding="utf-8")))
-    src = {"id": "a1", "domain": "geometry", "spec": {"GEOM_VERIFY": {"rect_length": 4, "rect_width": 6,
-                                                                       "claimed_rect_area": 24}}}
-    user = {"id": "a2", "domain": "geometry", "spec": {"GEOM_VERIFY": {"rect_width": 1, "claimed_rect_area": 24}},
-            "bind": {"GEOM_VERIFY.rect_length": "a1.actual_area"}}
+    src, user = BIND                              # a1: 4x6 = 24; a2 binds a1.actual_area
     # BUILD an input from a CONFIRMED output, with the source listed after its user
     r = D.verify_derivation([copy.deepcopy(user), copy.deepcopy(src)])
     assert r["verdict"] == "HOLDS" and r["trail"][0]["status"] == "CONFIRMED" and "a1" in r["trail"][0]["uses"]
     # fail-closed: a broken source leaves the step a GAP, wherever the source is listed
-    bad = dict(src, spec={"GEOM_VERIFY": dict(src["spec"]["GEOM_VERIFY"], claimed_rect_area=99)})
+    bad = copy.deepcopy(BIND_FALSE_SOURCE[0])     # a1 claiming 99
     r = D.verify_derivation([copy.deepcopy(user), bad])
     assert r["verdict"] == "BROKEN" and r["trail"][0]["status"] == "NOT_APPLICABLE"
     assert r["trail"][0]["unresolved_binding"] == ["GEOM_VERIFY.rect_length<-a1.actual_area"]
@@ -163,7 +156,7 @@ def test_audit_says_its_text_order_is_kept_for_reading_not_needed_for_the_verdic
         return real(steps)
 
     monkeypatch.setattr(D, "verify_derivation", captured)
-    for text in ("A rectangle 4 by 6 has area 25, so 25 x 2 = 50.", "2 + 2 = 5 and 3 + 3 = 7."):
+    for text in AUDIT_TEXTS:
         seen.clear()
         res = A.audit(text, EngineConfig(skip_schema_validation=True), seal=False)
         (listed,) = seen

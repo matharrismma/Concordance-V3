@@ -15,12 +15,22 @@ from __future__ import annotations
 
 import copy
 import itertools
+import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pytest
 
 from concordance import derivation as D
 from concordance.verifiers import bridges as _bridges
+
+# the derivations live in the tier (tests/fixtures/derivation_tier.py), their one home
+_FIXTURES = str(Path(__file__).resolve().parent / "fixtures")
+if _FIXTURES not in sys.path:
+    sys.path.insert(0, _FIXTURES)
+from derivation_tier import (CYCLE, CYCLE_AND_RESTING, DEFAULT_ID_COLLISION, ERROR_BESIDE_FALSE,  # noqa: E402
+                             FALSE_CYCLE, FALSE_SELF_CYCLE, ORDER_FREE, OUTCOMES, POINTERS, PROOF, REPEATED,
+                             SELF_CYCLE, SORTED, TWO_STEP, VERDICT, num, rect)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -315,62 +325,10 @@ def verify_derivation_45fcd3c(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
     return out
 
 
-# ── the steps ─────────────────────────────────────────────────────────────────────────────────────────────
-def num(sid, expr, value, **kw):
-    step = {"id": sid, "domain": "mathematics", "claim": f"{expr} = {value}",
-            "spec": {"mode": "numeric", "params": {"numeric_expr": expr, "claimed_value": value}}}
-    step.update(kw)
-    return step
-
-
-def rect(sid, length, width, area, **kw):
-    g = {"rect_width": width, "claimed_rect_area": area}
-    if length is not None:
-        g["rect_length"] = length
-    step = {"domain": "geometry", "spec": {"GEOM_VERIFY": g}}
-    if sid is not None:
-        step["id"] = sid
-    step.update(kw)
-    return step
-
-
-def err(sid, **kw):
-    step = {"id": sid, "domain": "mathematics", "spec": {"mode": "no_such_mode", "params": {}}}
-    step.update(kw)
-    return step
-
-
-STAT = {"STAT_VERIFY": {"claimed_p": 0.05, "tail": "two-sided", "test": "z", "z": 1.96}}   # a p-value that holds
-PROOF = "therefore the theorem is proven for all n"
-AREA = {"GEOM_VERIFY.rect_length": "a.actual_area"}
-
-# Each listed dependency-sorted (every step after the steps it uses or binds from).
-ORDER_FREE: Dict[str, List[Dict[str, Any]]] = {
-    # a uses edge (c uses b) and a bind (b binds a), whose sources other orders list later
-    "true chain": [rect("a", 4, 6, 24), rect("b", None, 1, 24, bind=AREA), num("c", "24*2", 48, uses=["b"])],
-    "false dependency": [num("a", "2+2", 5), num("b", "3+3", 6, uses=["a"])],
-    "bind from a false source": [rect("a", 4, 6, 99), rect("c", None, 1, 24, bind=AREA)],
-    "bridge MISMATCH": [{"id": "s", "domain": "statistics", "claim": "observed p = 0.05", "spec": STAT},
-                        num("m", "1+1", 2, claim=PROOF, uses=["s"])],
-    "bridge INCOMPLETE": [rect("g", 4, 6, 24),
-                          num("m", "24*2", 48, claim="the area scales as the square of the side", uses=["g"])],
-    "erroring dependency": [err("e"), num("b", "3+3", 6, uses=["e"])],
-}
-# each step's effective outcome and whether it originates it, the same in every order
-OUTCOMES = {
-    "true chain": {"a": ("CONFIRMED", False), "b": ("CONFIRMED", False), "c": ("CONFIRMED", False)},
-    "false dependency": {"a": ("BROKEN", True), "b": ("BROKEN", False)},
-    "bind from a false source": {"a": ("BROKEN", True), "c": ("GAP", True)},
-    "bridge MISMATCH": {"s": ("CONFIRMED", False), "m": ("BROKEN", True)},
-    "bridge INCOMPLETE": {"g": ("CONFIRMED", False), "m": ("GAP", True)},
-    "erroring dependency": {"e": ("ERROR", True), "b": ("ERROR", False)},
-}
-VERDICT = {"true chain": "HOLDS", "false dependency": "BROKEN", "bind from a false source": "BROKEN",
-           "bridge MISMATCH": "BROKEN", "bridge INCOMPLETE": "INCOMPLETE", "erroring dependency": "SYSTEM_ERROR"}
-
+# ── the steps: ORDER_FREE (each listed dependency-sorted), OUTCOMES, VERDICT, SORTED, REPEATED and the inline
+# derivations below are in the tier, tests/fixtures/derivation_tier.py ─────────────────────────────────────────
 FIELDS = ("status", "link_ok", "uses", "missing_refs", "builds_on_unconfirmed", "unresolved_binding", "bridge",
           "spec_hash")
-POINTERS = (("BROKEN", "broken_at"), ("GAP", "gap_at"), ("ERROR", "error_at"))
 
 
 def by_id(r):
@@ -433,10 +391,7 @@ def strip(r):
 # ── RED TO GREEN ──────────────────────────────────────────────────────────────────────────────────────────
 def test_the_reversed_two_step_derivation_holds():
     """Measured red at 45fcd3c: [a, b uses a] HOLDS and [b uses a, a] INCOMPLETE (gap_at b, missing_refs a)."""
-    a = {"id": "a", "domain": "mathematics", "claim": "2+2=4",
-         "spec": {"mode": "equality", "params": {"expr_a": "2+2", "expr_b": "4"}}}
-    b = {"id": "b", "domain": "mathematics", "claim": "4*3=12", "uses": ["a"],
-         "spec": {"mode": "equality", "params": {"expr_a": "4*3", "expr_b": "12"}}}
+    a, b = copy.deepcopy(TWO_STEP)
     fwd, rev = D.verify_derivation([a, b]), D.verify_derivation([b, a])
     assert fwd["verdict"] == "HOLDS"
     assert rev["verdict"] == "HOLDS", (rev["verdict"], rev["gap_at"], [t.get("missing_refs") for t in rev["trail"]])
@@ -483,30 +438,6 @@ def test_every_listing_order_gives_the_same_fields_by_step_id(name, monkeypatch)
                 assert r[field] == (next(iter(orig)) if orig else None), (name, listed, field)
 
 
-SORTED = dict(ORDER_FREE, **{
-    "mixed error and missing": [err("e"), num("b", "3+3", 6, uses=["e", "z"])],
-    "reference to an absent id": [num("a", "2+2", 4, uses=["z"])],
-    "false middle": [num("a", "2+2", 4), num("b", "3+3", 7, uses=["a"]), num("c", "1+1", 2, uses=["b"])],
-    "synthetic bond memo": [
-        {"id": "par", "domain": "public_finance", "spec": {"PUBFIN_VERIFY": {
-            "net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}},
-        {"id": "debt", "domain": "public_finance", "bind": {"PUBFIN_VERIFY.par": "par.actual_par"},
-         "spec": {"PUBFIN_VERIFY": {"par": 0, "annual_rate": 0.045, "term_months": 240, "interest_only_months": 24,
-                                    "claimed_monthly_pi": 82815.95, "claimed_total_interest": 6745294.80}}},
-        {"id": "dscr", "domain": "real_estate", "bind": {"RE_VERIFY.annual_debt_service": "debt.annual_pi"},
-         "spec": {"RE_VERIFY": {"net_operating_income": 1_500_000, "annual_debt_service": 0,
-                                "claimed_dscr": 1.5093}}}],
-    "fault locus": [
-        {"id": "n", "domain": "mathematics",
-         "spec": {"mode": "numeric", "params": {"numeric_expr": "12000000*0.02", "claimed_value": 240000}}},
-        {"id": "par", "domain": "public_finance", "uses": ["n"], "spec": {"PUBFIN_VERIFY": {
-            "net_proceeds": 12_000_000, "issuance_cost_pct": 0.02, "round_up_to": 5000, "claimed_par": 12_245_000}}},
-        {"id": "bad", "domain": "public_finance", "bind": {"PUBFIN_VERIFY.par": "par.actual_par"},
-         "spec": {"PUBFIN_VERIFY": {"par": 0, "annual_rate": 0.045, "term_months": 240, "interest_only_months": 24,
-                                    "claimed_monthly_pi": 82900}}}],
-})
-
-
 @pytest.mark.parametrize("name", sorted(SORTED))
 def test_a_dependency_sorted_listing_returns_every_field_45fcd3c_returns(name):
     steps = SORTED[name]
@@ -520,7 +451,7 @@ def test_a_dependency_sorted_listing_returns_every_field_45fcd3c_returns(name):
 # ── WHERE TRUST STOPPED ───────────────────────────────────────────────────────────────────────────────────
 def test_a_cycle_of_holding_steps_originates_its_gap_at_every_member(monkeypatch):
     rec = Recorder(monkeypatch)
-    for perm in itertools.permutations([num("a", "2+2", 4, uses=["b"]), num("b", "3+3", 6, uses=["a"])]):
+    for perm in itertools.permutations(CYCLE):
         r = rec.run(list(perm))
         assert r["verdict"] == "INCOMPLETE"
         assert rec.originators() == {"BROKEN": set(), "GAP": {"a", "b"}, "ERROR": set()}
@@ -533,7 +464,7 @@ def test_an_error_beneath_a_missing_reference_stays_where_45fcd3c_put_it(monkeyp
     """[e: unknown math mode, b uses e and an absent z]: error_at e and gap_at null, as at 45fcd3c — b's
     outcome is the ERROR it stands on, which it does not originate."""
     rec = Recorder(monkeypatch)
-    for perm in itertools.permutations([err("e"), num("b", "3+3", 6, uses=["e", "z"])]):
+    for perm in itertools.permutations(SORTED["mixed error and missing"]):
         r = rec.run(list(perm))
         assert r["verdict"] == "SYSTEM_ERROR"
         assert (r["error_at"], r["gap_at"], r["broken_at"]) == ("e", None, None)
@@ -542,10 +473,10 @@ def test_an_error_beneath_a_missing_reference_stays_where_45fcd3c_put_it(monkeyp
 
 def test_holds_if_and_only_if_no_step_originates_a_break_a_gap_or_an_error():
     cases = list(ORDER_FREE.values()) + list(SORTED.values()) + [
-        [num("a", "2+2", 4, uses=["b"]), num("b", "3+3", 6, uses=["a"])],
-        [num("a", "2+2", 5, uses=["a"])],
-        [num("a", "2+2", 4), num("a", "3+3", 6)],
-        [err("e"), num("b", "2+2", 5)],
+        CYCLE,
+        FALSE_SELF_CYCLE,
+        REPEATED["two true a, nobody uses a"][0],
+        ERROR_BESIDE_FALSE,
     ]
     seen = set()
     for steps in cases:
@@ -559,9 +490,8 @@ def test_holds_if_and_only_if_no_step_originates_a_break_a_gap_or_an_error():
 
 # ── NEVER HOLDS ON NO GROUND ──────────────────────────────────────────────────────────────────────────────
 def test_a_cycle_whose_members_hold_stays_incomplete_with_the_cycle_named():
-    for steps, cycle in (([num("a", "2+2", 4, uses=["a"])], ["a"]),
-                         ([num("a", "2+2", 4, uses=["b"]), num("b", "3+3", 6, uses=["a"]),
-                           num("c", "1+1", 2, uses=["a"])], ["a", "b"])):
+    for steps, cycle in ((SELF_CYCLE, ["a"]),
+                         (CYCLE_AND_RESTING, ["a", "b"])):
         for perm in itertools.permutations(steps):
             r = D.verify_derivation(copy.deepcopy(list(perm)))
             assert r["verdict"] == "INCOMPLETE"
@@ -574,8 +504,8 @@ def test_a_cycle_whose_members_hold_stays_incomplete_with_the_cycle_named():
 
 
 def test_a_cycle_with_a_false_member_is_broken_in_every_order():
-    for steps in ([num("a", "2+2", 5, uses=["a"])],
-                  [num("a", "2+2", 5, uses=["b"]), num("b", "3+3", 6, uses=["a"])]):
+    for steps in (FALSE_SELF_CYCLE,
+                  FALSE_CYCLE):
         for perm in itertools.permutations(steps):
             r = D.verify_derivation(copy.deepcopy(list(perm)))
             assert r["verdict"] == "BROKEN" and r["broken_at"] == "a"
@@ -607,24 +537,6 @@ def _counted(monkeypatch):
     return calls
 
 
-REPEATED = {
-    # measured at 45fcd3c, each stays as named
-    "a false and a true a, b uses a": ([num("a", "2+2", 5), num("a", "2+2", 4), num("b", "3+3", 6, uses=["a"])],
-                                       "BROKEN"),
-    "two s, m proof uses s": ([{"id": "s", "domain": "statistics", "claim": "observed p = 0.001",
-                                "spec": {"STAT_VERIFY": {}}}] * 2 + [num("m", "1+1", 2, claim=PROOF, uses=["s"])],
-                              "BROKEN"),
-    # the seam runs against EACH step carrying s, wherever it is listed
-    "s statistics, s geometry, m proof uses s": ([{"id": "s", "domain": "statistics", "spec": STAT},
-                                                 rect("s", 4, 6, 24), num("m", "1+1", 2, claim=PROOF, uses=["s"])],
-                                                "BROKEN"),
-    "two true a, nobody uses a": ([num("a", "2+2", 4), num("a", "3+3", 6)], "INCOMPLETE"),
-    # both a agree, and the bind is still unresolved: nothing can say which a is meant
-    "two true a, b binds a": ([rect("a", 4, 6, 24), rect("a", 4, 6, 24), rect("b", None, 1, 24, bind=AREA)],
-                              "INCOMPLETE"),
-}
-
-
 @pytest.mark.parametrize("name", sorted(REPEATED))
 def test_a_repeated_id_is_never_holds(name, monkeypatch):
     steps, verdict = REPEATED[name]
@@ -650,8 +562,7 @@ def test_a_repeated_id_is_never_holds(name, monkeypatch):
 
 def test_a_default_id_colliding_with_an_explicit_one_is_never_holds():
     """Measured at 45fcd3c as HOLDS: [id s1: 5x6=30, no id (so s1): 4x6=24, b binds s1.actual_area claims 24]."""
-    r = D.verify_derivation([rect("s1", 5, 6, 30), rect(None, 4, 6, 24),
-                             rect("b", None, 1, 24, bind={"GEOM_VERIFY.rect_length": "s1.actual_area"})])
+    r = D.verify_derivation(copy.deepcopy(DEFAULT_ID_COLLISION))
     assert r["verdict"] != "HOLDS"
     t = r["trail"]
     assert t[0]["repeated_id"] == t[1]["repeated_id"] == 2 and t[1]["id"] == "s1"

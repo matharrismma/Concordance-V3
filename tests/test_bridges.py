@@ -4,7 +4,17 @@ A single-domain verifier checks a step in its own terms; it cannot see the JOIN.
 boundary HALTs: a p-value asserted as mathematical PROOF is a category error (BROKEN); a crossing
 whose boundary justification is absent is INCOMPLETE (unproven, never a false HOLDS). Pure.
 """
+import copy
+import sys
+from pathlib import Path
+
 from concordance.verifiers import bridges
+
+# the derivations live in the tier (tests/fixtures/derivation_tier.py), their one home
+_FIXTURES = str(Path(__file__).resolve().parent / "fixtures")
+if _FIXTURES not in sys.path:
+    sys.path.insert(0, _FIXTURES)
+from derivation_tier import BRIDGE_PROOF  # noqa: E402
 
 
 # ── the seam check in isolation ───────────────────────────────────────────────────────────────────
@@ -51,12 +61,8 @@ def test_domain_aliases_resolve():
 # ── end-to-end through the derivation moat ────────────────────────────────────────────────────────
 def test_derivation_breaks_at_the_seam_when_a_p_value_is_claimed_as_proof():
     from concordance import derivation as d
-    steps = [
-        {"id": "s1", "domain": "statistics", "claim": "observed p = 0.001",
-         "spec": {"STAT_VERIFY": {}}},
-        {"id": "s2", "domain": "mathematics", "claim": "therefore the theorem is proven for all n",
-         "uses": ["s1"], "spec": {"mode": "identity", "params": {}}},
-    ]
+    # s1: observed p = 0.001 (statistics); s2 uses s1: "therefore the theorem is proven for all n"
+    steps = copy.deepcopy(BRIDGE_PROOF)
     out = d.verify_derivation(steps)
     assert out["verdict"] == "BROKEN" and out["broken_at"] == "s2"
     s2 = next(e for e in out["trail"] if e["id"] == "s2")

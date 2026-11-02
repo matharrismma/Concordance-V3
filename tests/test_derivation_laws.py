@@ -15,12 +15,20 @@ from __future__ import annotations
 import ast
 import copy
 import itertools
+import sys
 from pathlib import Path
 from typing import Dict
 
 import pytest
 
 from concordance import derivation as D
+
+# the derivations live in the tier (tests/fixtures/derivation_tier.py), their one home
+_FIXTURES = str(Path(__file__).resolve().parent / "fixtures")
+if _FIXTURES not in sys.path:
+    sys.path.insert(0, _FIXTURES)
+from derivation_tier import (BIND_CHAIN_4, CHAIN_1500, CHAIN_6, DERIVATIONS, HALTING, HALTING_DOC,  # noqa: E402
+                             PART_WAY, SELF_BIND, SELF_CYCLE, TRACE_CYCLE, num, repeated_body)
 
 SRC = Path(D.__file__)
 
@@ -29,36 +37,6 @@ SRC = Path(D.__file__)
 def _warm():
     """Pre-pay the heavy imports outside the per-verification timeout, as the server does at boot."""
     D.warm()
-
-
-def num(sid, expr, value, **kw):
-    step = {"id": sid, "domain": "mathematics", "claim": f"{expr} = {value}",
-            "spec": {"mode": "numeric", "params": {"numeric_expr": expr, "claimed_value": value}}}
-    step.update(kw)
-    return step
-
-
-def rect(sid, length, width, area, **kw):
-    g = {"rect_width": width, "claimed_rect_area": area}
-    if length is not None:
-        g["rect_length"] = length
-    step = {"id": sid, "domain": "geometry", "spec": {"GEOM_VERIFY": g}}
-    step.update(kw)
-    return step
-
-
-def err(sid, **kw):
-    step = {"id": sid, "domain": "mathematics", "spec": {"mode": "no_such_mode", "params": {}}}
-    step.update(kw)
-    return step
-
-
-def area_of(src):
-    return {"GEOM_VERIFY.rect_length": f"{src}.actual_area"}
-
-
-STAT = {"STAT_VERIFY": {"claimed_p": 0.05, "tail": "two-sided", "test": "z", "z": 1.96}}
-PROOF = "therefore the theorem is proven for all n"
 
 
 def outcomes():
@@ -209,19 +187,7 @@ def test_r1_and_r2_are_used_only_by_readout():
     assert {"_transfer", "_meet", "_readout"} <= loads
 
 
-# ── the closure ───────────────────────────────────────────────────────────────────────────────────────────
-DERIVATIONS = [
-    [rect("a", 4, 6, 24), rect("b", None, 1, 24, bind=area_of("a")), num("c", "24*2", 48, uses=["b"])],
-    [num("a", "2+2", 5), num("b", "3+3", 6, uses=["a"]), num("c", "1+1", 2, uses=["b"])],
-    [rect("a", 4, 6, 99), rect("c", None, 1, 24, bind=area_of("a")), err("e")],
-    [num("a", "2+2", 4, uses=["b"]), num("b", "3+3", 6, uses=["a"]), num("c", "1+1", 2, uses=["a", "z"])],
-    [rect("x", None, 1, 24, bind=area_of("y")), rect("y", None, 1, 24, bind=area_of("x")), num("d", "1+1", 2)],
-    [num("a", "2+2", 4), num("a", "3+3", 6), num("b", "1+1", 2, uses=["a"])],
-    [{"id": "s", "domain": "statistics", "spec": STAT},
-     num("m", "0.05*1", 0, claim=PROOF, uses=["s"], bind={"params.claimed_value": "s.actual_p"})],
-]
-
-
+# ── the closure: DERIVATIONS, PART_WAY and the chains below are in the tier, tests/fixtures/derivation_tier.py ─
 def test_the_closure_halts_by_settling_within_k_plus_1_passes():
     for steps in DERIVATIONS:
         for perm in itertools.permutations(steps):
@@ -230,7 +196,7 @@ def test_the_closure_halts_by_settling_within_k_plus_1_passes():
             assert r["halt"]["reason"] == "settled" and 1 <= r["halt"]["passes"] <= k + 1, r["halt"]
             assert r["halt"]["cap"] == k + 1
     # tight: a chain listed in reverse settles one link a pass, then one pass in which nothing moves
-    chain = [num(f"s{i}", f"{i}+1", i + 1, uses=[f"s{i - 1}"] if i else []) for i in range(6)]
+    chain = copy.deepcopy(CHAIN_6)
     r = D.verify_derivation(list(reversed(chain)))
     assert r["verdict"] == "HOLDS" and r["halt"] == {"passes": 7, "reason": "settled", "cap": 7}
     assert D.verify_derivation(chain)["halt"]["passes"] == 2
@@ -271,9 +237,8 @@ def test_each_verifier_runs_exactly_once_or_never_when_its_bind_stays_unresolved
 
     monkeypatch.setattr(D, "verify_step", counting)
     counted = DERIVATIONS + [
-        [rect("a", 4, 6, 24), rect("b", None, 1, 24, bind=area_of("a")), rect("c", None, 2, 48, bind=area_of("b")),
-         num("d", "48*1", 48, uses=["c"])],
-        [rect("z", None, 1, 24, bind=area_of("z"))],
+        BIND_CHAIN_4,
+        SELF_BIND,
     ]
     ran_late = 0
     for steps in counted:
@@ -301,8 +266,7 @@ def test_a_repeated_id_costs_work_in_proportion_to_the_body(monkeypatch):
     per step. Counted here instead of timed: at most one bridge check per step per distinct dependency domain,
     nothing handed to _transfer larger than the step's own uses, and a trace the size of the body."""
     k = 800
-    doms = ["statistics", "mathematics", "Statistics", "STATISTICS"]
-    steps = [{"id": "a", "domain": doms[i % 4], "uses": ["a"], "spec": {"n": i}} for i in range(k)]
+    steps = repeated_body(k)      # held in the tier as EXCLUDED: the stub below is not a real verifier
     monkeypatch.setattr(D, "verify_step", lambda domain, spec: {"status": "CONFIRMED", "detail": "stub", "data": {}})
     checks = []
     real_check = D._bridges.check
@@ -329,15 +293,6 @@ def test_the_pass_cap_is_at_least_k_plus_1():
     for k in range(200):
         assert D._pass_cap(k) >= k + 1
     assert D.verify_derivation([num("a", "2+2", 4)])["halt"] == {"passes": 2, "reason": "settled", "cap": 2}
-
-
-PART_WAY = [
-    # a chain with a bind: listed against its edges it settles one link a pass
-    [rect("a", 4, 6, 24), rect("b", None, 1, 24, bind=area_of("a")), num("c", "24*2", 48, uses=["b"]),
-     num("d", "48+2", 50, uses=["c"])],
-    # a false step behind a bind, beside our failure: cut off before the break, it must not read SYSTEM_ERROR
-    [rect("y", 4, 6, 24), rect("x", None, 1, 99, bind=area_of("y")), err("e")],
-]
 
 
 def test_a_cap_that_stops_part_way_keeps_what_settled_and_never_says_more(monkeypatch):
@@ -394,13 +349,12 @@ def test_trace_distance_and_stands_on_are_computed_without_recursion():
             calls = {n.func.id for n in ast.walk(fn) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
             assert fn.name not in calls, fn.name
     # on a cycle there is no depth, and stands_on names what the step reaches, itself included
-    ev = {e["id"]: e for e in D.verify_derivation([num("a", "2+2", 4, uses=["b"]), num("b", "3+3", 6, uses=["a"]),
-                                                   num("c", "1+1", 2, uses=["a"]), num("d", "1+2", 3)])["trace"]["events"]}
+    ev = {e["id"]: e for e in D.verify_derivation(copy.deepcopy(TRACE_CYCLE))["trace"]["events"]}
     assert (ev["a"]["distance"], ev["a"]["stands_on"]) == (None, ["b", "a"])
     assert (ev["b"]["distance"], ev["b"]["stands_on"]) == (None, ["a", "b"])
     assert (ev["c"]["distance"], ev["c"]["stands_on"]) == (None, ["a", "b"])
     assert (ev["d"]["distance"], ev["d"]["stands_on"]) == (1, [])
-    ev = D.verify_derivation([num("a", "2+2", 4, uses=["a"])])["trace"]["events"][0]
+    ev = D.verify_derivation(copy.deepcopy(SELF_CYCLE))["trace"]["events"][0]
     assert (ev["distance"], ev["stands_on"]) == (None, ["a"])
 
 
@@ -418,11 +372,11 @@ def test_the_halting_record_rides_in_the_response_only(tmp_path, monkeypatch):
     monkeypatch.setenv("CONCORDANCE_DATA_DIR", str(tmp_path))
     from concordance import cas, compose, receipts
     from concordance.config import EngineConfig
-    steps = [num("b", "3+3", 6, uses=["a"]), num("a", "2+2", 4)]
+    steps = HALTING
     r = D.verify_derivation(copy.deepcopy(steps))
     assert r["verdict"] == "HOLDS" and r["halt"] == {"passes": 3, "reason": "settled", "cap": 3}
     assert not _has_key(receipts.record_from_derivation(r).to_dict(), "halt")
-    doc = compose.seal_document({"title": "listed against its edge", "steps": copy.deepcopy(steps)}, EngineConfig())
+    doc = compose.seal_document(copy.deepcopy(HALTING_DOC), EngineConfig())
     assert doc["verdict"] == "HOLDS" and doc["root"]
     root = cas.fetch(doc["root"])
     assert root["kind"] == "document" and not _has_key(root, "halt")
@@ -433,7 +387,7 @@ def test_the_halting_record_rides_in_the_response_only(tmp_path, monkeypatch):
 def test_a_reverse_listed_chain_of_1500_steps_settles():
     """Longer than Python's default recursion limit (1,000): a recursive walk of the chain would raise here."""
     k = 1500
-    chain = [num(f"s{i}", f"{i}+1", i + 1, uses=[f"s{i - 1}"] if i else []) for i in range(k)]
+    chain = copy.deepcopy(CHAIN_1500)
     r = D.verify_derivation(list(reversed(chain)))
     assert r["verdict"] == "HOLDS" and r["confirmed_steps"] == k
     assert r["halt"] == {"passes": k + 1, "reason": "settled", "cap": k + 1}

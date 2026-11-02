@@ -5,15 +5,21 @@ error/gap-dependency cascade (P0), calendar tz-resolution (P1). Runnable with py
 """
 from __future__ import annotations
 
+import copy
 import os
 import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
+# the derivations live in the tier (tests/fixtures/derivation_tier.py), their one home
+_FIXTURES = str(_ROOT / "tests" / "fixtures")
+if _FIXTURES not in sys.path:
+    sys.path.insert(0, _FIXTURES)
 
 from concordance.verifiers import energy, calendar_time, medicine  # noqa: E402
 from concordance import derivation  # noqa: E402
+from derivation_tier import GAP_DEPENDENCY  # noqa: E402
 
 
 def test_drug_dosage_confirms_arithmetic_but_headlines_the_clinical_caveat():
@@ -53,16 +59,13 @@ def test_derivation_error_or_gap_dependency_is_never_rendered_broken():
     (ERROR) or had no verifier for (NOT_APPLICABLE / a gap) was falling through to BROKEN — our
     own failure downgraded into a falsehood about the caller's claim. Only a genuine MISMATCH may
     propagate a break."""
-    math_step = {"id": "b", "domain": "mathematics", "uses": ["a"],
-                 "spec": {"mode": "equality",
-                          "params": {"expr_a": "x + x", "expr_b": "2*x", "variables": ["x"]}}}
+    gap_step, math_step = copy.deepcopy(GAP_DEPENDENCY)
     # Sanity: the math step genuinely CONFIRMS on its own (so the verdict below is about the
     # dependency handling, not about this step failing).
     solo = derivation.verify_derivation([{k: v for k, v in math_step.items() if k != "uses"}])
     assert solo["verdict"] == "HOLDS", solo
     # It builds on step 'a', a domain with no verifier — a gap (or, if the router raises, our
     # ERROR). Either way the whole derivation must NOT be BROKEN.
-    gap_step = {"id": "a", "domain": "__no_such_domain__", "spec": {}}
     out = derivation.verify_derivation([gap_step, math_step])
     assert out["verdict"] != "BROKEN", out
     assert out["verdict"] in ("INCOMPLETE", "SYSTEM_ERROR"), out
