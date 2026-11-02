@@ -9,10 +9,7 @@
 #
 # Measured 2026-11-02 at 45fcd3c with `harness.py measure` (a fresh worktree, -vv, through the
 # result stream) on the lead's Windows laptop, Python 3.14, extras math/scribe/signing and tzdata
-# installed: 915 passed, 3 failed, 30 skipped, 2 deselected. All three fail the same way: this
-# Windows build of cryptography 47.0.0 has the mldsa module but its backend reports
-# mldsa_supported() False, so ML-DSA-65 raises UnsupportedAlgorithm instead of skipping. On Linux
-# they pass: GitHub's workflow on Ubuntu was green at 45fcd3c (gh run list). No vacuity plugin exists in this repository, so no vacuous lines.
-tests/test_receipt_conformance.py::test_a_tampered_post_quantum_signature_does_not_verify | 905e92df8704
-tests/test_receipt_conformance.py::test_a_tampered_record_fails_the_post_quantum_check | 905e92df8704
-tests/test_receipt_conformance.py::test_the_post_quantum_signature_verifies_and_is_durable | 905e92df8704
+# installed: 915 passed, 3 failed, 30 skipped, 2 deselected. Its three reds, the post-quantum
+# tests in tests/test_receipt_conformance.py, were retired by run 2026-11-02-follow-ups, step
+# mldsa-backend-probe, which deleted their lines: no red is listed. No vacuity plugin exists in
+# this repository, so no vacuous lines.

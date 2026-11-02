@@ -5,10 +5,14 @@ any envelope/attestation change.
 """
 from __future__ import annotations
 
+import builtins
 import copy
 import importlib.util
 import json
+import os
 import pathlib
+import sys
+import types
 
 import pytest
 
@@ -114,10 +118,24 @@ def test_the_in_toto_dsse_envelope_verifies_and_names_the_subject():
     assert not _ed25519_verify(dsse["public_key"], sig, pae + b"x")   # tamper the body → fails
 
 
+def _require_pq():
+    """Skip where the installed cryptography cannot do ML-DSA-65 — the package is too old, or (as on
+    cryptography 47.0.0 for Windows) the mldsa module imports but its backend does not support it. Under
+    GitHub's Linux CI (CI set, sys.platform linux) the backend supports it, so a skip there would hide the
+    three tests that must run: it fails instead, and a green CI shows they ran."""
+    import concordance.signing as signing  # only to probe the backend; not what a stranger does
+    try:
+        signing._require_mldsa()
+    except ImportError as e:
+        if os.environ.get("CI") and sys.platform == "linux":
+            pytest.fail(f"ML-DSA-65 not available on GitHub's Linux CI, where these tests must run: {e}")
+        pytest.skip(f"ML-DSA-65 not available: {e}")
+
+
 def test_the_post_quantum_signature_verifies_and_is_durable():
     """The ML-DSA-65 (FIPS 204, lattice) signature over the same canonical record bytes — the half that
     survives a quantum adversary. A stranger checks it with cryptography and nothing from this repo."""
-    pytest.importorskip("cryptography")
+    _require_pq()
     vr, g = _verify_receipt(), _golden()
     pq = g["attest"]["pq"]
     assert pq["alg"] == "ML-DSA-65"
@@ -126,6 +144,7 @@ def test_the_post_quantum_signature_verifies_and_is_durable():
 
 
 def test_a_tampered_post_quantum_signature_does_not_verify():
+    _require_pq()
     vr, g = _verify_receipt(), _golden()
     pq = dict(g["attest"]["pq"])
     s = pq["signature"]
@@ -135,8 +154,130 @@ def test_a_tampered_post_quantum_signature_does_not_verify():
 
 
 def test_a_tampered_record_fails_the_post_quantum_check():
+    _require_pq()
     vr, g = _verify_receipt(), _golden()
     g2 = copy.deepcopy(g)
     g2["verifier_results"] = []   # change the covered bytes
     ok, _why = vr.check_pq_signature(g2["attest"]["pq"], g2)
     assert not ok
+
+
+# ── The backend probe, stubbed: these run on any machine, whatever its cryptography can do ────────────────
+
+_ASYM = "cryptography.hazmat.primitives.asymmetric"
+_D47D692_MISSING = ("post-quantum (ML-DSA) signing requires a recent `cryptography` package "
+                    "(>=45, OpenSSL 3.5+ / its bundled provider). Install with: "
+                    "pip install 'concordance[signing]'")   # the missing-package message at d47d692, frozen
+_REFUSAL = "ML-DSA-65 is not supported by this backend."     # what cryptography 47.0.0's Windows backend raises
+
+
+def _stub_mldsa(monkeypatch, generate=None, missing=None):
+    """Stand in for `from cryptography.hazmat.primitives.asymmetric import mldsa` inside signing._require_mldsa:
+    raise `missing` (the package is absent), or hand back a module whose MLDSA65PrivateKey.generate is
+    `generate`. signing's probed-once flag is reset first, so a real probe earlier in the run cannot skip the
+    stub's probe. Returns the stub module."""
+    import concordance.signing as signing
+    monkeypatch.setattr(signing, "_mldsa_probed", False, raising=False)
+    mod = types.SimpleNamespace(MLDSA65PrivateKey=types.SimpleNamespace(generate=generate))
+    real = builtins.__import__
+
+    def stub(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == _ASYM and fromlist and "mldsa" in fromlist:
+            if missing is not None:
+                raise missing
+            return types.SimpleNamespace(mldsa=mod)
+        return real(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", stub)
+    return mod
+
+
+def _refusing(monkeypatch):
+    """A backend that has the mldsa module and refuses ML-DSA-65; returns the refusal it raises."""
+    from cryptography.exceptions import UnsupportedAlgorithm
+    refusal = UnsupportedAlgorithm(_REFUSAL)
+
+    def generate():
+        raise refusal
+    _stub_mldsa(monkeypatch, generate)
+    return refusal
+
+
+def _ending(fn):
+    """How fn() ends, read rather than obeyed: ('returned', value), ('skipped', e), ('failed', e) or
+    (exception type name, e) — so a skip or a fail raised inside it is seen, not taken as this test's outcome."""
+    try:
+        return "returned", fn()
+    except pytest.skip.Exception as e:
+        return "skipped", e
+    except pytest.fail.Exception as e:
+        return "failed", e
+    except Exception as e:  # noqa: BLE001
+        return type(e).__name__, e
+
+
+def test_a_refusing_backend_is_a_clean_not_available_error_with_the_refusal_chained(monkeypatch):
+    import concordance.signing as signing
+    refusal = _refusing(monkeypatch)
+    for _ in range(2):              # a refusal never marks the backend probed: every caller fails the same way
+        with pytest.raises(ImportError) as ei:
+            signing._require_mldsa()
+        msg = str(ei.value)
+        assert msg.startswith("post-quantum (ML-DSA) signing is not available: "), msg
+        assert "does not support ML-DSA-65" in msg and _REFUSAL in msg, msg   # the backend's own reason
+        assert "pip install" not in msg, msg     # the package is installed: installing it is not the remedy
+        assert ei.value.__cause__ is refusal
+
+
+def test_a_supported_backend_probes_once_and_returns_the_module(monkeypatch):
+    import concordance.signing as signing
+    calls = []
+    mod = _stub_mldsa(monkeypatch, lambda: calls.append(1))
+    assert signing._require_mldsa() is mod
+    assert signing._require_mldsa() is mod
+    assert len(calls) == 1
+
+
+def test_a_missing_package_keeps_the_d47d692_message(monkeypatch):
+    import concordance.signing as signing
+    gone = ImportError(f"No module named '{_ASYM}.mldsa'")
+    _stub_mldsa(monkeypatch, missing=gone)
+    with pytest.raises(ImportError) as ei:
+        signing._require_mldsa()
+    assert str(ei.value) == _D47D692_MISSING
+    assert ei.value.__cause__ is gone
+
+
+def test_any_other_probe_error_propagates_and_is_never_a_skip(monkeypatch):
+    import concordance.signing as signing
+    boom = RuntimeError("the backend broke some other way")
+
+    def generate():
+        raise boom
+    _stub_mldsa(monkeypatch, generate)
+    with pytest.raises(RuntimeError) as ei:
+        signing._require_mldsa()
+    assert ei.value is boom
+    kind, e = _ending(_require_pq)
+    assert kind == "RuntimeError" and e is boom, (kind, e)    # the guard neither skips it nor recasts it
+
+
+def test_on_githubs_linux_ci_an_unavailable_backend_fails_instead_of_skipping(monkeypatch):
+    _refusing(monkeypatch)
+    with monkeypatch.context() as m:
+        m.setenv("CI", "true")
+        m.setattr(sys, "platform", "linux")
+        kind, e = _ending(_require_pq)
+    assert kind == "failed", (kind, e)
+    assert "ML-DSA-65 not available" in str(e) and "does not support ML-DSA-65" in str(e), str(e)
+
+
+def test_off_ci_an_unavailable_backend_skips_with_the_not_available_reason(monkeypatch):
+    _refusing(monkeypatch)
+    with monkeypatch.context() as m:
+        m.delenv("CI", raising=False)          # GitHub sets CI=true: unset, so this reads off-CI everywhere
+        m.setattr(sys, "platform", "linux")    # and Linux, so the skip comes from CI being unset, not from Windows
+        kind, e = _ending(_require_pq)
+    assert kind == "skipped", (kind, e)
+    assert str(e).startswith("ML-DSA-65 not available: post-quantum (ML-DSA) signing is not available: "), str(e)
+    assert "does not support ML-DSA-65" in str(e) and _REFUSAL in str(e), str(e)

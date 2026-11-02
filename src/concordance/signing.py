@@ -218,17 +218,31 @@ def verify_seal(content_hash: str, attestation: Dict[str, Any]) -> Tuple[bool, s
 
 PQ_ALG = "ML-DSA-65"
 
+_MLDSA_MISSING = ("post-quantum (ML-DSA) signing requires a recent `cryptography` package "
+                  "(>=45, OpenSSL 3.5+ / its bundled provider). Install with: "
+                  "pip install 'concordance[signing]'")
+# the package is installed, so installing it is not the remedy: say what the backend refused, and why
+_MLDSA_UNSUPPORTED = ("post-quantum (ML-DSA) signing is not available: the installed `cryptography` has the "
+                      "mldsa module, but its backend does not support ML-DSA-65")
+_mldsa_probed = False
+
 
 def _require_mldsa():
+    global _mldsa_probed
     try:
         from cryptography.hazmat.primitives.asymmetric import mldsa
-        return mldsa
     except ImportError as e:
-        raise ImportError(
-            "post-quantum (ML-DSA) signing requires a recent `cryptography` package "
-            "(>=45, OpenSSL 3.5+ / its bundled provider). Install with: "
-            "pip install 'concordance[signing]'"
-        ) from e
+        raise ImportError(_MLDSA_MISSING) from e
+    if not _mldsa_probed:
+        # The module can import while its OpenSSL backend lacks ML-DSA (cryptography 47.0.0's Windows
+        # build, measured 2026-11-02): probe once, so every caller fails the same clean way.
+        from cryptography.exceptions import UnsupportedAlgorithm
+        try:
+            mldsa.MLDSA65PrivateKey.generate()
+        except UnsupportedAlgorithm as e:
+            raise ImportError(f"{_MLDSA_UNSUPPORTED} (the backend says: {e})") from e
+        _mldsa_probed = True
+    return mldsa
 
 
 def pq_generate_keypair() -> Tuple[str, str]:
