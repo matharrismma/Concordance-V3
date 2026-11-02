@@ -84,9 +84,9 @@ correct abatement is lawful, or a correct payment is affordable; those caveats r
 
 ## Documents — receipts that stand on receipts
 
-A document is a derivation whose steps may **bind** their inputs to earlier steps' outputs, sealed as one
-root over every step's packet hash, status and dependencies (plus any parent seals — an earlier version, a
-scribe pass):
+A document is a derivation whose steps may **bind** their inputs to other steps' outputs, wherever those steps
+are listed, sealed as one root over every step's packet hash, status and dependencies (plus any parent seals — an
+earlier version, a scribe pass):
 
 ```bash
 curl -s localhost:8000/verify -d '{"document":{"title":"memo","steps":[

@@ -1,9 +1,10 @@
 """compose — receipts that stand on receipts.
 
-A DOCUMENT is a derivation whose steps may bind their inputs to earlier steps' outputs (derivation.py's
-`bind`), sealed as one content-addressed ROOT whose record names every step's spec_hash, status and
-dependencies, the derivation seal that verified them, and any PARENT seals (a scribe pass, an earlier
-version). Content addressing makes it a hash tree: change one input anywhere and the root changes.
+A DOCUMENT is a derivation whose steps may bind their inputs to other steps' outputs, wherever those steps are
+listed (derivation.py's `bind`), sealed as one content-addressed ROOT whose record names every step's
+spec_hash, status and dependencies, the derivation seal that verified them, and any PARENT seals (a scribe
+pass, an earlier version). Content addressing makes it a hash tree: change one input anywhere and the root
+changes.
 
     doc = {"title": "...", "steps": [{id, domain, spec, bind?, uses?, label?}, ...],
            "parents": ["<seal hash>", ...], "text": "optional prose with {step_id} references"}

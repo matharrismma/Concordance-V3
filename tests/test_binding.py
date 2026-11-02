@@ -1,7 +1,8 @@
 """Value-binding in the derivation — composition 3b (2026-09-25).
 
-A step may BUILD an input from a CONFIRMED prior step's output: bind = {"<spec path>": "<srcId>.<key>"}
-(key defaults to "actual"). The moat resolves it ONLY from a confirmed source and substitutes into a
+A step may BUILD an input from another step's CONFIRMED output, wherever that step is listed:
+bind = {"<spec path>": "<srcId>.<key>"} (key defaults to "actual"). The moat resolves it ONLY from a
+confirmed source, once that source has settled, and substitutes into a
 deep copy of the step's spec before verifying it. Fail-closed: if the source is broken or absent, the
 binding is unresolved and the step is a GAP — never verified with a fabricated value, never a guessed
 HOLDS, and never a MISMATCH manufactured from our own inability to resolve a reference.

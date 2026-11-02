@@ -3431,8 +3431,9 @@ def audit(text: str, config, seal: bool = True, index: bool = True, card: bool =
     Composition (2026-09-25): after extraction, `compose_uses` sets a `uses` edge wherever the author
     chained two claims ("A, so B" reusing A's number). The moat then checks the LINK as well as each
     step, so a conclusion that rests on a false premise no longer stands on its own — the reasoning is
-    verified, not just the isolated facts. The derivation runs in TEXT order so a `uses` ref (always an
-    earlier claim) is processed first; the report keeps extraction order.
+    verified, not just the isolated facts. The derivation is listed in TEXT order, so its trail and seal read
+    as the text does; a `uses` ref is always an earlier claim, but the closure resolves it wherever it is
+    listed. The report keeps extraction order.
 
     Governed claims and coverage (2026-10-08, the failure report): see _GOV_BEFORE / _material_fragments above.
     Verdicts: HOLDS (every checked claim held AND the checked claims cover the text), PARTIAL (the checked
@@ -3459,8 +3460,10 @@ def audit(text: str, config, seal: bool = True, index: bool = True, card: bool =
     checked = [s_ for s_ in steps if not s_.get("governed")]
     gov_ids = {s_["id"] for s_ in governed}
     from .derivation import verify_derivation
-    # The derivation must process a used step before the step that uses it. `uses` edges always point
-    # from a later claim back to an earlier one, so text order satisfies that; an unlocatable claim
+    # The closure resolves a used claim wherever it is listed, so this order is not needed for the verdict.
+    # It is kept so the trail and its seal read in the order the text states the claims, and so where trust
+    # stopped (broken_at / gap_at / error_at, each the first originator in listed order) names the first one
+    # in the text. `uses` edges always point from a later claim back to an earlier one. An unlocatable claim
     # sorts to the end (stable). The report below still comes back in extraction order.
     order = sorted(range(len(checked)),
                    key=lambda i: (locate(checked[i].get("claim") or "") if locate(checked[i].get("claim") or "") >= 0
