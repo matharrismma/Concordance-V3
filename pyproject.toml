@@ -1,19 +1,19 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "concordance"
 version = "3.0.0a1"
 description = "Receipts for numbers: deterministic verification of AI (and human) arithmetic with a re-checkable, content-addressed seal. MCP server + HTTP API."
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{ name = "Matt Harris" }]
 keywords = ["verification", "receipts", "provenance", "attestation", "cose", "scitt", "in-toto", "rekor", "mcp", "deterministic", "llm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

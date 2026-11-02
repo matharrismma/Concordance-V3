@@ -121,6 +121,7 @@ test_pressure_fighting.py
 test_probability.py
 test_public_api.py
 test_public_finance.py
+test_pyproject_license.py
 test_quantum_computing.py
 test_reach_front_door.py
 test_reachable_from_the_floor.py
