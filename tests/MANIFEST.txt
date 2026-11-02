@@ -72,6 +72,7 @@ test_geology.py
 test_geometry.py
 test_governance.py
 test_governance_moral.py
+test_halt_telemetry.py
 test_history_chronology.py
 test_hydrology.py
 test_inequality.py
