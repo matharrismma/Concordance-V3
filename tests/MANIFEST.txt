@@ -134,6 +134,7 @@ test_redos_guard.py
 test_refutations.py
 test_restate.py
 test_restatement_audit.py
+test_restatement_audit_planted.py
 test_retrieval_verifier.py
 test_review_fixes.py
 test_rhetoric.py

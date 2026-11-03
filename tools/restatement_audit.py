@@ -30,7 +30,10 @@ requires the measured exit-1 set to equal KNOWN exactly, so a new one fails the 
 
 It reports every change and every decline by case, the counts by restatement and by reason, and a per-domain
 coverage table of the benchmark (restatements applied and declined per domain), naming the domains only R1 reaches.
-It exits 1 on any exit-1 change, 2 if it compared nothing, else 0.
+It exits 1 on any exit-1 change; 3 when a path or a restatement raised (the audit's own failure, never a change:
+each error is reported by case, path and restatement, and the rest is still audited; an exit-1 change found beside
+an error still exits 1, and a run that raises before it reports exits 3 from main); 2 if it compared nothing;
+else 0.
 
 It writes nothing: tools/halt_telemetry.py's isolated() (imported, not copied) forces CONCORDANCE_MEMO=0 and puts
 the CAS, ledger, memo bucket and data dir in a temporary directory holding a copy of data/'s reference files. It
@@ -322,30 +325,49 @@ def _measured(H, run: Callable[[Any], Dict[str, Any]], subject: Any, name: str,
 
 def audit_cases(H, R, cases: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """Every applicable restatement of every case, each compared with the case as given."""
-    changes, declines, remeasured = [], [], []
+    changes, declines, remeasured, errors = [], [], [], []
     applied: Counter = Counter()
+
+    def error(c: Dict[str, Any], key: Optional[str], e: Exception) -> Dict[str, Any]:
+        return {"population": c["population"], "case": c["case"], "path": c["path"], "restatement": key,
+                "error": f"{type(e).__name__}: {str(e)[:300]}"}
+
     for c in cases:
         name = f"{c['population']}:{c['case']}:{c['path']}"
         base, base_timeout = None, False
         for key in KEYS:
-            why = _decline_reason(R, c, key)
-            o = None
-            if why is None:
-                o = R.restate(key, c["subject"])
-                if not o.applied:
-                    why = o.reason
-                elif json.dumps(c["passes"](o.after)) == json.dumps(c["passes"](c["subject"])):
-                    why = "the restatement changes nothing the path passes"
+            # a path or a restatement that raises is the audit's own failure: recorded by case, never a change, and
+            # the rest is still audited (exit 3). When the case as given raises, there is nothing to compare with.
+            try:
+                why = _decline_reason(R, c, key)
+                o = None
+                if why is None:
+                    o = R.restate(key, c["subject"])
+                    if not o.applied:
+                        why = o.reason
+                    elif json.dumps(c["passes"](o.after)) == json.dumps(c["passes"](c["subject"])):
+                        why = "the restatement changes nothing the path passes"
+            except Exception as e:  # noqa: BLE001
+                errors.append(error(c, key, e))
+                continue
             if why is not None:
                 declines.append({"population": c["population"], "case": c["case"], "path": c["path"],
                                  "domains": c["domains"], "restatement": key, "reason": why})
                 continue
             if base is None:
-                base, base_timeout = _measured(H, c["run"], c["subject"], name, remeasured)
-            after, after_timeout = _measured(H, c["run"], o.after, f"{name}:{key}", remeasured)
+                try:
+                    base, base_timeout = _measured(H, c["run"], c["subject"], name, remeasured)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(error(c, None, e))
+                    break
+            try:
+                after, after_timeout = _measured(H, c["run"], o.after, f"{name}:{key}", remeasured)
+                id_map = o.mapping if key == "R5" else None
+                diffs = compare(signature(base), signature(after), id_map)
+            except Exception as e:  # noqa: BLE001
+                errors.append(error(c, key, e))
+                continue
             applied[(c["population"], key)] += 1
-            id_map = o.mapping if key == "R5" else None
-            diffs = compare(signature(base), signature(after), id_map)
             if not diffs:
                 continue
             kinds = classify(diffs, c.get("label"), c.get("asserts_not_holds"), c["population"] == "tier")
@@ -355,7 +377,7 @@ def audit_cases(H, R, cases: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
                             "asserts_not_holds": c.get("asserts_not_holds"),
                             "timed_out": base_timeout or after_timeout, "diffs": diffs})
     changes.sort(key=_order)
-    return {"changes": changes, "declines": declines, "remeasured": remeasured, "applied": applied}
+    return {"changes": changes, "declines": declines, "remeasured": remeasured, "errors": errors, "applied": applied}
 
 
 def _coverage(cases: Sequence[Dict[str, Any]], declines: Sequence[Dict[str, Any]], applied_keys: Dict[str, set]
@@ -396,12 +418,12 @@ def run(benchmark: str = "all", tier: str = "all", cases: Optional[Sequence[str]
         if tier_cases:
             populations.append(("tier", tier_cases))
         everything: List[Dict[str, Any]] = []
-        results: Dict[str, Any] = {"changes": [], "declines": [], "remeasured": [], "applied": Counter()}
+        results: Dict[str, Any] = {"changes": [], "declines": [], "remeasured": [], "errors": [], "applied": Counter()}
         for label, pop in populations:
             t1 = time.monotonic()
             res = audit_cases(H, R, pop)
             seconds[label] = round(time.monotonic() - t1, 1)
-            for k in ("changes", "declines", "remeasured"):
+            for k in ("changes", "declines", "remeasured", "errors"):
                 results[k] += res[k]
             results["applied"] += res["applied"]
             everything += pop
@@ -410,6 +432,9 @@ def run(benchmark: str = "all", tier: str = "all", cases: Optional[Sequence[str]
     declined_keys: Dict[str, set] = {}
     for d in results["declines"]:
         declined_keys.setdefault(f"{d['case']}|{d['path']}", set()).add(d["restatement"])
+    for e in results["errors"]:
+        declined_keys.setdefault(f"{e['case']}|{e['path']}", set()).update([e["restatement"]] if e["restatement"]
+                                                                            else KEYS)
     applied_keys = {f"{c['case']}|{c['path']}": set(KEYS) - declined_keys.get(f"{c['case']}|{c['path']}", set())
                     for c in everything}
     by_key: Dict[str, Dict[str, Any]] = {}
@@ -437,6 +462,7 @@ def run(benchmark: str = "all", tier: str = "all", cases: Optional[Sequence[str]
         "changes": results["changes"],
         "declines": results["declines"],
         "remeasured": results["remeasured"],
+        "errors": results["errors"],
         "seconds": seconds,
     })
     return report
@@ -459,9 +485,11 @@ def _tier_coverage(everything: Sequence[Dict[str, Any]], applied_keys: Dict[str,
 
 
 def exit_code(report: Dict[str, Any]) -> int:
-    if not report.get("compared"):
-        return 2
-    return 1 if report.get("exit_one") else 0
+    if report.get("exit_one"):
+        return 1
+    if report.get("errors"):
+        return 3
+    return 0 if report.get("compared") else 2
 
 
 # ── output ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -497,6 +525,8 @@ def _print(rep: Dict[str, Any]) -> None:
                   f"{json.dumps(d.get('before'))[:90]} -> {json.dumps(d.get('after'))[:90]}")
     for k in rep["known_not_measured"]:
         print(f"  KNOWN but not measured (fixed? remove it from KNOWN): {k}")
+    for e in rep["errors"]:
+        print(f"  ERROR (the audit's own failure, exit 3): {e}")
     for m in rep["remeasured"]:
         print(f"  re-measured once after a verifier timeout: {m}")
 
@@ -509,13 +539,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--row", action="append", metavar="NAME", help="only this tier row (repeatable)")
     ap.add_argument("--json", metavar="PATH", help="also write the report as JSON")
     a = ap.parse_args(list(argv) if argv is not None else None)
-    rep = run(a.benchmark, a.tier, a.case, a.row)
+    try:
+        rep = run(a.benchmark, a.tier, a.case, a.row)
+    except Exception:  # noqa: BLE001 — the audit failed before it could report: exit 3, never a change's 1
+        import traceback
+        traceback.print_exc()
+        print("THE AUDIT RAISED before it could report", file=sys.stderr)
+        return 3
     _print(rep)
     if a.json:
         Path(a.json).write_text(json.dumps(rep, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
     code = exit_code(rep)
     if code == 2:
         print("NOTHING COMPARED: no restatement applied to anything measured", file=sys.stderr)
+    elif code == 3:
+        print(f"{len(rep['errors'])} ERROR(S): a path or a restatement raised; see the report", file=sys.stderr)
     elif code == 1:
         print(f"\n{len(rep['exit_one'])} EXIT-1 CHANGE(S): a restatement that keeps the meaning moved a verdict",
               file=sys.stderr)
