@@ -8,20 +8,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -e ".[math,scribe,signing,dev]"
-      - run: PYTHONPATH=src python -m pytest -q
-      - run: PYTHONPATH=src python tools/benchmark.py --json > benchmark.json && PYTHONPATH=src python tools/benchmark.py --check
-      - run: PYTHONPATH=src python tools/schema_gen.py --check
-      - run: PYTHONPATH=src python tools/vocab_gate.py
-      - run: pip install -q coverage && PYTHONPATH=src python tools/unreached.py
-      - run: |
-          PYTHONPATH=src python tools/closure.py derivation audit receipts cas ledger discern capabilities redact airlock tool_registry verifiers mcp.server engine http_api __main__ schema text scribe compose transparency bucket --lazy --src src/concordance > closure.txt
-          # every module the core reaches must be one we chose
-          python - <<'PY'
-          core = {l.split()[0] for l in open("CORE_MODULES.txt") if not l.startswith("#")}
-          now = {l.split()[0] for l in open("closure.txt") if not l.startswith("#")}
-          extra = sorted(now - core)
-          assert not extra, f"modules reached but not in CORE_MODULES.txt: {extra}"
-          PY
+      - run: python tools/check.py   # the one gate list (it writes benchmark.json, uploaded below)
       - uses: actions/upload-artifact@v4
         with: {name: benchmark, path: benchmark.json}
   slow:

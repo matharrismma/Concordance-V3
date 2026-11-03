@@ -19,8 +19,8 @@ or vocabulary) enters this repo, its fixtures, its docs, or its examples. The fi
 ## Non-negotiables (CI enforces most of them)
 
 - **Lean core.** The lazy import closure from the 8 tools must stay ⊆ `CORE_MODULES.txt` (`tools/closure.py`;
-  the CI job diffs it). Adding a module means adding it to the entrypoints line in `.github/workflows/ci.yml`
-  *and* regenerating `CORE_MODULES.txt` — and being able to say why it belongs in the core rather than in the
+  the closure gate in `tools/check.py` diffs it). Adding a module means adding it to `ENTRYPOINTS` in
+  `tools/check.py` *and* regenerating `CORE_MODULES.txt` — and being able to say why it belongs in the core rather than in the
   .org application. Target ≤ 40 top-level modules; currently 34 (incl. __init__ and __main__).
 - **Eight tools.** `tool_registry.py` is the single source of truth. Anything else is an application's
   business and registers on its own server in front of this one. Do not add a ninth.
@@ -32,7 +32,9 @@ or vocabulary) enters this repo, its fixtures, its docs, or its examples. The fi
 - **A measurement is never served from the bucket.** `bucket.py` memoises verdicts for production; the suite
   (conftest), the benchmark, the coverage gate and the mutation tool all run with `CONCORDANCE_MEMO=0`. A gate
   that reads a memo measures nothing — the coverage gate dropped to 2/443 the first time this was forgotten.
-- **Benchmark 0 false positives.** `tools/benchmark.py --check` (1,796 cases, four tiers). A verifier change
+- **Benchmark 0 false positives.** The plain `tools/benchmark.py` run (1,796 cases, four tiers) fails on any
+  false positive or false negative; `--check` verifies that every registered domain has a golden pair;
+  `tools/check.py` runs both. A verifier change
   that drops a case must be explained in `MEASURED.md`, not deleted from the data.
 - **Coverage gate.** `tools/unreached.py`: every `verify_*` function either executes under the benchmark or
   has a stated reason in its `ALLOWED` table. Zero unexplained gaps.
@@ -60,7 +62,7 @@ src/concordance/
   audit.py slotfill.py text.py discern.py    plain-text → packets, with honest coverage
   scribe/         claim matrix, SVD disagreement axis, recompute verdicts
   mcp/server.py http_api.py tool_registry.py capabilities.py
-tools/            every gate and generator; `tools/check.py` runs them all
+tools/            every gate and generator; `tools/check.py` holds the one list of gates (CI's gates job calls it)
 tests/            pytest; tests/SKIPPED_FROM_V2.txt lists what was deliberately left behind
 docs/             SEAL_SPEC, RECEIPT_SPEC, RUNBOOK, BENCHMARK, ARCHITECTURE (generated), verify_receipt.py (no concordance import — keep it that way), plans/
 deploy/           systemd unit (:8020), Caddy snippet, install.sh with gates and rollback
@@ -71,7 +73,8 @@ deploy/           systemd unit (:8020), Caddy snippet, install.sh with gates and
 ```bash
 pip install -e ".[math,scribe,signing,dev]"
 PYTHONPATH=src python -m pytest -q                       # ≤ 60 s, must be green
-PYTHONPATH=src python tools/check.py                     # all gates: closure, benchmark, schemas, unreached, vocab
+python tools/check.py                                    # every gate, the list CI runs: manifest, suite, benchmark
+                                                         # (plain, --check, --json), schemas, vocab, unreached, closure, ruff
 PYTHONPATH=src python tools/architecture_gen.py          # after any module change (docs/ARCHITECTURE.md)
 PYTHONPATH=src python -m concordance serve --port 8000   # then curl /verify, open /s/<hash>?html=1
 ```

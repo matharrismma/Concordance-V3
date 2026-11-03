@@ -18,7 +18,7 @@ def _docstrings(tree):
 
 
 for path in glob.glob("src/concordance/**/*.py", recursive=True):
-    if path.endswith("/text.py"):
+    if path.replace("\\", "/").endswith("/text.py"):   # glob joins with os.sep: src/concordance\text.py on Windows
         continue                                   # the crisis phrase tables ("can't face another day")
     tree = ast.parse(open(path, encoding="utf-8").read())
     docs = _docstrings(tree)                       # docstrings are developer-facing; messages are not

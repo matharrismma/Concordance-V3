@@ -28,13 +28,13 @@ env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "src"), CONCORDANCE_MEMO="0
 subprocess.run([sys.executable, "-m", "coverage", "run", "--include=src/concordance/verifiers/*",
                 "tools/benchmark.py", "--json"], cwd=ROOT, env=env, capture_output=True)
 subprocess.run([sys.executable, "-m", "coverage", "json", "-o", ".coverage.json", "-q"], cwd=ROOT, env=env, capture_output=True)
-cov = json.load(open(os.path.join(ROOT, ".coverage.json")))["files"]
+cov = json.load(open(os.path.join(ROOT, ".coverage.json"), encoding="utf-8"))["files"]
 missing, total = [], 0
 for path, d in cov.items():
-    if "/verifiers/" not in path or os.path.basename(path).startswith(("_", "base", "spec")):
+    if "/verifiers/" not in path.replace("\\", "/") or os.path.basename(path).startswith(("_", "base", "spec")):   # Windows keys use \
         continue
     executed = set(d["executed_lines"]); mod = os.path.basename(path)[:-3]
-    for n in ast.parse(open(os.path.join(ROOT, path) if not os.path.isabs(path) else path).read()).body:
+    for n in ast.parse(open(os.path.join(ROOT, path) if not os.path.isabs(path) else path, encoding="utf-8").read()).body:
         if isinstance(n, ast.FunctionDef) and n.name.startswith("verify_"):
             total += 1
             if not (set(range(n.body[0].lineno, n.end_lineno + 1)) & executed):

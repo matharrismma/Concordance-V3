@@ -25,6 +25,7 @@ test_calendar_time.py
 test_canonical.py
 test_capabilities_benchmark.py
 test_cas.py
+test_check_gates.py
 test_chemistry.py
 test_chess.py
 test_claim_grammar.py
