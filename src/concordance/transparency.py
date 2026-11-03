@@ -294,19 +294,38 @@ def lookup(uuid: str) -> Dict[str, Any]:
 
 
 # ── attach to a seal ──────────────────────────────────────────────────────────────────────────────
+def _saved_envelope(side: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The envelope a sidecar saved, when the current issuer key signed it, so it stands as minted.
+    None when there is none, or when the key has changed since and the record is signed afresh."""
+    env = (side or {}).get("envelope")
+    if isinstance(env, dict) and env.get("cose_sign1_b64") and env.get("kid") and env["kid"] == issuer_kid():
+        return env
+    return None
+
+
 def attest(content_hash: str, *, publish_log: Optional[bool] = None) -> Dict[str, Any]:
     """Envelope (+ log) for a held record. Idempotent; stores the envelope and log claim beside the record
-    as sidecars (data/cas/attest/<hash>.json) so seal_fetch can return them."""
+    as sidecars (data/cas/attest/<hash>.json) so seal_fetch can return them. The envelope is minted once:
+    while its log entry is pending, a later call returns the saved sidecar as it is, and a publication
+    (publish_log, or CONCORDANCE_PUBLISH) posts those saved statement bytes. Only a changed issuer key
+    signs the record afresh."""
     rec = cas.fetch(content_hash)
     if rec is None:
         return {"error": "seal not found"}
     side = _sidecar(content_hash)
     if side and side.get("log") and not side["log"].get("pending"):
         return side
+    want = (os.environ.get("CONCORDANCE_PUBLISH", "").strip() in ("1", "true", "yes")) if publish_log is None else publish_log
+    saved = _saved_envelope(side)
+    if saved:
+        if not want:
+            return side
+        out = {**side, "log": publish(content_hash, statement_b64=saved["cose_sign1_b64"])}
+        _write_sidecar(content_hash, out)
+        return out
     env = envelope(rec)
     out: Dict[str, Any] = {"content_hash": content_hash, "envelope": env, "in_toto": dsse_envelope(rec),
                            "pq": pq_envelope(rec)}
-    want = (os.environ.get("CONCORDANCE_PUBLISH", "").strip() in ("1", "true", "yes")) if publish_log is None else publish_log
     if env and want:
         out["log"] = publish(content_hash, statement_b64=env["cose_sign1_b64"])
     elif env:
@@ -381,7 +400,7 @@ def agentledger_pob(content_hash: str) -> Optional[Dict[str, Any]]:
     if rec is None:
         return None
     prec = ledger.precedent_for_record(content_hash)
-    env = envelope(rec)
+    env = _saved_envelope(_sidecar(content_hash)) or envelope(rec)   # the record's own, as attest saved it
     sealed_at = prec.get("sealed_at") if prec else None
     return {
         "format": "agentledger-pob", "spec": AGENTLEDGER_SPEC, "mapped_from": SPEC_VERSION,
