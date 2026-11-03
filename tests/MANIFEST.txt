@@ -23,6 +23,7 @@ test_bsd_formula.py
 test_bucket.py
 test_calendar_time.py
 test_canonical.py
+test_capabilities_benchmark.py
 test_cas.py
 test_chemistry.py
 test_chess.py

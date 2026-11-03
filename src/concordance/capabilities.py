@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import re
+from pathlib import Path
 from typing import Any, Dict, List
 
 NOTE = ("Every count is computed from the running engine at the moment you asked and carries the "
@@ -51,16 +52,33 @@ def _tools() -> Dict[str, Any]:
             "means": "MCP tools this server registers"}
 
 
+BENCHMARK_LAST = Path(__file__).resolve().parents[2] / "data" / "benchmark_last.json"
+
+
 def _benchmark() -> Dict[str, Any]:
+    """The last benchmark run, from data/benchmark_last.json in either shape tools/benchmark.py writes:
+    --record (version, total, and false_positives / false_negatives as counts) or --json, which
+    deploy/install.sh writes (benchmark_version, the counts under totals; its false_positives is the list
+    of cases, so the count is read from totals)."""
     try:
-        from pathlib import Path
         import json
-        p = Path(__file__).resolve().parents[2] / "data" / "benchmark_last.json"
+        p = BENCHMARK_LAST
         if p.exists():
-            d = json.loads(p.read_text())
-            return {"version": d.get("version"), "cases": d.get("total"), "false_positives": d.get("false_positives"),
-                    "recorded_at": d.get("recorded_at"), "bands": d.get("bands"),
-                    "means": "last benchmark run recorded by tools/benchmark.py --record"}
+            d = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(d, dict) and isinstance(d.get("totals"), dict):
+                t = d["totals"]
+                return {"version": d.get("benchmark_version"), "cases": t.get("cases"),
+                        "false_positives": t.get("false_positives"), "false_negatives": t.get("false_negatives"),
+                        "recorded_at": None, "bands": d.get("bands"),
+                        "means": "last benchmark run written by tools/benchmark.py --json (the counts are its "
+                                 "totals; that shape records no date)"}
+            if isinstance(d, dict) and "total" in d:
+                return {"version": d.get("version"), "cases": d.get("total"), "false_positives": d.get("false_positives"),
+                        "false_negatives": d.get("false_negatives"),
+                        "recorded_at": d.get("recorded_at"), "bands": d.get("bands"),
+                        "means": "last benchmark run recorded by tools/benchmark.py --record"}
+            return {"version": None, "means": "data/benchmark_last.json is in neither shape tools/benchmark.py "
+                                              "writes (--record, --json)"}
     except Exception:  # noqa: BLE001
         pass
     return {"version": None, "means": "no recorded benchmark run in this checkout"}
