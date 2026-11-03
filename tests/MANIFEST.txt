@@ -132,6 +132,7 @@ test_receipt_page.py
 test_redact.py
 test_redos_guard.py
 test_refutations.py
+test_restate.py
 test_retrieval_verifier.py
 test_review_fixes.py
 test_rhetoric.py
