@@ -101,9 +101,8 @@ test_networking.py
 test_neuroscience.py
 test_new_domain_verifiers.py
 test_no_llm_in_the_loop.py
-test_nothing_is_isolated.py
+test_no_test_writes_the_stores.py
 test_nuclear_physics.py
-test_null_assay.py
 test_number_theory.py
 test_nutrition.py
 test_oceanography.py
@@ -125,7 +124,6 @@ test_public_finance.py
 test_pyproject_license.py
 test_quantum_computing.py
 test_reach_front_door.py
-test_reachable_from_the_floor.py
 test_real_estate.py
 test_receipt_conformance.py
 test_receipt_page.py
