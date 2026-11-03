@@ -196,3 +196,176 @@ for a ranker lies outside the tier, on a cycle like the one above. Whether to pu
 engine is a separate decision, not made here; it would be its own run. Product line: cheaper derivations for callers
 who list against their edges, with no model, where cheaper means fewer closure passes and nothing more, since the
 verifier calls are the same; or no change.
+
+## The restatement audit: measurement 4 (2026-11-03, at 2953d39)
+
+`PYTHONPATH=src python tools/restatement_audit.py --json audit.json` restates every benchmark case and every
+derivation-tier row with every restatement of `tools/restate.py` that applies: R1 key order, R2 equality swap, R3
+whitespace between tokens, R4 symbol rename and R5 step-id rename, each shown to keep the claim's meaning by an
+oracle that calls no verifier. It runs each restated case through the path its source uses and compares it with the
+case as given: the verdict, each step's status, `broken_at`, `gap_at` and `error_at` read through R5's id map, each
+step's refutation check names and bands, and the read. It is an audit, never a vote: agreement under restatement
+never raises or lowers a verdict, and nothing in src/ reads it. As in measurements 1 to 3, the memo is off, every
+store is temporary, the verifiers are warmed and one derivation runs at a time. The numbers below are one fresh run
+of the tool as committed at 2953d39. `tests/test_measured_restatement_audit.py` computes every number below again
+from the tools and fails if one is stale.
+
+**What was audited.** 1,796 benchmark cases and 63 tier rows, measured on 67 row-paths: each row on every path its
+source asserts a verdict on, and on the derivation path where no source asserts one (57 derivation, 5 compose, 2 mcp,
+1 mcp-document, 2 audit). 2,165 restated runs were compared.
+
+| restatement | applied, benchmark | applied, tier row-paths | declined |
+|---|---|---|---|
+| R1 key order | 1,796 | 61 | 6 |
+| R2 equality swap | 57 | 4 | 1,802 |
+| R3 whitespace between tokens | 115 | 4 | 1,744 |
+| R4 symbol rename | 62 | 1 | 1,800 |
+| R5 step-id rename | 0 | 65 | 1,798 |
+
+**Every change.** None: 0 changes of any kind. Exit-1 changes first (a HOLDS/BROKEN flip, or a verdict that became
+HOLDS on a case labelled false or on a tier row whose source asserts a verdict other than HOLDS): 0, and KNOWN holds
+0 entries. Wants: 0, and among them, listed first, a verdict that became HOLDS on a tier row no source asserts a
+verdict on: 0. No run raised, and no change rests on a timed-out run. The tool exits 0.
+
+**Coverage, honestly.** Agreement is evidence only where a restatement reached a verifier with input it had not seen.
+
+- R2, R3 and R4 reach 57, 115 and 62 benchmark cases, all of them mathematics in the {mode, params} form. 86 of the
+  87 benchmark domains are reached only by R1; mathematics is the one exception. R5 renames step ids, which verifiers
+  never see: a closure audit, run on tier rows only.
+- All 137 MATH_VERIFY packets are declined, because a MATH_VERIFY packet is dispatched by its keys, not by a mode.
+  129 of them route to verifier functions R2-R4 map (equality, derivative, integral, limit, solve and system, by
+  mathematics.py's own dispatch table), so mapping the packet form is the largest gain open to R2-R4.
+- The numeric mode is not mapped. No benchmark case is in it, but 1,560 of the tier's steps are, in 30 of its 63 rows
+  (29 fast rows and the reversed 1,500-step chain).
+- On the tier, R2 and R3 reach 4 row-paths and R4 1. The 4 rows audit.audit builds from text are reached only by R5,
+  by the plan's rule; tools/restate.py alone would restate 8 with R2 and R3.
+
+Per domain, the benchmark cases each restatement was applied to; each declined the rest of the domain's cases:
+
+| domain | cases | R1 | R2 | R3 | R4 | R5 |
+|---|---|---|---|---|---|---|
+| acoustics | 10 | 10 | 0 | 0 | 0 | 0 |
+| agriculture | 8 | 8 | 0 | 0 | 0 | 0 |
+| approximation | 3 | 3 | 0 | 0 | 0 | 0 |
+| archaeology | 8 | 8 | 0 | 0 | 0 | 0 |
+| architecture | 12 | 12 | 0 | 0 | 0 | 0 |
+| astronomy | 14 | 14 | 0 | 0 | 0 | 0 |
+| atomic | 12 | 12 | 0 | 0 | 0 | 0 |
+| biology | 17 | 17 | 0 | 0 | 0 | 0 |
+| calendar_time | 11 | 11 | 0 | 0 | 0 | 0 |
+| chemistry | 183 | 183 | 0 | 0 | 0 | 0 |
+| chess | 4 | 4 | 0 | 0 | 0 | 0 |
+| combinatorics | 10 | 10 | 0 | 0 | 0 | 0 |
+| computer_science | 4 | 4 | 0 | 0 | 0 | 0 |
+| condensed_matter | 20 | 20 | 0 | 0 | 0 | 0 |
+| construction | 18 | 18 | 0 | 0 | 0 | 0 |
+| count_residual | 2 | 2 | 0 | 0 | 0 | 0 |
+| cryptography | 7 | 7 | 0 | 0 | 0 | 0 |
+| cybersecurity | 12 | 12 | 0 | 0 | 0 | 0 |
+| document_validation | 10 | 10 | 0 | 0 | 0 | 0 |
+| ecology | 10 | 10 | 0 | 0 | 0 | 0 |
+| economics | 20 | 20 | 0 | 0 | 0 | 0 |
+| electrical | 12 | 12 | 0 | 0 | 0 | 0 |
+| electrochemistry | 10 | 10 | 0 | 0 | 0 | 0 |
+| elliptic_curves | 4 | 4 | 0 | 0 | 0 | 0 |
+| energy | 17 | 17 | 0 | 0 | 0 | 0 |
+| ephemeris | 10 | 10 | 0 | 0 | 0 | 0 |
+| exercise_science | 10 | 10 | 0 | 0 | 0 | 0 |
+| finance | 10 | 10 | 0 | 0 | 0 | 0 |
+| formal_logic | 51 | 51 | 0 | 0 | 0 | 0 |
+| game_theory | 16 | 16 | 0 | 0 | 0 | 0 |
+| genetics | 9 | 9 | 0 | 0 | 0 | 0 |
+| geography | 20 | 20 | 0 | 0 | 0 | 0 |
+| geology | 10 | 10 | 0 | 0 | 0 | 0 |
+| geometry | 20 | 20 | 0 | 0 | 0 | 0 |
+| governance | 134 | 134 | 0 | 0 | 0 | 0 |
+| gue | 2 | 2 | 0 | 0 | 0 | 0 |
+| history_chronology | 11 | 11 | 0 | 0 | 0 | 0 |
+| hydrology | 10 | 10 | 0 | 0 | 0 | 0 |
+| information_theory | 8 | 8 | 0 | 0 | 0 | 0 |
+| labor | 13 | 13 | 0 | 0 | 0 | 0 |
+| lagarias | 2 | 2 | 0 | 0 | 0 | 0 |
+| law | 10 | 10 | 0 | 0 | 0 | 0 |
+| linear_algebra | 21 | 21 | 0 | 0 | 0 | 0 |
+| linguistics | 8 | 8 | 0 | 0 | 0 | 0 |
+| manufacturing | 10 | 10 | 0 | 0 | 0 | 0 |
+| materials_science | 12 | 12 | 0 | 0 | 0 | 0 |
+| mathematics | 257 | 257 | 57 | 115 | 62 | 0 |
+| medicine | 13 | 13 | 0 | 0 | 0 | 0 |
+| meteorology | 14 | 14 | 0 | 0 | 0 | 0 |
+| molecular_geometry | 4 | 4 | 0 | 0 | 0 | 0 |
+| music_theory | 10 | 10 | 0 | 0 | 0 | 0 |
+| networking | 10 | 10 | 0 | 0 | 0 | 0 |
+| neuroscience | 8 | 8 | 0 | 0 | 0 | 0 |
+| nicolas | 2 | 2 | 0 | 0 | 0 | 0 |
+| nuclear_physics | 12 | 12 | 0 | 0 | 0 | 0 |
+| number_theory | 20 | 20 | 0 | 0 | 0 | 0 |
+| nutrition | 10 | 10 | 0 | 0 | 0 | 0 |
+| oceanography | 9 | 9 | 0 | 0 | 0 | 0 |
+| operations_research | 10 | 10 | 0 | 0 | 0 | 0 |
+| optics | 26 | 26 | 0 | 0 | 0 | 0 |
+| periodic_table | 10 | 10 | 0 | 0 | 0 | 0 |
+| philosophy | 10 | 10 | 0 | 0 | 0 | 0 |
+| photography | 10 | 10 | 0 | 0 | 0 | 0 |
+| photonics | 22 | 22 | 0 | 0 | 0 | 0 |
+| physical_constants | 5 | 5 | 0 | 0 | 0 | 0 |
+| physics | 158 | 158 | 0 | 0 | 0 | 0 |
+| polynomial | 4 | 4 | 0 | 0 | 0 | 0 |
+| pressure_fighting | 3 | 3 | 0 | 0 | 0 | 0 |
+| probability | 22 | 22 | 0 | 0 | 0 | 0 |
+| public_finance | 14 | 14 | 0 | 0 | 0 | 0 |
+| quantum_computing | 18 | 18 | 0 | 0 | 0 | 0 |
+| real_estate | 14 | 14 | 0 | 0 | 0 | 0 |
+| retrieval | 4 | 4 | 0 | 0 | 0 | 0 |
+| rhetoric | 8 | 8 | 0 | 0 | 0 | 0 |
+| robin | 2 | 2 | 0 | 0 | 0 | 0 |
+| schoenfeld | 2 | 2 | 0 | 0 | 0 | 0 |
+| soil_science | 13 | 13 | 0 | 0 | 0 | 0 |
+| sound_law | 6 | 6 | 0 | 0 | 0 | 0 |
+| spectral | 4 | 4 | 0 | 0 | 0 | 0 |
+| sports_analytics | 10 | 10 | 0 | 0 | 0 | 0 |
+| statistics | 162 | 162 | 0 | 0 | 0 | 0 |
+| thermodynamics | 16 | 16 | 0 | 0 | 0 | 0 |
+| trajectory | 2 | 2 | 0 | 0 | 0 | 0 |
+| unit_conversion | 2 | 2 | 0 | 0 | 0 | 0 |
+| units | 2 | 2 | 0 | 0 | 0 | 0 |
+| wordcraft | 31 | 31 | 0 | 0 | 0 | 0 |
+| zero_count | 2 | 2 | 0 | 0 | 0 | 0 |
+
+**Gaps this audit does not measure.**
+
+- **frame_seq, typed as BROKEN.** A number rewritten as another type has no oracle (schema.py types every field as
+  any JSON type), so the audit holds no such restatement; checker-26's prototype found the gap, and this run's test
+  recomputes it. With frame_seq 1 rewritten as 1.0, `golden:pressure_fighting:true` and
+  `check:pressure_fighting.observation:true`, which read HOLDS as given, read BROKEN:
+  `"NO_MATCH: frame_seq must be an integer >= 1"`, the check at `pressure_fighting.py:92`. A malformed input reads as
+  a broken claim. The gap is open and filed as its own run (this run's plan, in
+  `docs/harness/runs/2026-11-03-restatement-audit.jsonl`); the test pins today's reading, so the run that fixes it
+  updates the test.
+- **gcd and lcm, by symbol order.** checker-28 found it by probing R4 outside the population: the mathematics verifier
+  compares a sign-ambiguous polynomial gcd or lcm exactly, and sympy picks the sign by the order of the symbols.
+  `gcd(y - x, x - y) = x - y` and `gcd(y**2 - x**2, x - y) = x - y` read HOLDS and, renamed by R4, BROKEN;
+  `lcm(y - x, x - y) = x - y` reads BROKEN and, renamed, HOLDS. A gcd is defined only up to a unit, so the two
+  verdicts cannot both be right. No benchmark case or tier row holds a gcd or an lcm, so KNOWN does not list it. The
+  lead's want note in this run's ledger (2026-11-03T14:20:34Z) holds every V3 change to that handling until its
+  fixing run lands and files it as its own run; this run's test recomputes the three readings.
+
+**Time.** In this run the benchmark took 21.5 s and the tier 3.0 s, on this laptop with another heavy Python process
+running throughout; the same audit on the same laptop took between 18.8 s and 36.3 s for the benchmark today. Times
+are the machine's and its load's, and no test pins them.
+
+**Commands.**
+
+- Every count and change above: `PYTHONPATH=src python tools/restatement_audit.py --json audit.json`, the whole
+  benchmark and every tier row (it exits 0).
+- The part the suite runs, the first benchmark case of every domain and every fast tier row:
+  `--benchmark per-domain --tier fast`.
+- The MATH_VERIFY routing, the numeric footprint, the frame_seq gap and the gcd/lcm readings, and every number above
+  recomputed: `PYTHONPATH=src python -m pytest tests/test_measured_restatement_audit.py` (add `-m slow` for the
+  whole audit).
+
+**What it means.** On today's population no restatement that provably keeps a claim's meaning moved a verdict, a
+status, a pointer, a check name, a band or a read. That is evidence about R1 for every domain, about R2-R4 for
+mathematics claims in the {mode, params} form only, and about R5 for the closure on the tier's fixtures. It says
+nothing about rescaled units, reordered terms inside domain packets, the MATH_VERIFY form or the numeric mode, which
+no restatement here reaches. Product line: finds verifier and closure defects before users do; never a verdict path.

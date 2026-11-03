@@ -250,6 +250,7 @@ def test_the_fast_audit_sees_every_domain_and_its_exit_one_set_is_known(capsys):
     assert rep["populations"]["tier"]["cases"] == sum(len({a["path"] for a in r["asserts"]}) or 1 for r in fast)
     assert {tuple(k) for k in rep["exit_one"]} == {tuple(k) for k in rep["known_in_population"]}
     assert rep["exit_one_not_known"] == [] and rep["known_not_measured"] == [] and rep["known_problems"] == []
+    assert rep["errors"] == []                     # an error beside a known flip would still read 1: none may hide
     assert tool.exit_code(rep) == (1 if rep["known_in_population"] else 0)
     assert rep["compared"] == sum(row["applied"] for row in rep["by_restatement"].values())
     tool._print(rep)
@@ -278,7 +279,7 @@ def test_the_benchmark_wide_audit_s_exit_one_set_is_known(tmp_path):
     rc = tool.main(["--benchmark", "all", "--tier", "all", "--json", str(out)])
     rep = json.loads(out.read_text(encoding="utf-8"))
     assert rep["populations"]["benchmark"] == {"cases": 1796, "of": 1796}
-    assert {tuple(k) for k in rep["exit_one"]} == set(tool.KNOWN)
+    assert {tuple(k) for k in rep["exit_one"]} == set(tool.KNOWN) and rep["errors"] == []
     assert rc == (1 if tool.KNOWN else 0)
     assert rep["seconds"]["benchmark"] > 0 and rep["seconds"]["all"] >= rep["seconds"]["benchmark"]
 
