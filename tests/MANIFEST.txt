@@ -93,6 +93,7 @@ test_math_expansion.py
 test_mathematics.py
 test_mc_fuzz.py
 test_measured_derivations.py
+test_measured_topological_order.py
 test_measurement_consistency.py
 test_medicine.py
 test_meteorology.py

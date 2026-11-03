@@ -140,3 +140,59 @@ derivations for callers who list against their edges, with no model, or no chang
 claims a value outside its verifier's vocabulary (`claimed_zone: "7b_NOT"`, `claimed_classification:
 "marine_NOT"`), and the verifier answers ERROR, which a derivation reads as our own failure, not a falsehood. The
 benchmark counts both correct, since neither HOLDS, so no number here moves; a false claim should read BROKEN.
+
+## A topological evaluation order: measurement 3 (2026-11-03, at 757712c)
+
+`PYTHONPATH=src python tools/topo_order.py --json topo.json` runs every tier row twice: in the listed order, and in
+Kahn's order over the closure's own dependency edges, installed in `_evaluation_order` for that one call. The edges
+are `below`, read from `verify_derivation`'s frame, so the tool holds no copy of their rules. Of the steps ready at
+once, the one listed first goes first, and only the steps on or resting on a cycle of `below` follow, in listed
+position. The unit is closure passes saved, with verifier calls unchanged: the tool measures no time or cost, and
+none is claimed. As in measurements 1 and 2, the memo is off, every store is temporary, the verifiers are warmed and
+one derivation runs at a time. `tests/test_measured_topological_order.py` computes every number below again from
+the tools and fails if one is stale.
+
+| passes | listed | topological | saved |
+|---|---|---|---|
+| all 63 tier rows | 1,637 | 125 | 1,512 |
+| without the reversed 1,500-step chain | 136 | 123 | 13 |
+
+Every row that differs, with its passes under each order:
+
+| row | listed | topological |
+|---|---|---|
+| `TWO_STEP, listed in reverse` | 3 | 2 |
+| `chain_of(6), listed in reverse` | 7 | 2 |
+| `HALTING` | 3 | 2 |
+| `chain_of(1500), listed in reverse` | 1,501 | 2 |
+| `README document, listed in reverse` | 3 | 2 |
+| `BIND, listed in reverse` | 3 | 2 |
+| `BIND_FALSE_SOURCE, listed in reverse` | 3 | 2 |
+| `AUDIT_TEXTS[0], listed in reverse` | 3 | 2 |
+| `RECEIPT_REVERSE_CHAIN` | 4 | 2 |
+
+These are the 9 rows measurement 3 found above 2 passes; the other 54 were at the floor as listed.
+
+**The floor.** A pass in which nothing moves ends the closure and is counted, so a derivation whose first pass moves
+anything takes at least 2 passes in any order, and one whose first pass moves nothing takes 1. Under the topological
+order 63 of 63 tier rows reach the floor: 62 in 2 passes, and `SELF_BIND` in 1, since its one step binds from itself
+and its first pass moves nothing. For the 53 acyclic rows the floor is guaranteed by construction: each step is
+visited after every step it stands on, so every step settles in the first pass and the second moves nothing. For
+the 10 rows with a cycle in `below` it is measured, not proven: `CYCLE`, `SELF_CYCLE`, `CYCLE_AND_RESTING`,
+`FALSE_SELF_CYCLE`, `FALSE_CYCLE`, `DERIVATIONS[3]`, `DERIVATIONS[4]`, `SELF_BIND`, `TRACE_CYCLE`, `RECEIPT_CYCLE`.
+It does not hold in general: `[b uses a, a false uses b]`, which is not a tier row, takes 3 passes under both
+orders, because Kahn's algorithm leaves both steps and they keep their listed order; visiting a first takes 2.
+
+**Identity and calls.** 63 of 63 rows (100%) give the same response except `halt.passes` under both orders, and
+`_transfer` settles every step the same: measurement 2's full gate. Verifier calls are counted at
+`derivation.verify_step` by (domain, spec hash): 1,650 under each order, the same multiset on every row, and no key
+is called more often than the trail has steps carrying it whose verifier ran.
+
+**What it means.** The population is the tier's test fixtures, several listed in reverse on purpose, not callers'
+traffic. The benchmark gains nothing: its 1,796 derivations are single steps, a single step has only one order, and
+each takes 2 passes (measurement 1). On this population the control reaches the floor, so no ranker, learned or
+not, could beat it: whatever fills `_evaluation_order` takes at least the floor. The one room this measurement shows
+for a ranker lies outside the tier, on a cycle like the one above. Whether to put a topological order into the
+engine is a separate decision, not made here; it would be its own run. Product line: cheaper derivations for callers
+who list against their edges, with no model, where cheaper means fewer closure passes and nothing more, since the
+verifier calls are the same; or no change.
