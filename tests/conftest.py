@@ -20,6 +20,8 @@
      * any write into the checkout's data/ by any route is a hard test failure (an audit hook): an
        explicit base_dir or ledger_dir, verifiers/spec.py:364-377 (verifier_specs.jsonl), and
        verifiers/riemann_accel.py:49-55 (its compiled cache, under CONCORDANCE_DATA_DIR/cache when set).
+       A path given with a dir_fd is judged against that descriptor's directory, never the cwd (see
+       _judged_path, and its limit where the directory cannot be named).
    The failure is pytest's Failed, a BaseException, so no `except Exception` or `except OSError` in the
    code under test can swallow it. No variable is set: CONCORDANCE_CAS_DIR and CONCORDANCE_LEDGER_DIR
    outrank CONCORDANCE_DATA_DIR, so setting them here would override every test's own isolation, and an
@@ -84,28 +86,60 @@ _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
 
 
 def _paths_written(event: str, args) -> tuple:
-    """The paths an audited operation would create, change or remove; () for anything else."""
+    """(path, dir_fd) for each path an audited operation would create, change or remove; () for anything
+    else. dir_fd is the descriptor a relative path is resolved against (the event's -1 or None: the cwd).
+    Event arguments, as CPython raises them: os.mkdir (path, mode, dir_fd); os.remove and os.rmdir (path,
+    dir_fd); os.rename, which os.replace raises too (src, dst, src_dir_fd, dst_dir_fd); shutil.rmtree (path,
+    dir_fd); open (path, mode, flags), which carries no dir_fd even when os.open was given one."""
+    a = tuple(args) + (None,) * 4
     if event == "open":
-        path, mode, flags = args
+        path, mode, flags = a[0], a[1], a[2]
         writes = (any(c in mode for c in "wax+") if isinstance(mode, str)
                   else bool(isinstance(flags, int) and flags & _WRITE_FLAGS))
-        return (path,) if writes else ()
-    if event in ("os.mkdir", "os.remove", "os.rmdir", "os.truncate", "shutil.rmtree"):
-        return (args[0],)
+        return ((path, None),) if writes else ()
+    if event == "os.mkdir":
+        return ((a[0], a[2]),)
+    if event in ("os.remove", "os.rmdir", "shutil.rmtree"):
+        return ((a[0], a[1]),)
+    if event == "os.truncate":
+        return ((a[0], None),)
     if event == "os.rename":
-        return (args[0], args[1])
+        return ((a[0], a[2]), (a[1], a[3]))
     if event in ("shutil.copyfile", "shutil.copytree", "shutil.move"):
-        return (args[1],)
+        return ((a[1], None),)
     return ()
 
 
+def _fd_dir(fd: int):
+    """The directory an open descriptor refers to, or None where this platform cannot say. Linux names it
+    in /proc/self/fd; Windows supports no dir_fd, so it never gets here."""
+    try:
+        return os.readlink(f"/proc/self/fd/{fd}")
+    except (OSError, ValueError):
+        return None
+
+
+def _judged_path(path, dir_fd):
+    """The path an operation names, as the OS resolves it: against dir_fd when one was given (shutil.rmtree
+    on Linux removes `data` as os.rmdir('data', dir_fd=<its parent>), which the cwd must not decide), else
+    against the cwd. None when it cannot be known: a relative path through a descriptor whose directory
+    this platform cannot name. Such a write is not judged (it would otherwise refuse every fd-based
+    rmtree), so on a platform without /proc a write through a dir_fd into data/ escapes this hook."""
+    if not isinstance(path, (str, bytes, os.PathLike)):
+        return None                                   # a descriptor (os.truncate(fd)): no path to judge
+    p = os.fsdecode(path)
+    if not isinstance(dir_fd, int) or dir_fd < 0 or os.path.isabs(p):
+        return p
+    base = _fd_dir(dir_fd)
+    return None if base is None else os.path.join(base, p)
+
+
 def _refuse_writes_into_checkout_data(event: str, args) -> None:
-    for p in _paths_written(event, args):
-        if isinstance(p, (str, bytes, os.PathLike)):
-            p = os.fsdecode(p)
-            if "data" in p or not os.path.isabs(p):    # cheap first: a path into data/ names it, or is relative
-                if in_checkout_data(p):
-                    _refuse(f"a test tried to write ({event})", p)
+    for path, dir_fd in _paths_written(event, args):
+        p = _judged_path(path, dir_fd)
+        if p is not None and ("data" in p or not os.path.isabs(p)):   # cheap first: names data/, or relative
+            if in_checkout_data(p):
+                _refuse(f"a test tried to write ({event})", p)
 
 
 def _install_store_guards() -> None:
