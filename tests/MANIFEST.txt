@@ -164,6 +164,7 @@ test_tolerance.py
 test_topo_order.py
 test_transparency.py
 test_trust_kernel_edges.py
+test_undefined_refused.py
 test_units.py
 test_validate.py
 test_verifier_consistency.py

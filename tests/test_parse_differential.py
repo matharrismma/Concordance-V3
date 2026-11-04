@@ -266,6 +266,7 @@ TYPICAL = {
     "product": "product(k,(k,1,3))", "Subs": "Subs(x,x,1)", "simplify": "simplify(x+x)", "expand": "expand((x+1)**2)",
     "factor": "factor(x**2-1)", "cancel": "cancel(x/x)", "together": "together(1/x+1)", "apart": "apart(1/(x*(x+1)))",
     "collect": "collect(x+x*y,x)", "trigsimp": "trigsimp(sin(x)**2+cos(x)**2)", "radsimp": "radsimp(1/sqrt(2))", "N": "N(pi)",
+    "atanh": "atanh(1/2)", "acoth": "acoth(2)", "li": "li(2)", "zeta": "zeta(2)",     # 1 is a pole of each: see REFUSED
     "evalf": "evalf(1)", "Poly": "Poly(x**2,x)", "degree": "degree(x**2,x)", "solve": "solve(x-1,x)",
     "solveset": "solveset(x-1,x)", "roots": "roots(x**2-1,x)", "Matrix": "Matrix(((1,2),(3,4)))",
     "ImmutableMatrix": "ImmutableMatrix(((1,2),(3,4)))", "eye": "eye(2)", "zeros": "zeros(2)", "ones": "ones(2)",
@@ -365,6 +366,27 @@ REFUSED = {
     "x^(y^2)": "a power in the exponent: the caret spelling never reached the limit",
     "2^3^2": "a power in the exponent: the caret spelling never reached the limit",
     "1e20000": "past the exponent limit: a written decimal exponent is a power of ten",
+    # a value with no meaning: sympy answers it with zoo, nan, AccumBounds or an oo of its own, and a later node can collapse
+    # that into an ordinary number. The first seven are forms this table held as readings before the rule.
+    "zoo": "no meaning: the constant is refused by its value, like any built zoo",
+    "nan": "no meaning: the constant is refused by its value, like any built nan",
+    "x**nan": "no meaning: sympy builds nan itself",
+    "zeta(1)": "a pole, answered with zoo",
+    "atanh(1)": "a pole, answered with an oo nobody wrote",
+    "acoth(1)": "a pole, answered with an oo nobody wrote",
+    "li(1)": "a pole, answered with a -oo nobody wrote",
+    "1/0": "no meaning: answered with zoo",
+    "0/0": "no meaning: answered with nan",
+    "log(0)": "a pole, answered with zoo",
+    "gamma(0)": "a pole, answered with zoo",
+    "loggamma(0)": "a pole, answered with an oo nobody wrote",
+    "Ei(0)": "a pole, answered with a -oo nobody wrote",
+    "sin(oo)": "answered with AccumBounds, which a later node can collapse",
+    "oo-oo": "no meaning: answered with nan, from a written oo",
+    "0*oo": "no meaning: answered with nan, from a written oo",
+    "limit(1/x,x,0)": "a divergent answer: an oo nobody wrote",
+    "solve(x>0,x)": "an answer holding an oo nobody wrote",
+    "Float((1,2))": "a Float made from a raw tuple: sympy cannot test what such a value holds, so it fails the rule's test",
 }
 
 # Two sides that differ only in how a sum or a product nests, and the claims around them: each read by pole sets against

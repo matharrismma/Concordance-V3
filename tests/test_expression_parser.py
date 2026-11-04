@@ -290,7 +290,7 @@ def test_the_exponent_limit_reads_the_third_argument_of_the_function_form_too():
         read("Pow(2,10001,x)")
 
 
-@pytest.mark.parametrize("text", ["2**oo", "x**oo", "2**-oo", "x**nan"])
+@pytest.mark.parametrize("text", ["2**oo", "x**oo", "2**-oo"])
 def test_an_infinite_exponent_is_no_number_to_limit(text):
     read(text)
 

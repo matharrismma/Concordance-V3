@@ -37,7 +37,8 @@ def _dir() -> Path:
 
 
 def verifier_fingerprint(domain: str) -> str:
-    """SHA-256 of the verifier module's source (the sympy moat for mathematics), cached per process.
+    """SHA-256 of the source a verdict reads, cached per process: the verifier module, and for mathematics also
+    derivation.py (the sympy moat). physics reads its text through mathematics' parser, so it covers that module too.
     Part of the key: the same packet under changed code is a different bucket."""
     d = (domain or "").strip().lower()
     if d in _FINGERPRINTS:
@@ -45,13 +46,16 @@ def verifier_fingerprint(domain: str) -> str:
     try:
         if d in ("mathematics", "math"):
             from . import derivation as _mod
-            mods = [_mod]
+            from .verifiers import mathematics as _math
+            mods = [_mod, _math]
         else:
             from . import verifiers as _V
             _V._load_plugins()
             import importlib
             name = _V.VERIFIERS.get(d) or _V.VERIFIERS.get(d.replace("-", "_"))
             mods = [importlib.import_module(name)] if name else []
+            if name and name == _V.VERIFIERS.get("physics"):
+                mods.append(importlib.import_module(_V.VERIFIERS["mathematics"]))
         h = hashlib.sha256()
         for m in mods:
             p = getattr(m, "__file__", None)

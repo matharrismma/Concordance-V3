@@ -100,7 +100,10 @@ def _fill(steps: List[Dict[str, Any]], value: float, value_key: str) -> List[Dic
 def verify_matrix(writers, claim_ids, M, packets: Dict[str, List[Dict[str, Any]]],
                   value_key: str = "claimed_value") -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Run the recompute packets for every (writer, claim). Verdict per cell: CONFIRMED | MISMATCH |
-    MISSING (no value) | NO_PACKET (no recompute defined) | plus the engine detail."""
+    UNCHECKED (the recompute ran and proved nothing: refused, errored or incomplete in any step) | MISSING (no value)
+    | NO_PACKET (no recompute defined) | plus the engine detail. A cell reads the composite verdict of all its steps,
+    never its first step's status, and an UNCHECKED cell carries that composite and the detail of the step that fell
+    short."""
     out: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for i, w in enumerate(writers):
         out[w] = {}
@@ -114,11 +117,15 @@ def verify_matrix(writers, claim_ids, M, packets: Dict[str, List[Dict[str, Any]]
                 out[w][cid] = {"verdict": "NO_PACKET", "detail": "no recompute packet for this claim"}
                 continue
             r = verify_derivation(_fill(steps, v, value_key))
-            t0 = r["trail"][0] if r.get("trail") else {}
-            st = t0.get("status", r.get("verdict"))
+            trail = r.get("trail") or []
+            t0 = trail[0] if trail else {}
             cell = {"verdict": "CONFIRMED" if r.get("verdict") == "HOLDS" else
-                    ("MISMATCH" if r.get("verdict") == "BROKEN" else str(st)),
+                    ("MISMATCH" if r.get("verdict") == "BROKEN" else "UNCHECKED"),
                     "detail": (t0.get("detail") or "")[:240]}
+            if cell["verdict"] == "UNCHECKED":
+                short = next((t for t in trail if t.get("status") != "CONFIRMED"), {})
+                cell["composite"] = r.get("verdict")
+                cell["detail"] = (short.get("detail") or r.get("detail") or r.get("read") or "")[:240]
             ref = t0.get("refutations") or {}
             if ref.get("bands"):
                 b = ref["bands"][0]
@@ -174,7 +181,7 @@ def narrow_way(writers, claim_ids, M, verdicts) -> Dict[str, Any]:
 
 # ── the pass report ────────────────────────────────────────────────────────────────────────────────
 FLAT_SHARE = 0.5      # below this, no single axis explains the disagreement
-SPREAD_TOL = 1e-4     # relative RMS spread; CONVERGED also requires zero broken recomputes, which is the real guard
+SPREAD_TOL = 1e-4     # relative RMS spread; CONVERGED also requires no broken and no unchecked recompute, the real guard
 
 
 def score_pass(drafts: List[Dict[str, Any]], packets: Optional[Dict[str, List[Dict[str, Any]]]] = None,
@@ -183,7 +190,8 @@ def score_pass(drafts: List[Dict[str, Any]], packets: Optional[Dict[str, List[Di
     spec = spectrum(M, ids)
     verdicts = verify_matrix(writers, ids, M, packets or {}, value_key)
     broken = {w: [cid for cid in ids if verdicts[w][cid]["verdict"] in ("MISMATCH", "MISSING")] for w in writers}
-    clean = [w for w in writers if not broken[w]]
+    unchecked = {w: [cid for cid in ids if verdicts[w][cid]["verdict"] == "UNCHECKED"] for w in writers}
+    clean = [w for w in writers if not broken[w] and not unchecked[w]]
     norms = spec.get("row_norms") or [0.0] * len(writers)
     center = min(clean, key=lambda w: norms[writers.index(w)]) if clean else None
     divergent = {}
@@ -193,7 +201,8 @@ def score_pass(drafts: List[Dict[str, Any]], packets: Optional[Dict[str, List[Di
             ref = sorted(col)[len(col) // 2] or 1.0
             if (max(col) - min(col)) / abs(ref) > 1e-6:
                 divergent[cid] = sorted(col)
-    status = "CONVERGED" if (spec["spread"] <= SPREAD_TOL and clean and not any(broken.values())) else \
+    status = "CONVERGED" if (spec["spread"] <= SPREAD_TOL and clean and not any(broken.values())
+                             and not any(unchecked.values())) else \
              ("UNDERDETERMINED" if (spec["top_axis_share"] is not None and spec["top_axis_share"] < FLAT_SHARE
                                     and spec["spread"] > SPREAD_TOL) else "OPEN")
     nw = narrow_way(writers, ids, M, verdicts)
@@ -206,11 +215,15 @@ def score_pass(drafts: List[Dict[str, Any]], packets: Optional[Dict[str, List[Di
     read += f"; energy {energy:.3g}"
     report = {"status": status, "read": read, "energy": energy, "writers": writers, "claim_ids": ids, "matrix": M, "spectrum": spec,
               "verdicts": verdicts, "broken": broken, "broken_total": sum(len(v) for v in broken.values()),
+              "unchecked": unchecked, "unchecked_total": sum(len(v) for v in unchecked.values()),
               "narrow_way": nw,
               "clean_writers": clean, "center": center, "divergent": divergent,
               "means": {"status": "CONVERGED: spread at tolerance and every writer passes every recompute; "
                                   "UNDERDETERMINED: real spread with no dominant axis — the spec is ambiguous, "
-                                  "do not average; OPEN: a dominant disagreement axis or broken claims remain",
+                                  "do not average; OPEN: a dominant disagreement axis, or broken or unchecked "
+                                  "claims, remain",
+                        "unchecked": "claims whose recompute was refused, errored or incomplete: nothing passed, and "
+                                     "nothing was proved false",
                         "center": "the clean draft nearest the centroid — never an average of drafts",
                         "narrow_way": "per claim: the band the recompute names, the values it eliminated and by how "
                                       "much, the values that survived, and the bracket [min, max] of the survivors "

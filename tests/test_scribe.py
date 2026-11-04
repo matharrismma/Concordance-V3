@@ -6,7 +6,7 @@ wrong value is broken and never chosen."""
 import copy, glob, json, os
 import pytest
 
-from concordance import scribe
+from concordance import http_api, scribe
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures", "scribe")
 PF = "PUBFIN_VERIFY"
@@ -112,6 +112,93 @@ def test_flat_spectrum_is_underdetermined_not_averaged():
     assert rep["status"] in ("UNDERDETERMINED", "OPEN")
     assert rep["center"] is None or rep["center"] in rep["writers"]
     assert all(v["verdict"] == "NO_PACKET" for w in rep["verdicts"].values() for v in w.values())
+
+
+GOOD = {"mode": "numeric", "params": {"numeric_expr": "2+3", "claimed_value": "<value>"}}
+FALSE = {"mode": "numeric", "params": {"numeric_expr": "2+4", "claimed_value": "<value>"}}
+REFUSED = {"mode": "equality", "params": {"expr_a": "1/0", "expr_b": "<value>"}}
+ERRORED = {"mode": "numeric", "params": {"numeric_expr": "1 +", "claimed_value": "<value>"}}
+DRAFTS = [{"writer": w, "claims": [{"id": "c", "value": 5}]} for w in ("a", "b")]
+
+
+def _math(step_id, spec, **more):
+    return dict({"id": step_id, "domain": "mathematics", "spec": spec}, **more)
+
+
+def _reports(packets, drafts=DRAFTS):
+    """One pass through score_pass and the same pass through the public route."""
+    status, _headers, out = http_api.route("POST", "/scribe", {"seal": ["0"]}, {"drafts": drafts, "packets": packets}, {}, b"")
+    assert status == 200, out
+    return [scribe.score_pass(drafts, packets), json.loads(out)]
+
+
+@pytest.mark.parametrize("steps, composite, why", [
+    ([_math("s", REFUSED)], "INCOMPLETE", "cannot parse"),
+    ([_math("s", ERRORED)], "SYSTEM_ERROR", "could not evaluate"),
+    ([_math("a", GOOD), _math("b", REFUSED)], "INCOMPLETE", "cannot parse"),
+    ([_math("a", GOOD), _math("b", ERRORED)], "SYSTEM_ERROR", "could not evaluate"),
+    ([_math("a", REFUSED), _math("b", GOOD)], "INCOMPLETE", "cannot parse"),
+    ([_math("a", ERRORED), _math("b", GOOD)], "SYSTEM_ERROR", "could not evaluate"),
+    ([_math("a", GOOD), _math("b", GOOD), _math("c", REFUSED)], "INCOMPLETE", "cannot parse"),
+    ([_math("a", REFUSED), _math("b", GOOD, uses=["a"])], "INCOMPLETE", "cannot parse"),
+    ([_math("a", GOOD, bind={"params.claimed_value": "nosuch.actual"})], "INCOMPLETE", "unresolved binding"),
+    ([_math("a", GOOD, uses=["b"]), _math("b", GOOD, uses=["a"])], "INCOMPLETE", "could not be tested"),
+    ([{"id": "s", "domain": "", "spec": GOOD}], "SYSTEM_ERROR", "missing 'domain'"),
+], ids=["refused", "errored", "good then refused", "good then errored", "refused then good", "errored then good",
+        "refused third", "good on a refused step", "unresolved bind", "cycle", "no domain"])
+def test_a_recompute_that_proved_nothing_is_no_pass(steps, composite, why):
+    """The cell reads the composite of every step, never the first step's status: nothing here passed, and nothing is false."""
+    for report in _reports({"c": steps}):
+        cell = report["verdicts"]["a"]["c"]
+        assert cell["verdict"] == "UNCHECKED" and cell["composite"] == composite and why in cell["detail"]
+        assert report["status"] == "OPEN" and report["clean_writers"] == [] and report["center"] is None
+        assert report["unchecked"] == {"a": ["c"], "b": ["c"]} and report["unchecked_total"] == 2
+        assert report["broken_total"] == 0
+        assert report["narrow_way"]["c"]["surviving"] == [] and report["narrow_way"]["c"]["eliminated"] == []
+        assert "- c: UNCHECKED" in report["feedback"]["a"] and why in report["feedback"]["a"]
+
+
+@pytest.mark.parametrize("steps", [
+    [_math("s", FALSE)], [_math("a", GOOD), _math("b", FALSE)], [_math("a", FALSE), _math("b", REFUSED)],
+    [_math("a", REFUSED), _math("b", FALSE)], [_math("a", ERRORED), _math("b", FALSE)],
+], ids=["false", "good then false", "false then refused", "refused then false", "errored then false"])
+def test_a_false_recompute_stays_false_beside_one_that_proved_nothing(steps):
+    for report in _reports({"c": steps}):
+        assert report["verdicts"]["a"]["c"]["verdict"] == "MISMATCH" and "composite" not in report["verdicts"]["a"]["c"]
+        assert report["status"] == "OPEN" and report["clean_writers"] == [] and report["unchecked_total"] == 0
+        assert report["broken"] == {"a": ["c"], "b": ["c"]}
+
+
+def test_one_unchecked_claim_keeps_the_writer_from_clean():
+    drafts = [{"writer": w, "claims": [{"id": "c", "value": 5}, {"id": "d", "value": 5}]} for w in ("a", "b")]
+    for report in _reports({"c": [_math("s", GOOD)], "d": [_math("s", REFUSED)]}, drafts):
+        assert report["verdicts"]["a"]["c"]["verdict"] == "CONFIRMED" and report["verdicts"]["a"]["d"]["verdict"] == "UNCHECKED"
+        assert report["status"] == "OPEN" and report["clean_writers"] == []
+
+
+def test_a_writer_is_judged_by_its_own_cells():
+    """Two values inside the spread tolerance whose recomputes part: one passes and one errors, so the pass stays open."""
+    drafts = [{"writer": "a", "claims": [{"id": "c", "value": -0.99999}]}, {"writer": "b", "claims": [{"id": "c", "value": -1.00001}]}]
+    for report in _reports({"c": [_math("s", {"MATH_VERIFY": {"factorial": "<value>", "claimed_factorial": 1}})]}, drafts):
+        assert report["spectrum"]["spread"] <= scribe.core.SPREAD_TOL
+        assert report["verdicts"]["a"]["c"]["verdict"] == "CONFIRMED" and report["verdicts"]["b"]["c"]["verdict"] == "UNCHECKED"
+        assert report["clean_writers"] == ["a"] and report["center"] == "a" and report["status"] == "OPEN"
+
+
+@pytest.mark.parametrize("steps", [[_math("s", GOOD)], [_math("a", GOOD), _math("b", GOOD)]], ids=["one step", "two steps"])
+def test_a_good_pass_still_converges(steps):
+    for report in _reports({"c": steps}):
+        assert report["status"] == "CONVERGED" and report["clean_writers"] == ["a", "b"] and report["center"] == "a"
+        assert report["verdicts"]["a"]["c"]["verdict"] == "CONFIRMED" and "composite" not in report["verdicts"]["a"]["c"]
+        assert report["verdicts"]["a"]["c"]["detail"] == "2+3 = 5 — the claim 5.0 is exact."
+        assert report["unchecked_total"] == 0 and report["broken_total"] == 0
+
+
+def test_no_packet_reads_as_it_did():
+    """No recompute was asked for, so this is no check that fell short: it stays apart from one that ran and proved nothing."""
+    for report in _reports({}):
+        assert report["verdicts"]["a"]["c"] == {"verdict": "NO_PACKET", "detail": "no recompute packet for this claim"}
+        assert report["status"] == "CONVERGED" and report["clean_writers"] == ["a", "b"] and report["unchecked_total"] == 0
 
 
 def test_feedback_never_names_other_writers_or_truth():

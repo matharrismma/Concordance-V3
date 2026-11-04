@@ -95,7 +95,7 @@ def verify_dimensional_consistency(
     both sides to a fixed set of SI base units and compare unit signatures.
 
     An equation, a unit or a symbols table the parser will not read returns NOT_APPLICABLE: nothing was
-    checked, so no reading can stand on it, and run() lets no other check in the packet speak beside it.
+    checked, so no reading can stand on it, and run() lets no passing check in the packet stand beside it.
     """
     _ensure_sympy()
     check = "physics.dimensional"
@@ -431,12 +431,7 @@ def run(packet: Dict[str, Any]) -> List[VerifierResult]:
         results.append(verify_planck_units(pv))
 
     if "equation" in pv and ("symbols" in pv or "dimensions" in pv):
-        dimensional = verify_dimensional_consistency(pv["equation"], pv.get("symbols") or pv.get("dimensions"))
-        if dimensional.status == "NOT_APPLICABLE":
-            # A refused text stands alone. A step's status drops NOT_APPLICABLE, so a passing check beside
-            # it would otherwise read the whole packet as HOLDS.
-            return [dimensional]
-        results.append(dimensional)
+        results.append(verify_dimensional_consistency(pv["equation"], pv.get("symbols") or pv.get("dimensions")))
 
     if "before" in pv and "after" in pv:
         # Clamp caller tolerances at the boundary: a caller may TIGHTEN but never LOOSEN past the
@@ -478,6 +473,10 @@ def run(packet: Dict[str, Any]) -> List[VerifierResult]:
 
     if not results:
         results.append(na("physics", "no PHYS_VERIFY artifacts present"))
+    if any(r.name == "physics.dimensional" and r.status == "NOT_APPLICABLE" for r in results):
+        # As in mathematics: a step's status drops NOT_APPLICABLE, so a passing check beside a refused text would read
+        # the whole packet as HOLDS, and it goes. A MISMATCH or an error stands, so a refused text hides no false claim.
+        return [r for r in results if r.status != "CONFIRMED"]
     return results
 
 

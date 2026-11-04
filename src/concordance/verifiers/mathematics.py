@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast as _ast
 import builtins as _builtins
+import math as _math
 import operator as _operator
 import re as _re
 import types as _types
@@ -174,6 +175,11 @@ class ExpressionRefused(ValueError):
     or not sympy has loaded yet, and each mode keeps its reading of a refused text."""
 
 
+class NoMeaningRefused(ExpressionRefused):
+    """A value the rule refuses. Its own kind, because a text refused this way is arithmetic with no
+    meaning, never prose and never a claim that can be set aside: see _refuse_no_meaning."""
+
+
 class PowerRefused(ExpressionRefused):
     """A text the power limits refuse. Its own kind, so an unevaluated read can say so: there a refusal
     is a pole that could not be looked for, and it must never read as no pole."""
@@ -281,13 +287,52 @@ def _require_sympy_values(value) -> None:
         raise ExpressionRefused(f"a call returned a {type(value).__name__}, not a mathematical value")
 
 
+def _holds(value, *wanted) -> bool:
+    """Whether a built value is or contains any of these, through every container."""
+    if isinstance(value, dict):
+        return any(_holds(key, *wanted) or _holds(item, *wanted) for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return any(_holds(item, *wanted) for item in value)
+    return isinstance(value, _SYMPY_VALUES) and bool(value.has(*wanted))
+
+
+def _refuse_no_meaning(value, written: bool, carried: bool) -> bool:
+    """THE RULE: a value with no meaning never leaves the node that built it. sympy answers a division by
+    zero and some poles with zoo, nan, AccumBounds or an oo of its own and carries on, and a later node can
+    collapse that into an ordinary number: 1/zoo is 0. So each built value is tested here, at its own node,
+    before anything can build on it. A value that is or contains zoo, nan or AccumBounds is refused. So is
+    one that contains oo or -oo, unless it is itself written (a name that read as one) or was carried in by
+    a value it was built from. It tests the value and never a name: a variable called oo is a symbol and
+    earns nothing, and a written oo that reduced to a finite number carries nothing further. Returns whether
+    the value holds an infinity, for the node that builds on it."""
+    if _holds(value, _sp.zoo, _sp.nan, _sp.AccumBounds):
+        raise NoMeaningRefused("a value with no meaning is not read")
+    infinite = _holds(value, _sp.oo, -_sp.oo)
+    if infinite and not (written or carried):
+        raise NoMeaningRefused("an infinity nobody wrote is not read")
+    return infinite
+
+
 class _Reader:
     """Builds sympy objects from a bounded tree. A node it does not name is refused."""
 
     def __init__(self, source: str, names: Dict[str, Any], rational: bool, evaluate: bool):
         self.source, self.names, self.rational, self.evaluate = source, names, rational, evaluate
+        self.carried = False    # whether a value the node being built was built from held an infinity
 
     def read(self, node, in_call: bool = False):
+        """Every node passes through here, so each built value meets the rule at its own node. Only a read
+        that evaluates is tested: the unevaluated read is how a pole is seen, and a refusal there would
+        read as no pole."""
+        if not self.evaluate:
+            return self._build(node, in_call)
+        outer, self.carried = self.carried, False
+        value = self._build(node, in_call)
+        infinite = _refuse_no_meaning(value, isinstance(node, _ast.Name), self.carried)
+        self.carried = outer or infinite
+        return value
+
+    def _build(self, node, in_call: bool):
         if isinstance(node, _ast.Constant):
             return self._number(node)
         if isinstance(node, _ast.Name):
@@ -487,13 +532,13 @@ def _domain_mismatch(a_str, b_str, var_names):
     is true only OFF that singular set — NOT an unconditional identity, and must not be
     sealed as a clean HOLDS. Returns a description of the differing poles, or None when
     the domains match. Re-reads the same normalised text unevaluated, so x/x is not auto-reduced
-    to 1 before its pole can be seen. A read the power limits refuse raises PowerRefused, a member of
+    to 1 before its pole can be seen. A read the power limits or the rule refuse raises, as a member of
     _PARSE_ERRORS, so verify_equality reads the claim as not checkable: a pole that could not be
     looked for is never no pole. Any other failed read is no mismatch, as it has always been."""
     try:
         ra = _parse(a_str, var_names, evaluate=False)
         rb = _parse(b_str, var_names, evaluate=False)
-    except PowerRefused:
+    except (PowerRefused, NoMeaningRefused):
         raise
     except Exception:
         return None
@@ -502,6 +547,14 @@ def _domain_mismatch(a_str, b_str, var_names):
         return None
     diff_ = pa.symmetric_difference(pb)
     return ", ".join(sorted(str(p) for p in diff_)) if diff_ else None
+
+
+_REFUSAL = "cannot parse "
+
+
+def _refused(name: str, reason, what: str = "expression") -> VerifierResult:
+    """A mode's reading of a text it could not read. run() tells this from any other NOT_APPLICABLE."""
+    return na(name, f"{_REFUSAL}{what}: {reason}")
 
 
 def _worked_equality(a, b, ea, eb):
@@ -559,6 +612,8 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
                     return confirm("mathematics.equality",
                                    f"{a} = {b}; by exact rational arithmetic both sides reduce to {ra}",
                                    {"exact_rational": str(ra)})
+            except NoMeaningRefused:
+                raise       # undefined by exact arithmetic: the float read's window must not certify it
             except _PARSE_ERRORS:
                 pass
             lit = spec.get("claimed_literal")
@@ -568,7 +623,7 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
                     fa, fb = float(ea.evalf()), float(eb.evalf())
                 except Exception:
                     fa = fb = None
-                if fa is not None:
+                if fa is not None and _math.isfinite(fa) and _math.isfinite(fb):
                     sig = (stated_precision(lit) or (0, 0.0))[0]
                     # the stated-precision band: b must lie within ±tol of a's value
                     bd = band("mathematics.equality", fa, fb, tol, "value",
@@ -580,7 +635,7 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
                                        f"figure(s) (half a unit in the last place = ±{tol:g})", bd.data)
         return mismatch("mathematics.equality", f"{a} - ({b}) simplifies to {diff_}")
     except _PARSE_ERRORS as e:
-        return na("mathematics.equality", f"cannot parse expression: {e}")
+        return _refused("mathematics.equality", e)
     except Exception as e:
         return error("mathematics.equality", f"computation failure: {e}")
 
@@ -603,7 +658,7 @@ def verify_derivative(spec: Dict[str, Any]) -> VerifierResult:
                         f"d/d{var} of {f} = {actual}, but claimed {claimed}",
                         {"computed": str(actual), "claimed": str(ec)})
     except _PARSE_ERRORS as e:
-        return na("mathematics.derivative", f"cannot parse expression: {e}")
+        return _refused("mathematics.derivative", e)
     except Exception as e:
         return error("mathematics.derivative", f"computation failure: {e}")
 
@@ -626,7 +681,7 @@ def verify_integral(spec: Dict[str, Any]) -> VerifierResult:
                         f"d/d{var} of {claimed} = {derivative}, expected {ef}",
                         {"derivative_of_claim": str(derivative), "integrand": str(ef)})
     except _PARSE_ERRORS as e:
-        return na("mathematics.integral", f"cannot parse expression: {e}")
+        return _refused("mathematics.integral", e)
     except Exception as e:
         return error("mathematics.integral", f"computation failure: {e}")
 
@@ -651,7 +706,7 @@ def verify_limit(spec: Dict[str, Any]) -> VerifierResult:
                         f"lim_{{{var}->{point}}} {f} = {actual}, claimed {claimed}",
                         {"computed": str(actual), "claimed": str(ec)})
     except _PARSE_ERRORS as e:
-        return na("mathematics.limit", f"cannot parse expression: {e}")
+        return _refused("mathematics.limit", e)
     except Exception as e:
         return error("mathematics.limit", f"computation failure: {e}")
 
@@ -682,7 +737,7 @@ def verify_solve(spec: Dict[str, Any]) -> VerifierResult:
                                  "claimed": [str(s) for s in claimed_set]})
         return confirm("mathematics.solve", f"solutions {[str(s) for s in actual]} match claim")
     except _PARSE_ERRORS as e:
-        return na("mathematics.solve", f"cannot parse expression: {e}")
+        return _refused("mathematics.solve", e)
     except Exception as e:
         return error("mathematics.solve", f"computation failure: {e}")
 
@@ -783,7 +838,7 @@ def verify_set_algebra(spec: Dict[str, Any]) -> VerifierResult:
         # sets equal for all elements iff no membership pattern separates them
         equal = boolean_equivalent(a, b, var_names)
     except BooleanParseError as e:
-        return na(name, f"cannot parse set expression: {e}")
+        return _refused(name, e, "set expression")
     except Exception as e:  # noqa: BLE001
         return error(name, f"computation failure: {e}")
     claimed_b = bool(claimed)
@@ -829,6 +884,22 @@ def _norm_inline(tok: str) -> str:
     t = _INLINE_X.sub("*", t)
     t = _THOUSANDS.sub("", t)
     return t.strip()
+
+
+def _inline_is_prose(lhs: str, rhs: str, var_names) -> bool:
+    """Whether an inline equation is prose to skip, not arithmetic to grade. A refusal by the rule is not
+    prose: it is arithmetic with no meaning, and dropping it would let a chain certify over a false step.
+    So it is kept, and _ok reads it as unparseable."""
+    try:
+        L = _parse(lhs, var_names, rational=True)
+        R = _parse(rhs, var_names, rational=True)
+    except NoMeaningRefused:
+        return False
+    except _PARSE_ERRORS:
+        return True  # not a parseable computation -> prose, skip (never a silent confirm)
+    if getattr(L, "free_symbols", None) or getattr(R, "free_symbols", None):
+        return True  # contains variables -> not a pure numeric step, skip
+    return not (getattr(L, "is_number", False) and getattr(R, "is_number", False))
 
 
 def _calc_chain_framing(spec: Dict[str, Any]) -> VerifierResult:
@@ -937,14 +1008,7 @@ def verify_calc_chain(spec: Dict[str, Any]) -> VerifierResult:
                 lhs, rhs = _norm_inline(m.group(1)), _norm_inline(m.group(2))
                 if _key(lhs, rhs) in seen:
                     continue  # already counted as a bracketed step
-                try:
-                    L = _parse(lhs, var_names, rational=True)
-                    R = _parse(rhs, var_names, rational=True)
-                except _PARSE_ERRORS:
-                    continue  # not a parseable computation -> prose, skip (never a silent confirm)
-                if getattr(L, "free_symbols", None) or getattr(R, "free_symbols", None):
-                    continue  # contains variables -> not a pure numeric step, skip
-                if not (getattr(L, "is_number", False) and getattr(R, "is_number", False)):
+                if _inline_is_prose(lhs, rhs, var_names):
                     continue
                 seen.add(_key(lhs, rhs))
                 positioned.append((off + m.start(), lhs, rhs))
@@ -966,7 +1030,7 @@ def verify_calc_chain(spec: Dict[str, Any]) -> VerifierResult:
         if tol > 0:
             try:
                 lf, rf = float(L), float(R)
-                return abs(lf - rf) <= tol * max(1.0, abs(lf))
+                return _math.isfinite(lf) and _math.isfinite(rf) and abs(lf - rf) <= tol * max(1.0, abs(lf))
             except (TypeError, ValueError):
                 return False
         return False
@@ -1026,6 +1090,12 @@ def verify_numeric(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"could not evaluate {expr!r}: {type(e).__name__}")
     except (TypeError, ValueError):
         return mismatch(name, f"{expr} is not a pure number (has free symbols?)", {"expr": str(expr)})
+    if not _math.isfinite(fv):      # past a float, or infinite: no window around it can mean anything
+        if _math.isfinite(cv):      # and no finite claim equals it, which does prove this one false
+            return mismatch(name, f"{expr} is not finite as a float, so no finite claim equals it", {"expr": str(expr)})
+        return error(name, f"{expr} is not finite as a float, so it cannot be compared with {cv}")
+    if not _math.isfinite(cv):      # before any window: at the top of the float range a window's own edge is infinite
+        return mismatch(name, f"{expr} is finite, and the claim {cv} is not", {"expr": str(expr)})
     diff = abs(fv - cv)
     threshold = rel_tol * max(1.0, abs(fv))
     strict_threshold = threshold   # the exact-match window, before any stated-precision widening below
@@ -1158,4 +1228,9 @@ GOLDEN_EXAMPLE = {"function": "x**2", "variable": "x", "claimed_derivative": "2*
 
 
 def run(packet: Dict[str, Any]) -> List[VerifierResult]:
-    return dispatch(packet, 'MATH_VERIFY', _RULES, domain='mathematics', none_reason='no MATH_VERIFY artifacts present')
+    results = dispatch(packet, 'MATH_VERIFY', _RULES, domain='mathematics', none_reason='no MATH_VERIFY artifacts present')
+    if any(r.status == "NOT_APPLICABLE" and r.detail.startswith(_REFUSAL) for r in results):
+        # As in physics: a step's status drops NOT_APPLICABLE, so a passing check beside a refused text would read
+        # the whole packet as HOLDS, and it goes. A MISMATCH or an error stands, so a refused text hides no false claim.
+        return [r for r in results if r.status != "CONFIRMED"]
+    return results
