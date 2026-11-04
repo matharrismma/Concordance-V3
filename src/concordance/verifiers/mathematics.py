@@ -12,18 +12,28 @@ stays fast. Ported as-is from 1.0 — the derivation moat, the 0-false-positive 
 from __future__ import annotations
 
 import ast as _ast
+import builtins as _builtins
+import operator as _operator
 import re as _re
+import types as _types
+import unicodedata as _unicodedata
 from typing import Any, Dict, List
 
 from .base import VerifierResult, band, clamp_tol, confirm, error, mismatch, na
 from .base import stated_precision, stated_tolerance_abs, stated_window, window_for
 from .base import dispatch  # declarative run() driver
 
-sympify = simplify = diff = integrate = limit = solve = None
+simplify = diff = integrate = limit = solve = None
 Symbol = oo = S = expand = _SympifyError = None
 _PARSE_ERRORS = (SyntaxError, TypeError, ValueError, NotImplementedError)
 _sympy_loaded = False
 _sympy_ok = None  # None = untried; True/False after first attempt
+# The parser's tables, built once from sympy in _ensure_sympy.
+_sp = None                  # the sympy module
+_SYMPY_VALUES = ()          # what counts as a sympy value: Basic, and MatrixBase, since a mutable Matrix is no Basic
+_FUNCTIONS: Dict[str, Any] = {}     # each name on _ALLOWED_FUNCS that sympy binds to a callable
+_CONSTANTS: Dict[str, Any] = {}     # the only names that read as a value without the caller supplying them
+_NOT_SYMBOLS = frozenset()  # every other name sympy would read as something other than a symbol
 
 
 def _ensure_sympy() -> bool:
@@ -31,20 +41,32 @@ def _ensure_sympy() -> bool:
     stdlib-only box (the optional `math` extra is not installed). Callers degrade to a clean
     NOT_APPLICABLE — the symbolic checks genuinely need sympy — rather than crash, so the engine
     keeps running offline. (set_algebra does not need sympy; it uses the pure-stdlib engine.)"""
-    global sympify, simplify, diff, integrate, limit, solve
+    global simplify, diff, integrate, limit, solve
     global Symbol, oo, S, expand, _SympifyError, _PARSE_ERRORS, _sympy_loaded, _sympy_ok
+    global _sp, _SYMPY_VALUES, _FUNCTIONS, _CONSTANTS, _NOT_SYMBOLS
     if _sympy_loaded:
         return _sympy_ok
     try:
+        import sympy as _sympy
         from sympy import (
-            sympify as _f, simplify as _s, diff as _d, integrate as _i,
-            limit as _l, solve as _so, Symbol as _Sy, oo as _oo, S as _S, expand as _e,
+            simplify as _s, diff as _d, integrate as _i, limit as _l, solve as _so,
+            Symbol as _Sy, oo as _oo, S as _S, expand as _e, SympifyError as _SE,
         )
-        from sympy.core.sympify import SympifyError as _SE
-        sympify, simplify, diff, integrate = _f, _s, _d, _i
+        simplify, diff, integrate = _s, _d, _i
         limit, solve, Symbol, oo, S, expand = _l, _so, _Sy, _oo, _S, _e
         _SympifyError = _SE
         _PARSE_ERRORS = (_SE, SyntaxError, TypeError, ValueError, NotImplementedError)
+        bound = {n: getattr(_sympy, n, None) for n in _sympy.__all__}
+        _FUNCTIONS = {n: bound[n] for n in _ALLOWED_FUNCS if callable(bound.get(n))}
+        _FUNCTIONS.update(abs=abs, round=round)    # the two builtin spellings on the list
+        _CONSTANTS = {n: bound[n] for n in _CONSTANT_NAMES}
+        # What sympy's own auto_symbol reads as an object and not a symbol: anything `from sympy import *`
+        # binds to a Basic, a class or a callable, Q, and every real builtin function.
+        _NOT_SYMBOLS = frozenset(
+            {n for n, v in bound.items() if isinstance(v, (_sympy.Basic, type)) or callable(v) or v is _sympy.Q}
+            | {n for n, v in vars(_builtins).items() if isinstance(v, _types.BuiltinFunctionType)})
+        _SYMPY_VALUES = (_sympy.Basic, _sympy.MatrixBase)
+        _sp = _sympy
         _sympy_ok = True
     except ModuleNotFoundError:
         _sympy_ok = False
@@ -52,8 +74,9 @@ def _ensure_sympy() -> bool:
     return _sympy_ok
 
 
-# Characters that are NOT part of any valid math expression string. sympify treats
-# '#' as a comment, silently dropping the rest — reject such inputs early.
+# Characters that are NOT part of any valid math expression string. ast.parse treats '#' as a
+# comment and silently drops the rest, so the text after it would never be read — reject such
+# inputs early.
 #
 # `%` WAS ON THIS LIST AND DID NOT BELONG THERE (removed 2026-08-02): SymPy evaluates `16 % 9`
 # as Mod natively, and blacklisting it left the fleet unable to check MODULAR ARITHMETIC at all
@@ -72,16 +95,21 @@ _MOD_WORD_RE = _re.compile(r"\bmod\b(?!\s*\()", _re.IGNORECASE)
 
 # Compute-DoS guards: a short input like 9**9**9 expands to a ~369M-digit bignum.
 _MAX_POW_EXP = 10000
+_MAX_POW_BITS = 2 ** 20     # the size of an integer or rational power, however its base was built
 _MAX_AST_NODES = 2000
 _MAX_AST_DEPTH = 60
+_MAX_EXPR_CHARS = 4000
 
-# SECURITY (red team 2026-08-06, CRITICAL): sympy.sympify() EVALUATES arbitrary Python — an
-# expr like "__import__('os').system(...)" was an unauthenticated RCE reachable from public
-# POST /verify (the flagship math path). The old blacklist missed '.', '_', '(', quotes. The guard
-# below is now an ALLOWLIST over the parsed AST: only pure mathematics reaches sympify. An escape
-# needs a sink (eval/open/getattr/attribute) or a way to NAME a target (a string/dunder) — all are
-# refused here, so the type-graph and import escapes cannot be expressed. A missing function name
+# SECURITY (red team 2026-08-06, CRITICAL; replaced 2026-11-04): sympy.sympify() EVALUATES arbitrary
+# Python, and an expr that named its way out of it was an unauthenticated RCE reachable from public
+# POST /verify. A guard in front of it was tried and is withdrawn: a check on a text that something
+# else then evaluates cannot be made sufficient, because the text checked and the text evaluated
+# differ. So no text from a request reaches sympify, parse_expr or any sympy entry that parses a
+# string. parse_expression reads a text by walking Python's ast itself and builds sympy objects
+# directly. What is not on its allowlist cannot run, because nothing runs. A missing function name
 # yields INCOMPLETE (an honest gap), never a false verdict — add names here as real math needs them.
+# Never add a function that parses a text built from what a request names: nsimplify did, with a
+# name the request chose, and came off this list for that.
 _ALLOWED_FUNCS = frozenset({
     # trig / inverse / hyperbolic
     "sin", "cos", "tan", "cot", "sec", "csc", "sinc", "asin", "acos", "atan", "acot", "asec",
@@ -110,7 +138,7 @@ _ALLOWED_FUNCS = frozenset({
     "Product", "product", "Subs",
     # algebra / manipulation
     "simplify", "expand", "factor", "cancel", "together", "apart", "collect", "trigsimp",
-    "radsimp", "nsimplify", "N", "evalf", "Poly", "degree", "solve", "solveset", "roots",
+    "radsimp", "N", "evalf", "Poly", "degree", "solve", "solveset", "roots",
     # matrices
     "Matrix", "ImmutableMatrix", "eye", "zeros", "ones", "diag", "Transpose", "det", "trace",
     "Determinant", "Trace", "Inverse", "transpose",
@@ -118,67 +146,316 @@ _ALLOWED_FUNCS = frozenset({
     "Tuple", "Interval", "FiniteSet", "S",
 })
 
-_UNSAFE_NODES = (_ast.Attribute, _ast.Lambda, _ast.ListComp, _ast.SetComp, _ast.DictComp,
-                 _ast.GeneratorExp, _ast.Await, _ast.Yield, _ast.YieldFrom, _ast.NamedExpr,
-                 _ast.Starred, _ast.JoinedStr, _ast.FormattedValue, _ast.Import, _ast.ImportFrom)
+# The names that read as a value without a caller supplying them. Nothing else can: a Name is a
+# caller's name, one of these, or a Symbol, so no Name yields a Python object from outside these.
+_CONSTANT_NAMES = ("pi", "E", "I", "oo", "zoo", "nan", "EulerGamma", "GoldenRatio", "Catalan",
+                   "TribonacciConstant", "true", "false")
+
+# The functions that hand back a plain int or bool, not a sympy value.
+_PLAIN_RESULT_FUNCS = frozenset({"igcd", "ilcm", "nextprime", "prevprime", "isprime"})
+
+# The functions sympy's evaluate=False leaves unevaluated; every other call in an unevaluated read
+# still evaluates, as it does there.
+_UNEVALUATED_FUNCS = frozenset({
+    "Abs", "im", "re", "sign", "arg", "conjugate", "acos", "acot", "acsc", "asec", "asin", "atan",
+    "acosh", "acoth", "asinh", "atanh", "cos", "cot", "csc", "sec", "sin", "tan", "cosh", "coth",
+    "csch", "sech", "sinh", "tanh", "exp", "ln", "log", "sqrt", "cbrt",
+})
+
+_ARITHMETIC = {_ast.Add: _operator.add, _ast.Sub: _operator.sub, _ast.Mult: _operator.mul,
+               _ast.Div: _operator.truediv}
+_TERMS, _FACTORS = (_ast.Add, _ast.Sub), (_ast.Mult, _ast.Div)
+
+_WRITTEN_EXPONENT_RE = _re.compile(r"[eE]([+-]?[0-9_]+)$")
 
 
-def _ast_compute_guard(expr: str):
-    """Reject pathological AND dangerous inputs before SymPy evaluates them: giant exponents /
-    power towers / oversized trees (DoS), and — critically — anything that is not pure mathematics
-    (attribute access, string literals, underscore/dunder names, lambdas/comprehensions, or a call
-    to a non-mathematical function), which would be arbitrary code execution via sympify. Raises
-    _SympifyError on rejection. An input Python cannot parse is rejected (never passed to eval)."""
-    try:
-        tree = _ast.parse(str(expr), mode="eval")
-    except SyntaxError:
-        raise _SympifyError("expression is not parseable as mathematics")
-    n = 0
-    for node in _ast.walk(tree):
-        n += 1
-        if n > _MAX_AST_NODES:
-            raise _SympifyError("expression too large")
-        if isinstance(node, _UNSAFE_NODES):
-            raise _SympifyError("expression contains a non-mathematical construct")
-        if isinstance(node, _ast.Constant) and isinstance(node.value, (str, bytes)):
-            raise _SympifyError("string literals are not allowed in a math expression")
-        if isinstance(node, _ast.Name) and node.id.startswith("_"):
-            raise _SympifyError("names beginning with underscore are not allowed")
+class ExpressionRefused(ValueError):
+    """A text parse_expression will not read. A ValueError, so it is a member of _PARSE_ERRORS whether
+    or not sympy has loaded yet, and each mode keeps its reading of a refused text."""
+
+
+class PowerRefused(ExpressionRefused):
+    """A text the power limits refuse. Its own kind, so an unevaluated read can say so: there a refusal
+    is a pole that could not be looked for, and it must never read as no pole."""
+
+
+def _normalise_expression(expr, word_mod: bool) -> str:
+    """The one normal form, and the only text anything reads: no surrounding whitespace (ast.parse
+    rejects it as an IndentationError), one spelling of a power, and, for mathematics alone, the word
+    form of mod. Physics never read that word: there mod is a name a symbol may have, and reading the
+    word would turn a claim that never parsed into one that reads."""
+    expr = _MOD_WORD_RE.sub("%", str(expr)).strip() if word_mod else str(expr).strip()
+    return expr.replace("^", "**")
+
+
+def _bound_tree(tree) -> None:
+    """Today's node and depth limits, on the tree itself. Iterative, so a long chain is refused here
+    and cannot overflow the stack; it is what keeps _Reader's recursion shallow."""
+    nodes = 0
+    todo = [(tree, 1)]
+    while todo:
+        node, depth = todo.pop()
+        nodes += 1
+        if nodes > _MAX_AST_NODES:
+            raise ExpressionRefused("expression too large")
+        if depth > _MAX_AST_DEPTH:
+            raise ExpressionRefused("expression too deeply nested")
+        todo.extend((child, depth + 1) for child in _ast.iter_child_nodes(node))
+
+
+def _ceiling(value) -> int:
+    return -(-value.p // value.q)
+
+
+def _settled(value):
+    """The value of arithmetic an unevaluated read left written out, as 5000*2 for 10000. It rebuilds
+    sums, products and powers and nothing else, so a Sum in an exponent is not run by bounding it. What
+    will not rebuild, as an exponent holding a matrix, is no number to bound, and never fails a read."""
+    if isinstance(value, (_sp.Add, _sp.Mul, _sp.Pow)):
+        try:
+            return value.func(*[_settled(arg) for arg in value.args])
+        except Exception:
+            return value
+    return value
+
+
+def _power_bits(base, exponent) -> int:
+    """An upper bound on the bits of the integers base**exponent multiplies out, for a Rational
+    exponent. It reads what it knows sympy carries a power through: a power's own base and exponent,
+    the pieces of a Piecewise and the entries of a matrix. Everything else is default-deny: what
+    carries a power cannot be known by name (a constant Poly is an integer, a matrix expression
+    multiplies out when done), so a base it does not read counts every Rational inside it. So a root
+    of an integer, which shows no integer at all, is bounded by the integer under it. Each step
+    rounds up: a fraction never rounds the bound down. It binds a power and only a power: another
+    spelling of one, such as exp of a multiple of a log, has only the timeout."""
+    if isinstance(base, _sp.MatrixBase):
+        # An entry of M**n is at most (rows * largest entry)**n for n >= 0. A negative power goes through
+        # the determinant, whose size grows with the rows, so this is no upper bound for one.
+        largest = max((_power_bits(entry, exponent) for entry in base), default=0)
+        return largest + _ceiling(abs(exponent)) * base.rows.bit_length()
+    if not isinstance(base, _sp.Basic):
+        raise PowerRefused("a power is on a mathematical value")
+    if base.is_Rational:
+        return max(int(base.p).bit_length(), int(base.q).bit_length()) * _ceiling(abs(exponent))
+    if isinstance(base, _sp.Piecewise):
+        return max(_power_bits(piece, exponent) for piece, _condition in base.args)
+    if isinstance(base, _sp.Pow):
+        root, power = base.as_base_exp()
+        power = _settled(power)
+        if power.is_Rational:
+            return _power_bits(root, abs(power * exponent))
+    return sum(_power_bits(arg, exponent) for arg in base.args)
+
+
+def _bound_power(base, exponent) -> None:
+    """The exponent limit, and the cap on the bits of an integer or rational power. Both read the
+    values already built, so they hold however the base or the exponent was written: an operator, the
+    Pow function, a power nested on the base side. They bind an unevaluated read too. A call in that
+    read still multiplies, and a base that collapsed in the evaluated read stands whole there, so this
+    can refuse what the evaluated read took; _domain_mismatch fails closed on that."""
+    exponent = _settled(exponent)
+    if not getattr(exponent, "is_Number", False) or not exponent.is_finite:
+        return
+    if abs(exponent) > _MAX_POW_EXP:
+        raise PowerRefused("exponent too large")
+    if exponent.is_Rational and _power_bits(base, exponent) > _MAX_POW_BITS:
+        raise PowerRefused("power too large")
+
+
+def _require_sympy_values(value) -> None:
+    """A value a call returned: a sympy value, or a list, tuple or dict of them at every depth. An
+    iterator, a str or anything else is refused. This runs after the call, so it is a second line.
+    What keeps a request's own text out of a parse is that no str and no callable can reach a call.
+    A call can still parse a text sympy builds itself: a decimal in solve reaches sympy's string
+    parser with numeric text made from that number, as it did before this parser existed."""
+    if isinstance(value, _SYMPY_VALUES):
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _require_sympy_values(item)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _require_sympy_values(key)
+            _require_sympy_values(item)
+    else:
+        raise ExpressionRefused(f"a call returned a {type(value).__name__}, not a mathematical value")
+
+
+class _Reader:
+    """Builds sympy objects from a bounded tree. A node it does not name is refused."""
+
+    def __init__(self, source: str, names: Dict[str, Any], rational: bool, evaluate: bool):
+        self.source, self.names, self.rational, self.evaluate = source, names, rational, evaluate
+
+    def read(self, node, in_call: bool = False):
+        if isinstance(node, _ast.Constant):
+            return self._number(node)
+        if isinstance(node, _ast.Name):
+            return self._name(node.id)
+        if isinstance(node, _ast.BinOp):
+            return self._binop(node)
+        if isinstance(node, _ast.UnaryOp):
+            return self._unary(node)
+        if isinstance(node, _ast.Compare):
+            return self._compare(node)
         if isinstance(node, _ast.Call):
-            fn = node.func
-            if not isinstance(fn, _ast.Name) or fn.id not in _ALLOWED_FUNCS:
-                raise _SympifyError("call to a non-mathematical function is not allowed")
-        if isinstance(node, _ast.BinOp) and isinstance(node.op, _ast.Pow):
-            ex = node.right
-            val = None
-            if isinstance(ex, _ast.Constant) and isinstance(ex.value, (int, float)):
-                val = ex.value
-            elif isinstance(ex, _ast.UnaryOp) and isinstance(ex.operand, _ast.Constant) \
-                    and isinstance(ex.operand.value, (int, float)):
-                val = ex.operand.value
-            if val is not None and abs(val) > _MAX_POW_EXP:
-                raise _SympifyError("exponent too large")
-            for sub in _ast.walk(ex):
-                if isinstance(sub, _ast.BinOp) and isinstance(sub.op, _ast.Pow):
-                    raise _SympifyError("nested power tower not allowed")
+            return self._call(node)
+        if isinstance(node, _ast.Tuple) and in_call:   # so a matrix or a Sum limit can be written
+            return tuple(self.read(item, in_call=True) for item in node.elts)
+        raise ExpressionRefused(f"a {type(node).__name__} is not read as mathematics")
 
-    def _depth(nd):
-        return 1 + max((_depth(c) for c in _ast.iter_child_nodes(nd)), default=0)
-    if _depth(tree) > _MAX_AST_DEPTH:
-        raise _SympifyError("expression too deeply nested")
+    def _number(self, node):
+        if type(node.value) is int:
+            return _sp.Integer(node.value)
+        if type(node.value) is float:
+            written = _ast.get_source_segment(self.source, node)
+            exponent = _WRITTEN_EXPONENT_RE.search(written)    # a written 1eN is the power 10**N,
+            if exponent and abs(int(exponent.group(1))) > _MAX_POW_EXP:    # and sympy expands it whole
+                raise ExpressionRefused("exponent too large")
+            return _sp.Rational(written) if self.rational else _sp.Float(written)
+        raise ExpressionRefused(f"a {type(node.value).__name__} literal is not a number here")
+
+    def _name(self, name: str):
+        if name.startswith("_"):
+            raise ExpressionRefused("names beginning with underscore are not allowed")
+        if name in self.names:
+            return self.names[name]
+        if name in _CONSTANTS:
+            return _CONSTANTS[name]
+        if name in _ALLOWED_FUNCS or name in _NOT_SYMBOLS:
+            raise ExpressionRefused(f"{name} is not a value")
+        return Symbol(name)
+
+    def _operand(self, node):
+        value = self.read(node)
+        if not isinstance(value, _SYMPY_VALUES) or isinstance(value, _sp.Tuple):
+            raise ExpressionRefused("arithmetic is on sympy values only, never a tuple or list")
+        return value
+
+    def _binop(self, node):
+        op = type(node.op)
+        if op is _ast.Mod:
+            # sympy's evaluate=False leaves % and everything under it evaluated.
+            reader = self if self.evaluate else _Reader(self.source, self.names, self.rational, True)
+            return reader._operand(node.left) % reader._operand(node.right)
+        if op is not _ast.Pow and op not in _ARITHMETIC:
+            raise ExpressionRefused(f"the operator {op.__name__} is not read as mathematics")
+        if op is _ast.Pow and any(isinstance(n, _ast.BinOp) and isinstance(n.op, _ast.Pow)
+                                  for n in _ast.walk(node.right)):
+            raise ExpressionRefused("nested power tower not allowed")
+        if op is not _ast.Pow and not self.evaluate:
+            kind = _sp.Add if op in _TERMS else _sp.Mul
+            return kind(*self._unevaluated_args(node), evaluate=False)
+        left, right = self._operand(node.left), self._operand(node.right)
+        if op is _ast.Pow:
+            _bound_power(left, right)
+            return left ** right if self.evaluate else _sp.Pow(left, right, evaluate=False)
+        return _ARITHMETIC[op](left, right)
+
+    def _unevaluated_args(self, node) -> list:
+        """The arguments sympy's evaluate=False gives one Add or Mul. It flattens a sum written in a
+        sum and a product written in a product, so x+(y+z) and x+y+z have one pole base. It does that
+        to the tree, before anything is built: by the value built, a sum a call returned would be
+        flattened too, and a product holding a matrix, which is a matrix by then, would not be."""
+        op = type(node.op)
+        ops = _TERMS if op in _TERMS else _FACTORS
+        left = self._flattened(node.left, ops)
+        if op is _ast.Sub:
+            return left + [_sp.Mul(-1, self._operand(node.right), evaluate=False)]
+        if op is _ast.Div:
+            return left + [_sp.Pow(self._operand(node.right), -1, evaluate=False)]
+        return left + self._flattened(node.right, ops)
+
+    def _flattened(self, node, ops) -> list:
+        if isinstance(node, _ast.BinOp) and type(node.op) in ops:
+            return self._unevaluated_args(node)
+        return [self._operand(node)]
+
+    def _unary(self, node):
+        if isinstance(node.op, _ast.USub):
+            return -self._operand(node.operand)
+        if isinstance(node.op, _ast.UAdd):
+            return +self._operand(node.operand)
+        raise ExpressionRefused(f"the operator {type(node.op).__name__} is not read as mathematics")
+
+    def _compare(self, node):
+        relation = {_ast.Lt: _sp.Lt, _ast.LtE: _sp.Le, _ast.Gt: _sp.Gt,
+                    _ast.GtE: _sp.Ge}.get(type(node.ops[0]))
+        if relation is None or len(node.ops) != 1:
+            raise ExpressionRefused("one comparison by <, <=, > or >= is all that is read")
+        left, right = self._operand(node.left), self._operand(node.comparators[0])
+        return relation(left, right) if self.evaluate else relation(left, right, evaluate=False)
+
+    def _call(self, node):
+        func = node.func
+        if not isinstance(func, _ast.Name) or func.id not in _ALLOWED_FUNCS:
+            raise ExpressionRefused("call to a non-mathematical function is not allowed")
+        name = func.id
+        if name in self.names:
+            raise ExpressionRefused(f"{name} is a value here, not a function")
+        if name not in _FUNCTIONS:
+            raise ExpressionRefused(f"{name} is not bound to a function")
+        if node.keywords:
+            raise ExpressionRefused("a call takes no keywords")
+        args = [self.read(arg, in_call=True) for arg in node.args]
+        if name == "Pow" and len(args) >= 2:
+            _bound_power(args[0], args[1])
+        # sympy's rational read rewrites the name Float as well as the numbers.
+        function = _sp.Rational if self.rational and name == "Float" else _FUNCTIONS[name]
+        if not self.evaluate and name in _UNEVALUATED_FUNCS:
+            value = function(*args, evaluate=False)
+        else:
+            value = function(*args)
+        if name in _PLAIN_RESULT_FUNCS:
+            if value is True or value is False:
+                return _sp.true if value else _sp.false
+            if type(value) is int:
+                return _sp.Integer(value)
+        _require_sympy_values(value)
+        return value
 
 
-def _parse(expr: str, var_names: List[str] = None, rational: bool = False):
+def parse_expression(text, names: Dict[str, Any] = None, rational: bool = False, evaluate: bool = True,
+                     word_mod: bool = False):
+    """Read an expression text into sympy objects. The one way any text reaches sympy.
+
+    It normalises the text once, and everything after reads exactly that text: the limits apply to
+    the tree ast.parse builds from it, and nothing re-reads the input. Nothing is evaluated. The
+    tree is walked and each node on the allowlist is built directly; every other node is refused.
+
+    names maps the caller's names to sympy values and wins over the constants. rational=True reads
+    decimals as exact rationals, as sympify's rational=True does. evaluate=False builds what sympify's
+    evaluate=False builds, for reading pole bases. word_mod=True reads the word form of mod, which
+    mathematics has and physics does not. A text the parser will not read, and any failure while
+    reading it, raises ExpressionRefused."""
     if not _ensure_sympy():
         # stdlib-only box: the symbolic-math checks need sympy. Raise a _PARSE_ERRORS member so
         # every verify_* wrapper degrades to NOT_APPLICABLE with this reason, never a crash.
         raise ValueError("requires the optional math extra (sympy); not installed on this box")
-    # Strip surrounding whitespace: ast.parse(..., mode="eval") rejects leading/trailing space as an
-    # IndentationError, so a split like "x + y = 3" -> " 3" would otherwise fail to parse.
-    expr = _MOD_WORD_RE.sub("%", str(expr)).strip()
-    if _INVALID_EXPR_RE.search(str(expr)):
-        raise _SympifyError(f"invalid characters in expression: {expr!r}")
-    _ast_compute_guard(expr)
+    try:
+        names = names or {}
+        source = _normalise_expression(text, word_mod)
+        if len(source) > _MAX_EXPR_CHARS:
+            raise ExpressionRefused("expression too long")
+        if _INVALID_EXPR_RE.search(source):
+            raise ExpressionRefused(f"invalid characters in expression: {source!r}")
+        # ast normalises identifiers, so a name NFKC would change would become two symbols: one as the
+        # caller wrote it, one as the text was read.
+        for word in (source, *names):
+            if _unicodedata.normalize("NFKC", word) != word:
+                raise ExpressionRefused("a text or name Unicode normalisation would change")
+        tree = _ast.parse(source, mode="eval")
+        _bound_tree(tree)
+        return _Reader(source, names, rational, evaluate).read(tree.body)
+    except ExpressionRefused:
+        raise
+    except Exception as e:  # a syntax error, RecursionError, or sympy refusing what it was handed
+        raise ExpressionRefused(f"expression is not read as mathematics: {type(e).__name__}") from None
+
+
+def _parse(expr: str, var_names: List[str] = None, rational: bool = False, evaluate: bool = True):
+    if not _ensure_sympy():
+        raise ValueError("requires the optional math extra (sympy); not installed on this box")
     locals_ = {n: Symbol(n) for n in (var_names or [])}
     locals_.setdefault("oo", oo)
     locals_.setdefault("inf", oo)
@@ -186,7 +463,7 @@ def _parse(expr: str, var_names: List[str] = None, rational: bool = False):
     # or 6*0.1 = 0.60 is TRUE by exact arithmetic rather than tripping on the last IEEE-754 bit. This
     # TIGHTENS exactness (no float wobble); it never loosens it. Default off to leave every symbolic
     # caller (equality/derivative/limit/series) unchanged.
-    return sympify(expr, locals=locals_, rational=rational)
+    return parse_expression(expr, locals_, rational, evaluate, word_mod=True)
 
 
 def _pole_bases(expr):
@@ -209,14 +486,15 @@ def _domain_mismatch(a_str, b_str, var_names):
     """If expr_a and expr_b have DIFFERENT poles, an equality that simplifies to zero
     is true only OFF that singular set — NOT an unconditional identity, and must not be
     sealed as a clean HOLDS. Returns a description of the differing poles, or None when
-    the domains match. Re-parses with evaluate=False so x/x is not auto-reduced to 1
-    before its pole can be seen."""
+    the domains match. Re-reads the same normalised text unevaluated, so x/x is not auto-reduced
+    to 1 before its pole can be seen. A read the power limits refuse raises PowerRefused, a member of
+    _PARSE_ERRORS, so verify_equality reads the claim as not checkable: a pole that could not be
+    looked for is never no pole. Any other failed read is no mismatch, as it has always been."""
     try:
-        locals_ = {n: Symbol(n) for n in (var_names or [])}
-        locals_.setdefault("oo", oo)
-        locals_.setdefault("inf", oo)
-        ra = sympify(a_str, locals=locals_, evaluate=False)
-        rb = sympify(b_str, locals=locals_, evaluate=False)
+        ra = _parse(a_str, var_names, evaluate=False)
+        rb = _parse(b_str, var_names, evaluate=False)
+    except PowerRefused:
+        raise
     except Exception:
         return None
     pa, pb = _pole_bases(ra), _pole_bases(rb)

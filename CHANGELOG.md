@@ -4,6 +4,7 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- Security: text from a request is never evaluated. One parser, `mathematics.parse_expression`, reads every expression by walking Python's ast and building sympy objects, so no request text reaches `sympify`, `parse_expr` or any sympy entry that parses a string, in any verifier; a refused text never reads HOLDS.
 - Post-quantum durable receipts (`concordance-receipt/3.1`, additive). Beside the Ed25519 COSE
   statement, a receipt now carries `attest.pq`: an **ML-DSA-65** (FIPS 204, module-lattice / Regev's
   LWE) signature over the same canonical record bytes, binding the same `content_hash`. Ed25519 rests

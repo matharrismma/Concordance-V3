@@ -29,6 +29,7 @@ test_check_gates.py
 test_chemistry.py
 test_chess.py
 test_claim_grammar.py
+test_code_exec_flag.py
 test_combinatorics.py
 test_commentary_cards.py
 test_compose.py
@@ -60,6 +61,7 @@ test_energy.py
 test_ephemeris.py
 test_equation_audit_2026_10_01.py
 test_exercise_science.py
+test_expression_parser.py
 test_failure_report_2026_10_08.py
 test_finance.py
 test_floor_connected.py
@@ -104,6 +106,7 @@ test_networking.py
 test_neuroscience.py
 test_new_domain_verifiers.py
 test_no_llm_in_the_loop.py
+test_no_other_route.py
 test_no_test_writes_the_stores.py
 test_nuclear_physics.py
 test_number_theory.py
@@ -112,6 +115,8 @@ test_oceanography.py
 test_operations_research.py
 test_optics.py
 test_order_replica.py
+test_parse_differential.py
+test_parse_route.py
 test_periodic_table.py
 test_philosophy.py
 test_photography.py
