@@ -121,6 +121,8 @@ def verify_get_close(a: Dict[str, Any]) -> VerifierResult:
         data["true_value"] = true; data["actual_error"] = actual
         # the bound is the band: the true value must lie in [est − err, est + err] (float slack only)
         b = band(name, est, true, err + _EPS * (1.0 + abs(err)), "true_value", data, fmt="{:.12g}")
+        if b.status == "ERROR":
+            return b
         if b.status == "MISMATCH":
             return mismatch(name, f"the bound does NOT hold: |true - estimate| = {actual:.3e} > {err:.3e} — the "
                                   f"supplied curvature/Lipschitz bound is too small for this interval", b.data)
@@ -138,6 +140,8 @@ def verify_get_close(a: Dict[str, Any]) -> VerifierResult:
         # the claim names its own band: ref must lie in [cv − ce, cv + ce]; band() is centred on the recomputed
         # value, so the same test reads as cv inside [ref − ce, ref + ce] (float slack only)
         b = band(name, ref, cv, ce + _EPS * (1.0 + abs(ce)), "value", data, fmt="{:.10g}")
+        if b.status == "ERROR":
+            return b
         if b.status == "MISMATCH":
             gap = abs(ref - cv)
             return mismatch(name, f"NOT within the claimed bound: |{what} {ref:.10g} − {cv:g}| = {gap:.3e} > "

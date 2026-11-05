@@ -123,6 +123,8 @@ def verify_interval_semitones(spec: Dict[str, Any]) -> VerifierResult:
             "actual_semitones": actual, "claimed_semitones": c,
             "rule": "12 semitones per octave; signed (b - a)"}
     r = band(name, actual, c, 0, "semitones", data, fmt="{:.0f}")
+    if r.status == "ERROR":
+        return r
     return (confirm if r.passed else mismatch)(name, f"{a} → {b}: {r.detail}", r.data)
 
 

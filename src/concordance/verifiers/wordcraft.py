@@ -225,6 +225,8 @@ def verify_letters(spec: Dict[str, Any]) -> VerifierResult:
     # exact counts: the band is [n, n]
     results = [band(name, a, c, 0, k, data, fmt="{:.0f}") for k, c, a in checks]
     r = merge_checks(name, results, data)
+    if r.status == "ERROR":
+        return r
     return (confirm if r.passed else mismatch)(name, f"{word!r}: {r.detail} ({data['convention']})", r.data)
 
 
@@ -297,6 +299,8 @@ def verify_syllables(spec: Dict[str, Any]) -> VerifierResult:
         except (TypeError, ValueError):
             return error(name, "claimed_phonemes must be a whole number")
     r = merge_checks(name, results, data)
+    if r.status == "ERROR":
+        return r
     if r.status == "CONFIRMED":
         return confirm(name, f"{w!r} = {pron}: {r.detail} ({source})", r.data)
     return mismatch(name, f"{w!r} = {pron}: {r.detail} ({source})", r.data)
@@ -318,6 +322,8 @@ def verify_alphabet(spec: Dict[str, Any]) -> VerifierResult:
     n, note = entry
     data = {"alphabet": alpha, "actual_letters": n, "claimed_letters": c, "note": note, "source": ALPHABETS_SOURCE}
     r = band(name, n, c, 0, "letters", data, fmt="{:.0f}")
+    if r.status == "ERROR":
+        return r
     return (confirm if r.passed else mismatch)(name, f"the {key} alphabet: {r.detail} ({note})", r.data)
 
 
@@ -355,6 +361,8 @@ def verify_letter_rank(spec: Dict[str, Any]) -> VerifierResult:
     actual = LETTER_RANK_EN.index(ch) + 1
     data = {"letter": ch, "actual_rank": actual, "claimed_rank": c, "order": LETTER_RANK_EN, "source": LETTER_RANK_SOURCE}
     r = band(name, actual, c, 0, "rank", data, fmt="{:.0f}")
+    if r.status == "ERROR":
+        return r
     return (confirm if r.passed else mismatch)(name, f"{ch.upper()} in English letter frequency: {r.detail} of 26 ({LETTER_RANK_SOURCE})", r.data)
 
 

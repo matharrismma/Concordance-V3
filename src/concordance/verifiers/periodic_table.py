@@ -371,7 +371,7 @@ def verify_molar_mass(spec: Dict[str, Any]) -> VerifierResult:
             "rule": "M = Σ(count × atomic_mass)"}
     if spec.get("claimed_literal") not in (None, ""):                # the one rule (2026-10-08, H6)
         from .base import window_for
-        threshold, info = window_for(spec, "claimed_literal", threshold, 1.0, total)
+        threshold, info = window_for(spec, "claimed_literal", threshold, 1.0, total, claimed=cl)
         data.update(info)
     return band(name, total, cl, threshold, "molar_mass", data, fmt="{:.4f}", unit="g/mol")
 

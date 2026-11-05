@@ -13,6 +13,7 @@ Ported as-is from 1.0 — domain-neutral.
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Sequence, Tuple, Union
@@ -63,10 +64,19 @@ def band(name: str, actual: float, claimed: float, tol: float, what: str = "valu
     lie in — [actual − tol, actual + tol] — and reports whether the claim is inside. Inside is a survived
     refutation (CONFIRMED); outside is a COUNTEREXAMPLE (MISMATCH) that carries the recomputed value, the band
     and the distance, so the refutation itself is re-runnable and stronger than any confirmation. `data.band`
-    is the same shape either way; receipts and pages read it."""
+    is the same shape either way; receipts and pages read it.
+
+    Nothing not finite is ever inside, however the window's edges overflowed. A claim that is not finite against a
+    finite recomputed value is false, so it is a MISMATCH. A recomputed value that is not finite is could-not-compare,
+    so it is an ERROR and never a counterexample, and so is a window that is not finite around a finite claim: it
+    would hold every number. A consumer of this result keeps that ERROR an ERROR."""
     tol = abs(float(tol))
+    if not math.isfinite(actual) or (math.isfinite(claimed) and not math.isfinite(tol)):
+        held = f"{what} = {actual}" if not math.isfinite(actual) else f"the window around {what} is {tol}"
+        return error(name, f"{held}, which is not finite, so the claim cannot be compared",
+                     dict(data or {}, **{f"actual_{what}": actual, f"claimed_{what}": claimed}))
     lo, hi = actual - tol, actual + tol
-    inside = lo <= claimed <= hi
+    inside = math.isfinite(claimed) and lo <= claimed <= hi
     off = claimed - actual
     # margin: how much of the allowance the claim spent — 0 is dead centre, 1 is the edge, >1 is outside.
     # The OTDR reading of a check: a pass at 0.98 is a pass, but it is a splice you would redo.
@@ -174,6 +184,42 @@ def literal_scale(literal: Any) -> Tuple[str, float]:
     return (m.group(1) if m else s), 1.0
 
 
+def _literal_text(literal: Any) -> str:
+    return str(literal if literal is not None else "").strip().replace(",", "").replace(" ", "").replace("$", "")
+
+
+def literal_value(literal: Any) -> Optional[float]:
+    """The number a literal states, read the way stated_precision reads it: "41,600" -> 41600.0, "$5.0" -> 5.0,
+    "3.0e8" -> 3e8. None when it is not a number, or is past a float, where no finite claim can be it. Pure."""
+    s = _literal_text(literal)
+    m = _LITERAL.fullmatch(s)
+    if not m or not (m.group(1) or m.group(2)):
+        return None
+    v = float(s)
+    return v if math.isfinite(v) else None
+
+
+# "Up to float representation": the literal and the claim reach here by different roads (a scale word, a unit factor,
+# a JSON number). The widest honest gap is a few units in the last place, about 1e-15 relative; this is the float
+# noise the rest of this module allows. Anything looser would be a small window of its own, so it is not a knob.
+_SAME_NUMBER_REL = 1e-9
+
+
+def literal_is_claim(literal: Any, claimed: Any, literal_factor: float = 1.0) -> bool:
+    """True when the literal states the number claimed: the only way a literal earns a wider window. The two are
+    compared in the claim's own unit, before any conversion, so `literal_factor` is what takes the literal there
+    ("$29.3 million" against 29300000: 1e6; "11.2 km/s" against 11200: 1000). An unreadable literal, and a claim that
+    is not a finite number, are never the same number. Pure."""
+    v = literal_value(literal)
+    if v is None:
+        return False
+    try:
+        c, f = float(claimed), abs(float(literal_factor)) or 1.0
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(c) and math.isclose(v * f, c, rel_tol=_SAME_NUMBER_REL, abs_tol=0.0)
+
+
 def stated_precision(literal: Any) -> Optional[Tuple[int, float]]:
     """(significant figures, half a unit in the last stated place) of a number AS THE PERSON WROTE IT.
 
@@ -181,8 +227,7 @@ def stated_precision(literal: Any) -> Optional[Tuple[int, float]]:
     A bare integer's trailing zeros are NOT counted significant ("300000000" is one figure) — the
     conservative reading, so a round number never claims more precision than it shows. None when the
     literal is not a number. Pure."""
-    s = str(literal if literal is not None else "").strip().replace(",", "").replace(" ", "").replace("$", "")
-    m = _LITERAL.fullmatch(s)
+    m = _LITERAL.fullmatch(_literal_text(literal))
     if not m or not (m.group(1) or m.group(2)):
         return None
     ip, fp, ex = m.group(1) or "", m.group(2), int(m.group(3) or 0)
@@ -233,25 +278,44 @@ def stated_window(literal: Any, hedged: bool = False, unit_factor: float = 1.0) 
     return half * f if hedged else None
 
 
+def stated_threshold(literal: Any, default: float, exact: float, *, claimed: Any, hedged: bool = False,
+                     unit_factor: float = 1.0, literal_factor: float = 1.0) -> Tuple[float, Dict[str, Any]]:
+    """THE ONE RULE'S TEST, for every reader of a stated literal: the threshold, and what to record about it.
+
+    A literal that states the number claimed (literal_is_claim) sets the window: stated_window's, or `exact` (float
+    noise only) when a one-figure claim carries no hedge, and it replaces `default`. A literal that is not the claim's
+    own, or cannot be read, can only narrow: the threshold is the smaller of `default` and what the literal earned
+    with no hedge, because a hedge widens only a literal that passed. `unit_factor` scales the window into the computed
+    unit; `literal_factor` takes the literal into the claim's unit for the test. They differ where a claim is converted
+    after it is read: physical_constants tests the claim as written, then judges it in the constant's unit."""
+    own = literal_is_claim(literal, claimed, literal_factor)
+    window = stated_window(literal, hedged and own, unit_factor)
+    sp = stated_precision(literal)
+    earned = window if window is not None else exact
+    info = {"stated_literal": str(literal), "stated_sigfigs": sp[0] if sp else None, "hedged": hedged and own,
+            "stated_window": window if window is not None else 0.0,
+            "rule": ("half a unit in the last stated place (two or more figures); a hedge word doubles it and "
+                     "grants it to a one-figure claim; nothing else widens it")}
+    if own:
+        return earned, info
+    asked = stated_window(literal, hedged, unit_factor)
+    return min(default, earned), dict(info, literal_not_the_claim=True,
+                                      literal_asked=asked if asked is not None else exact)
+
+
 def window_for(spec: Dict[str, Any], literal_key: str, default: float, unit_factor: float = 1.0,
-               actual: Optional[float] = None) -> Tuple[float, Dict[str, Any]]:
+               actual: Optional[float] = None, *, claimed: Any,
+               literal_factor: float = 1.0) -> Tuple[float, Dict[str, Any]]:
     """The threshold a verifier compares against, and what to record about it. No literal in the spec (the
-    structured form): the verifier's own `default`, and nothing recorded. A literal (the plain-text form): the stated
-    window — or EXACT (float noise only) when a one-figure claim carries no hedge, because nothing but the
-    figures and a hedge may widen a prose claim's window. `hedged` rides in the spec beside the literal
-    (audit.extract sets it when a hedge word precedes the number in the quote)."""
+    structured form): the verifier's own `default`, and nothing recorded. A literal (the plain-text form): the
+    threshold stated_threshold gives it, against `claimed`, the value the claim states in its own unit. `hedged` rides
+    in the spec beside the literal (audit.extract sets it when a hedge word precedes the number in the quote)."""
     lit = spec.get(literal_key)
     if lit in (None, ""):
         return default, {}
-    hedged = bool(spec.get("hedged"))
-    w = stated_window(lit, hedged, unit_factor)
-    sp = stated_precision(lit)
     exact = 1e-9 * max(1.0, abs(float(actual))) if actual is not None else 1e-9
-    info = {"stated_literal": str(lit), "stated_sigfigs": sp[0] if sp else None, "hedged": hedged,
-            "stated_window": w if w is not None else 0.0,
-            "rule": ("half a unit in the last stated place (two or more figures); a hedge word doubles it and "
-                     "grants it to a one-figure claim; nothing else widens it")}
-    return (w if w is not None else exact), info
+    return stated_threshold(lit, default, exact, claimed=claimed, hedged=bool(spec.get("hedged")),
+                            unit_factor=unit_factor, literal_factor=literal_factor)
 
 
 def stated_tolerance_abs(literal: Any, unit_factor: float = 1.0) -> Optional[float]:

@@ -2108,11 +2108,29 @@ _SYS_EQS = re.compile(
     r"(?P<e2l>[-+0-9A-Za-z*/^.\s]{1,80}?)=(?P<e2r>[-+0-9A-Za-z*/^.\s]{1,80}?)\s*$", re.I)
 
 
+def _residual_params(value: str, residual: str, window: Optional[float]) -> Dict[str, Any]:
+    """The `numeric` params for a stated value and `residual`, its distance from the root (R over the slope), to be
+    within `window`, or within float noise when the value earns none. The claim is the value, so it is stated as value +
+    residual against the value itself, and the literal is the number claimed. That sum rounds to the value's own float
+    and would swallow any residual below it (a value off by 2 at 1e20 would hold), and one figure's exact window grows
+    with the value, so the sum is used only where it resolves the window to a part in a million. Everywhere else the
+    residual stands alone against 0 with no literal, written in millionths of the window so that numeric mode's own
+    1e-6 is that window: the same comparison, at the sympy precision the residual is worked in."""
+    import math
+    claimed = float(value)
+    if window is not None and window >= 2 ** 20 * math.ulp(claimed):
+        return {"numeric_expr": "(" + value + ") + (" + residual + ")", "claimed_value": claimed,
+                "claimed_literal": value}
+    return {"numeric_expr": "(" + residual + ") / (" + repr((window if window is not None else 1e-9) * 1e6) + ")",
+            "claimed_value": 0}
+
+
 def _x_equation_solution(text: str):
     """"<poly in v> = <number> has (a/the)? (solution|root) (of)? v = <value>" -> a mathematics `numeric`
     packet that substitutes the value into the residual R = LHS - RHS and checks R(value) == 0 within
-    the value's stated precision (propagated through |R'(value)|). Single variable, strict polynomial,
-    unambiguous "has (solution|root) v = value" connective; anything else extracts nothing (0-FP)."""
+    the value's stated precision (propagated through |R'(value)|; _residual_params builds the comparison).
+    Single variable, strict polynomial, unambiguous "has (solution|root) v = value" connective; anything else
+    extracts nothing (0-FP)."""
     import math
     from .verifiers.base import stated_window, hedged_before
     out = []
@@ -2141,21 +2159,21 @@ def _x_equation_solution(text: str):
         if not (math.isfinite(s) and math.isfinite(rval)) or abs(s) < 1e-12:
             continue                                   # flat/degenerate: cannot propagate, a miss stays a miss
         exact = abs(rval) <= 1e-9
-        if stated_window(val, hedged_before(text[:tm.start("val")])) is None and not exact:
+        window = stated_window(val, hedged_before(text[:tm.start("val")]))
+        if window is None and not exact:
             continue                                   # one figure and not an exact root: too coarse to judge
         vstr = ["(" + val + ")"]
         numerator = "(" + _poly_sub_expr(lhs, vstr) + ") - (" + _poly_sub_expr(rside, vstr) + ")"
-        numeric_expr = "(" + numerator + ") / (" + repr(abs(s)) + ")"
+        residual = "(" + numerator + ") / (" + repr(abs(s)) + ")"
         quote = re.sub(r"\s+", " ", text[em.start("expr"):tm.end("val")]).strip()[:160]
-        out.append((quote, "mathematics",
-                    {"mode": "numeric",
-                     "params": {"numeric_expr": numeric_expr, "claimed_value": 0, "claimed_literal": val}}))
+        out.append((quote, "mathematics", {"mode": "numeric", "params": _residual_params(val, residual, window)}))
     return out
 
 
 def _x_equation_system(text: str):
     """"<eq1> and <eq2> has solution (a, b)" -> one residual-substitution check per equation, collapsed
-    into Max(|R_j(point)|/|slope_j|) so ALL must hold, judged at the (shared) stated precision. The two
+    into Max(|R_j(point)|/|slope_j|) so ALL must hold, judged at the (shared) stated precision, the first value
+    standing for the claim (_residual_params builds the comparison). The two
     single-letter variables are read off the equations (any multi-letter word -> decline, so a sentence's
     words are never mistaken for variables) and the tuple is mapped to them in alphabetical order (the
     standard "(x, y)"; a wrong order fails a non-symmetric system honestly). Values must share one stated
@@ -2208,13 +2226,12 @@ def _x_equation_system(text: str):
             checks.append("Abs((" + num + ") / (" + repr(abs(s)) + "))")
         if bad or len(checks) != 2:
             continue
-        if stated_window(vals[0], hedged_before(text[:tm.start()])) is None and not all_exact:
+        window = stated_window(vals[0], hedged_before(text[:tm.start()]))
+        if window is None and not all_exact:
             continue                                    # one figure and not exact: too coarse to judge
-        numeric_expr = "Max(" + ", ".join(checks) + ")"
+        residual = "Max(" + ", ".join(checks) + ")"
         quote = re.sub(r"\s+", " ", text[em.start("e1l"):tm.end()]).strip()[:160]
-        out.append((quote, "mathematics",
-                    {"mode": "numeric",
-                     "params": {"numeric_expr": numeric_expr, "claimed_value": 0, "claimed_literal": vals[0]}}))
+        out.append((quote, "mathematics", {"mode": "numeric", "params": _residual_params(vals[0], residual, window)}))
     return out
 
 

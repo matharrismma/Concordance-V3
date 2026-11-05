@@ -203,12 +203,11 @@ def verify_primer(spec):
                bound(nm, tm, tm_hi, "max", "tm_wallace_C", data, unit="C"),
                bound(nm, n, 15, "min", "length", data, fmt="{:d}"),
                bound(nm, n, 30, "max", "length", data, fmt="{:d}")]
-    bad = [r for r in results if not r.passed]
-    if bad:
-        # every violated edge, not just the first — the old detail listed them all
-        merged = merge_checks(nm, results, data)
-        return mismatch(nm, "; ".join(r.detail for r in bad), merged.data)
-    return merge_checks(nm, results, data)
+    merged = merge_checks(nm, results, data)
+    if merged.status != "MISMATCH":
+        return merged
+    # every violated edge, not just the first — the old detail listed them all
+    return mismatch(nm, "; ".join(r.detail for r in results if r.status == "MISMATCH"), merged.data)
 
 
 def verify_molarity(spec):

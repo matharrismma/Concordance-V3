@@ -77,7 +77,7 @@ def verify_vsepr(spec: Dict[str, Any]) -> VerifierResult:
                 # 1° tol (rounding + lone-pair nominal)
                 angle_band = band(name, angle, float(claimed_angle), 1.0, "bond_angle_deg", data,
                                   fmt="{:.2f}", unit="deg")
-                if not angle_band.passed:
+                if angle_band.status == "MISMATCH":
                     reasons.append(angle_band.detail)
             except (TypeError, ValueError):
                 reasons.append("claimed_bond_angle_deg not numeric")
@@ -85,6 +85,8 @@ def verify_vsepr(spec: Dict[str, Any]) -> VerifierResult:
         data = angle_band.data
     if reasons:
         return mismatch(name, "; ".join(reasons), data)
+    if angle_band is not None and angle_band.status == "ERROR":
+        return angle_band
     detail = f"steric {steric} ({bd} bonding + {lp} lone) -> {geo}"
     if angle is not None:
         detail += f", bond angle {angle:.2f} deg"

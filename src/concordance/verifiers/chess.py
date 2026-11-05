@@ -63,6 +63,8 @@ def verify_position(spec: Dict[str, Any]) -> VerifierResult:
         except (TypeError, ValueError):
             return error(name, "claimed_balance must be an integer")
         r = band(name, balance, claimed_i, 0, "balance", data, fmt="{:+.0f}")
+        if r.status == "ERROR":
+            return r
         return (confirm if r.passed else mismatch)(name, f"material (white - black): {r.detail}", r.data)
 
     computed = (verdict == "HOLDS")      # the property is true of the position

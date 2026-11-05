@@ -21,7 +21,7 @@ import unicodedata as _unicodedata
 from typing import Any, Dict, List
 
 from .base import VerifierResult, band, clamp_tol, confirm, error, mismatch, na
-from .base import stated_precision, stated_tolerance_abs, stated_window, window_for
+from .base import literal_is_claim, stated_precision, stated_window, window_for
 from .base import dispatch  # declarative run() driver
 
 simplify = diff = integrate = limit = solve = None
@@ -604,7 +604,8 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
         # as the exact rational it writes (0.1 = 1/10) and compare exactly — the same arithmetic that already
         # made 1/3 + 1/3 + 1/3 = 1 hold. Then, and only then, the claim's own precision: a claimed literal
         # stated to two or more figures earns half a unit in its last place (stated_tolerance_abs); a
-        # one-figure literal earns nothing, and a structured call with no literal stays exact.
+        # one-figure literal earns nothing, and a structured call with no literal stays exact. Only a literal that
+        # is the number on the claimed side earns that: any other can only narrow, and exact is already the narrowest.
         if not getattr(ea, "free_symbols", set()) and not getattr(eb, "free_symbols", set()):
             try:
                 ra, rb = _parse(a, var_names, rational=True), _parse(b, var_names, rational=True)
@@ -618,21 +619,28 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
                 pass
             lit = spec.get("claimed_literal")
             tol = stated_window(lit, bool(spec.get("hedged"))) if lit not in (None, "") else None
+            foreign: Dict[str, Any] = {}
             if tol is not None:
                 try:
                     fa, fb = float(ea.evalf()), float(eb.evalf())
                 except Exception:
                     fa = fb = None
-                if fa is not None and _math.isfinite(fa) and _math.isfinite(fb):
+                if fb is not None and not literal_is_claim(lit, fb):
+                    foreign = {"stated_literal": str(lit), "literal_not_the_claim": True}
+                elif fa is not None and _math.isfinite(fa) and _math.isfinite(fb):
                     sig = (stated_precision(lit) or (0, 0.0))[0]
                     # the stated-precision band: b must lie within ±tol of a's value
                     bd = band("mathematics.equality", fa, fb, tol, "value",
                               {"actual": fa, "claimed": fb, "stated_sigfigs": sig, "stated_tolerance_abs": tol},
                               fmt="{:.10g}")
+                    if bd.status == "ERROR":
+                        return bd
                     if bd.passed:
                         return confirm("mathematics.equality",
                                        f"{a} = {fa:.10g} agrees with {b} at the stated precision of {sig} significant "
                                        f"figure(s) (half a unit in the last place = ±{tol:g})", bd.data)
+            if foreign:
+                return mismatch("mathematics.equality", f"{a} - ({b}) simplifies to {diff_}", foreign)
         return mismatch("mathematics.equality", f"{a} - ({b}) simplifies to {diff_}")
     except _PARSE_ERRORS as e:
         return _refused("mathematics.equality", e)
@@ -1109,13 +1117,15 @@ def verify_numeric(spec: Dict[str, Any]) -> VerifierResult:
     if lit is not None:
         # THE ONE RULE (2026-10-08, H6): the stated window replaces the flat default; a hedge doubles it; a
         # one-figure claim is exact without a hedge (window_for).
-        threshold, info = window_for(spec, "claimed_literal", threshold, 1.0, fv)
+        threshold, info = window_for(spec, "claimed_literal", threshold, 1.0, fv, claimed=cv)
         data.update(info)
         data["stated_tolerance"] = threshold
-        stated_used = True
+        stated_used = not info.get("literal_not_the_claim")
     # the band: the claim must lie in [computed − threshold, computed + threshold]
     bd = band(name, fv, cv, threshold, "value", data, fmt="{:.10g}")
     data = bd.data
+    if bd.status == "ERROR":
+        return bd
     if bd.passed:
         # EXPLAIN WHY IT IS WHAT IT IS (2026-10-09): a certification must say whether the claim is EXACT or only
         # correct to the precision stated. A bare "holds" on "sqrt(150) is 12" reads as an equality; it is not

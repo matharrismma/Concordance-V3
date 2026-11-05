@@ -226,6 +226,8 @@ def verify_iterated(spec: Dict[str, Any]) -> VerifierResult:
             bad.append(merged.detail)
     if bad:
         return mismatch(name, "; ".join(bad), data)
+    if merged is not None and merged.status == "ERROR":
+        return merged
     return confirm(name, f"dilemma={dilemma}; TFT {'stable' if tft_stable else 'invadable'} at w={w:g} (threshold {thr:.4g}); "
                          f"cooperate forever {coop:.6g} vs defect-then-punished {defect_once:.6g} (matches claims)", data)
 
@@ -269,6 +271,7 @@ def verify_population(spec: Dict[str, Any]) -> VerifierResult:
     bad = []
     if "claimed_direction" in spec and str(spec["claimed_direction"]).strip().lower() != direction:
         bad.append(f"at x={x:g}, w={w:g} cooperation {direction} (f_TFT {f_tft:.4g} vs f_D {f_d:.4g}); claim said {spec['claimed_direction']!r}")
+    b = None
     if "claimed_threshold_share" in spec:
         try:
             cl = float(spec["claimed_threshold_share"])
@@ -280,6 +283,8 @@ def verify_population(spec: Dict[str, Any]) -> VerifierResult:
             bad.append(b.detail)
     if bad:
         return mismatch(name, "; ".join(bad), data)
+    if b is not None and b.status == "ERROR":
+        return b
     return confirm(name, f"at x={x:g}, w={w:g} cooperation {direction} (f_TFT {f_tft:.4g} vs f_D {f_d:.4g}); "
                          f"critical mass x* = {thr:.4g} (matches claims)", data)
 

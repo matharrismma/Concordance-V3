@@ -107,7 +107,8 @@ def verify_compound_interest(spec: Dict[str, Any]) -> VerifierResult:
     if lit:
         from .base import literal_scale, window_for
         lit_num, factor = literal_scale(lit)
-        threshold, info = window_for({**spec, "_lit": lit_num}, "_lit", threshold, factor, actual)
+        threshold, info = window_for({**spec, "_lit": lit_num}, "_lit", threshold, factor, actual,
+                                     claimed=cf, literal_factor=factor)
         data.update(info)
     return band(name, actual, cf, threshold, "future_value", data, fmt="{:,.4f}")
 

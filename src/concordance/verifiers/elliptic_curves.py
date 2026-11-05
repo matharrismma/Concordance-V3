@@ -175,6 +175,7 @@ def verify_l_value(spec: Dict[str, Any]) -> VerifierResult:
     data["theorem"] = theorem
     tol = clamp_tol(spec, "tolerance_relative", 1e-4)
     problems = []
+    b = None
     if spec.get("claimed_L1") is not None:
         try:
             cl = float(spec["claimed_L1"])
@@ -199,6 +200,8 @@ def verify_l_value(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, "nothing claimed: give claimed_L1 and/or claimed_analytic_rank")
     if problems:
         return mismatch(name, "; ".join(problems), data)
+    if b is not None and b.status == "ERROR":
+        return b
     return confirm(name, f"L(E,1) = {L1:.6f} (cutoff-independent, so w = {w:+d} is right); analytic rank {rank_bound}; {theorem}", data)
 
 

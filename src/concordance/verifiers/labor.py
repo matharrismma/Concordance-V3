@@ -110,7 +110,7 @@ def verify_annual_to_hourly(spec: Dict[str, Any]) -> VerifierResult:
     if spec.get("claimed_hourly_as_written"):                       # the one rule (2026-10-08, H6)
         from .base import literal_scale, window_for
         lit_num, factor = literal_scale(spec["claimed_hourly_as_written"])
-        tol, info = window_for({**spec, "_lit": lit_num}, "_lit", tol, factor, actual)
+        tol, info = window_for({**spec, "_lit": lit_num}, "_lit", tol, factor, actual, claimed=c, literal_factor=factor)
         data.update(info)
     return band(name, actual, c, tol, "hourly", data, fmt="{:,.4f}", unit="$")
 
@@ -139,7 +139,7 @@ def verify_hourly_to_annual(spec: Dict[str, Any]) -> VerifierResult:
     if lit:
         from .base import literal_scale, window_for
         lit_num, factor = literal_scale(lit)
-        tol, info = window_for({**spec, "_lit": lit_num}, "_lit", tol, factor, actual)
+        tol, info = window_for({**spec, "_lit": lit_num}, "_lit", tol, factor, actual, claimed=c, literal_factor=factor)
         data.update(info)
     return band(name, actual, c, tol, "annual", data, fmt="{:,.2f}", unit="$")
 

@@ -325,7 +325,7 @@ def verify_kinetic_energy_basic(spec: Dict[str, Any]) -> VerifierResult:
     extra: Dict[str, Any] = {}
     if spec.get("claimed_kinetic_energy_as_written"):            # the one rule (2026-10-08, H6)
         from .base import window_for
-        threshold, extra = window_for(spec, "claimed_kinetic_energy_as_written", threshold, 1.0, actual)
+        threshold, extra = window_for(spec, "claimed_kinetic_energy_as_written", threshold, 1.0, actual, claimed=Kf)
     diff = abs(actual - Kf)
     data = {
         "mass_kg": mf, "velocity_m_per_s": vf,
@@ -556,6 +556,8 @@ def verify_named_conservation(
         # conserved iff diff <= tolerance_absolute OR rel <= tolerance_relative: one band of the larger window
         tol = max(tolerance_absolute, tolerance_relative * (abs(total_before) if total_before != 0 else 1.0))
         r = band("physics.named_conservation", total_before, total_after, tol, "total", data)
+        if r.status == "ERROR":
+            return r
         if r.passed:
             return confirm("physics.named_conservation", f"{law} conserved: " + r.detail, r.data)
         return mismatch("physics.named_conservation", f"{law} not conserved: " + r.detail, r.data)

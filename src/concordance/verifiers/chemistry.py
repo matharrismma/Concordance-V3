@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from fractions import Fraction
 from typing import Dict, List, Tuple, Any
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, literal_is_claim, merge_checks
 from . import alpha_scale as _ascale  # alpha-anchored atomic energy scale
 from . import thermal_scale as _thermal  # k_B-anchored Boltzmann factor
 from . import molar_scale as _molar  # N_A-anchored particle count
@@ -473,12 +473,14 @@ def _matches_at_precision(actual: float, claimed: float, claimed_literal: str) -
     """A phase point holds when the claim agrees at its STATED precision — round the table value to the
     decimals the claim gave ("100" for water; "78" for ethanol 78.37) — OR lies within the empirical
     source spread of the measured value (~0.3% or 0.5 °C), so "78.3" also holds for ethanol (sources give
-    78.3–78.4) while "79" and "88.3" do not. Measured values vary by source; a half-degree is not an error."""
+    78.3–78.4) while "79" and "88.3" do not. Measured values vary by source; a half-degree is not an error.
+    A literal written with an exponent gives no decimals to round to, so only the spread can hold it."""
     claimed = float(claimed)
     lit = str(claimed_literal or "").strip()
-    dec = len(lit.split(".", 1)[1]) if "." in lit else 0
-    if round(actual, dec) == round(claimed, dec):
-        return True
+    if "e" not in lit.lower():
+        dec = len(lit.split(".", 1)[1]) if "." in lit else 0
+        if round(actual, dec) == round(claimed, dec):
+            return True
     return abs(actual - claimed) <= max(0.5, 0.003 * abs(actual))
 
 
@@ -519,11 +521,16 @@ def verify_phase_point(spec: Dict[str, Any]) -> VerifierResult:
     except (TypeError, ValueError):
         return error(name, "claimed temperature must be a number")
     lit = spec.get("claimed_literal", spec["claimed_c"])
-    if _matches_at_precision(actual, claimed, str(lit)):
-        return confirm(name, f"the {label} of {nm} is {actual} °C at 1 atm (matches {lit} to the stated precision)",
-                       {"substance": nm, "property": prop, "actual_c": actual, "claimed_c": claimed})
-    return mismatch(name, f"the {label} of {nm} is {actual} °C at 1 atm, not {lit}",
-                    {"substance": nm, "property": prop, "actual_c": actual, "claimed_c": claimed})
+    data = {"substance": nm, "property": prop, "actual_c": actual, "claimed_c": claimed}
+    holds = _matches_at_precision(actual, claimed, str(lit))
+    if not literal_is_claim(lit, claimed):      # not the number claimed: it can narrow the reading, never widen it
+        holds = holds and _matches_at_precision(actual, claimed, str(spec["claimed_c"]))
+        if "claimed_literal" in spec:
+            data.update({"stated_literal": str(lit), "literal_not_the_claim": True})
+            lit = spec["claimed_c"]
+    if holds:
+        return confirm(name, f"the {label} of {nm} is {actual} °C at 1 atm (matches {lit} to the stated precision)", data)
+    return mismatch(name, f"the {label} of {nm} is {actual} °C at 1 atm, not {lit}", data)
 
 
 GOLDEN_PACKET_KEY = "CHEM_VERIFY"

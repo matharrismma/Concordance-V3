@@ -160,14 +160,15 @@ def verify_rule_of_72(spec: Dict[str, Any]) -> VerifierResult:
     # states one figure and no hedge, so it is judged exactly and told how to say it.
     if spec.get("claimed_doubling_years_as_written"):
         from .base import window_for
-        tol, info = window_for(spec, "claimed_doubling_years_as_written", tol, 1.0, actual)
+        tol, info = window_for(spec, "claimed_doubling_years_as_written", tol, 1.0, actual, claimed=c)
         data.update(info)
     r = band(name, actual, c, tol, "doubling_years", data, fmt="{:.2f}", unit="years")
-    if r.passed:
+    if r.status != "MISMATCH":
         return r
     how = ((f" — '{spec['claimed_doubling_years_as_written']}' states one figure and no hedge, so it is judged "
             f"exactly; 'about {c:g} years' or '{actual:.1f} years' would hold")
-           if spec.get("claimed_doubling_years_as_written") and tol < 0.5 else "")
+           if spec.get("claimed_doubling_years_as_written") and tol < 0.5
+           and not data.get("literal_not_the_claim") else "")
     return mismatch(name, r.detail + how, r.data)
 
 

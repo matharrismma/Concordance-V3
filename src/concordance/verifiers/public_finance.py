@@ -204,7 +204,7 @@ def verify_abatement_schedule(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "claimed_* fields must be numeric")
     if not results:
         return na(name, "no claimed_total_abated / claimed_total_pilot / claimed_pilot_payment / claimed_npv_abated")
-    bad = [r for r in results if r.status == "MISMATCH"]
+    bad = [r for r in results if r.status == "MISMATCH"] or [r for r in results if r.status == "ERROR"]
     if bad:
         return bad[0]
     return confirm(name, "; ".join(r.detail for r in results), data)

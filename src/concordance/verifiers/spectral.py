@@ -124,6 +124,8 @@ def verify_diagonalize(a: Dict[str, Any]) -> VerifierResult:
             b = bound(name, float(np.linalg.norm(claimed - res_real)), 1e-6 * (1 + float(np.linalg.norm(res_real))),
                       "max", "claimed_result_gap", data)
             data = b.data
+            if b.status == "ERROR":
+                return b
             if b.status == "MISMATCH":
                 return mismatch(name, f"claimed result != A^{k} computed through the eigenbasis; " + b.detail, data)
         return confirm(name, f"change of domain confirmed: A diagonalizes (max residual {max_resid:.1e}), and A^{k} "
@@ -161,6 +163,8 @@ def verify_fourier_convolution(a: Dict[str, Any]) -> VerifierResult:
         b = bound(name, float(np.linalg.norm(claimed - direct)), 1e-6 * (1 + float(np.linalg.norm(direct))),
                   "max", "claimed_convolution_gap", data)
         data = b.data
+        if b.status == "ERROR":
+            return b
         if b.status == "MISMATCH":
             return mismatch(name, "claimed convolution != a * b; " + b.detail, data)
     return confirm(name, f"Fourier flip confirmed: a * b computed in the frequency basis (ifft of fft·fft) equals the "

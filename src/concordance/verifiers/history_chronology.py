@@ -86,7 +86,7 @@ def verify_year_arithmetic(spec: Dict[str, Any]) -> VerifierResult:
         "note": "sign convention: positive=CE, negative=BCE; no year 0",
     }
     r = band(name, actual, cl, tol, "elapsed_years", data, fmt="{:g}", unit="years")
-    if r.passed:
+    if r.status != "MISMATCH":
         return r
     why = " — an inclusive count or a no-year-0 slip is a different number" if diff == 1 else ""
     return mismatch(name, f"{r.detail}; judged exactly{why}", r.data)

@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Optional, Tuple
 
-from .base import VerifierResult, band, error, stated_precision, stated_tolerance_abs, stated_window
+from .base import VerifierResult, band, error, stated_threshold
 
 
 def compare(name: str, actual: float, claimed: Any, rel_tol: float, data: Dict[str, Any],
@@ -27,7 +27,8 @@ def compare(name: str, actual: float, claimed: Any, rel_tol: float, data: Dict[s
     `unit_factor` times the computed unit (km/s -> 1000). It lets the check honour STATED PRECISION: a
     claim right to every figure it states is confirmed even when the flat rel_tol would refuse it.
     Only the claim's own literal can widen the window, never a tolerance handed in — and never on a
-    single stated figure (verifiers.base.stated_tolerance_abs).
+    single stated figure (verifiers.base.stated_tolerance_abs). It is the claim's own when it times
+    `unit_factor` is the claimed value; any other can only narrow (verifiers.base.stated_threshold).
     """
     try:
         cl = float(claimed)
@@ -42,11 +43,13 @@ def compare(name: str, actual: float, claimed: Any, rel_tol: float, data: Dict[s
     if as_written:
         # THE ONE RULE (2026-10-08, H6): a stated literal sets the window — doubled by a hedge, exact for a
         # one-figure claim without one — and the flat rel_tol no longer passes a prose claim first.
-        tol = stated_window(as_written, hedged, unit_factor)
-        sp = stated_precision(as_written)
-        d["stated_sigfigs"] = sp[0] if sp else None
-        d["hedged"] = bool(hedged)
-        d["stated_tolerance"] = tol if tol is not None else 0.0
         # the band is the stated window, or float noise only (1e-9 relative) when the claim earned none
-        return band(name, actual, cl, tol if tol is not None else 1e-9 * abs(actual), "value", d)
+        tol, info = stated_threshold(as_written, rel_tol * abs(actual), 1e-9 * abs(actual), claimed=cl,
+                                     hedged=bool(hedged), unit_factor=unit_factor, literal_factor=unit_factor)
+        d["stated_sigfigs"] = info["stated_sigfigs"]
+        d["hedged"] = info["hedged"]
+        d["stated_tolerance"] = info["stated_window"]
+        if info.get("literal_not_the_claim"):
+            d.update({k: info[k] for k in ("stated_literal", "literal_not_the_claim")})
+        return band(name, actual, cl, tol, "value", d)
     return band(name, actual, cl, rel_tol * abs(actual), "value", d)

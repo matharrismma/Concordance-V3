@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, stated_precision, stated_tolerance_abs, window_for, band
+from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, window_for, band
 
 
 # Each entry: (canonical_value, unit, is_exact, source_note)
@@ -243,8 +243,8 @@ def verify_physical_constant(spec: Dict[str, Any]) -> VerifierResult:
     # last stated place — two or more significant figures only, so a one-figure "3e8" never passes as the
     # exact value. "earth gravity is 9.81 m/s^2" was refused live by the flat 1e-4: right to every figure
     # stated, called false. Scaled by any unit conversion above (the literal is in the CLAIMED unit).
-    # Only the claim's own literal can widen the window; the structured form, which sends no literal, keeps
-    # the strict default unchanged.
+    # Only the claim's own literal can widen the window, compared with the claim as written, before any conversion;
+    # the structured form, which sends no literal, keeps the strict default unchanged.
     # THE ONE RULE (2026-10-08, H6): with a literal the stated window REPLACES the flat default — doubled by a
     # hedge word, granted to a one-figure claim only by a hedge, exact otherwise (window_for).
     stated_used = False
@@ -255,10 +255,10 @@ def verify_physical_constant(spec: Dict[str, Any]) -> VerifierResult:
             factor = (claim / orig) if orig else 1.0
         except (TypeError, ValueError, ZeroDivisionError):
             factor = 1.0
-        threshold, info = window_for(spec, "claimed_literal", threshold, abs(factor), actual)
+        threshold, info = window_for(spec, "claimed_literal", threshold, abs(factor), actual, claimed=claimed)
         data.update(info)
         data["stated_tolerance"] = threshold
-        stated_used = True
+        stated_used = not info.get("literal_not_the_claim")
     r = band(name, actual, claim, threshold, "value", data, fmt="{:.10g}", unit=record["unit"])
     detail = f"{canonical}: {r.detail}"
     if stated_used and r.passed:

@@ -61,7 +61,7 @@ def verify_conversion(spec: Dict[str, Any]) -> VerifierResult:
     lit = spec.get("claimed_literal")
     if lit not in (None, ""):
         from .base import window_for
-        threshold, info = window_for(spec, "claimed_literal", threshold, 1.0, actual)
+        threshold, info = window_for(spec, "claimed_literal", threshold, 1.0, actual, claimed=tv)
         data_extra = info
     else:
         data_extra = {}

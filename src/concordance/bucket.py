@@ -4,20 +4,23 @@ A hash table is the floor's data structure: the key IS the identity. This is the
 A step is keyed by (spec_hash, domain, engine version, verifier fingerprint) — exactly these bytes
 checked by exactly this code — and a hit returns the verdict that was sealed the first time, with
 no recompute. Honest by construction: the thing served is the same record a seal binds to and a
-reader can re-check; the key carries the verifier's own source hash, so a changed verifier can
-never serve a stale verdict. Everything above this is buckets composed — a band is a neighborhood
-of buckets, a chain is buckets linked by `uses`, a document is a bucket of chains.
+reader can re-check; the key carries the hash of every source the verdict reads (_sources), so a
+changed verifier, or a changed module it stands on, can never serve a stale verdict. Everything above
+this is buckets composed — a band is a neighborhood of buckets, a chain is buckets linked by `uses`,
+a document is a bucket of chains.
 
     CONCORDANCE_MEMO=0 disables lookups and stores (every step recomputes).
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
+import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from . import __version__, cas
 from .validate import canonical_json_bytes, sha256_bytes
@@ -36,32 +39,90 @@ def _dir() -> Path:
     return d
 
 
+def _source(module: str) -> Optional[Path]:
+    """The file a module's source is in: its own __file__ when it is loaded, so the key reads what this process reads,
+    and otherwise where inside the package it would load from. None for anything that is not there."""
+    path = getattr(sys.modules.get(module), "__file__", None)
+    if path:
+        return Path(path)
+    target = Path(__file__).resolve().parent.joinpath(*module.split(".")[1:])
+    for candidate in (target.parent / (target.name + ".py"), target / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _imports(module: str, source: bytes) -> Set[str]:
+    """The modules inside this package a source names, lazy imports included, read from its syntax tree: nothing is
+    imported or run. "from . import x" names both the package and x; a name that is no module is dropped by _source."""
+    path = _source(module)
+    is_package = hasattr(sys.modules.get(module), "__path__") or (path is not None and path.name == "__init__.py")
+    package = module if is_package else module.rpartition(".")[0]
+    named: Set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            named.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                parts = package.split(".")
+                base = ".".join(parts[:len(parts) - node.level + 1] + ([base] if base else []))
+            named.add(base)
+            named.update(f"{base}.{alias.name}" for alias in node.names)
+    return {n for n in named if n.split(".")[0] == __package__ and _source(n) is not None}
+
+
+def _closure(roots: Set[str]) -> Dict[str, bytes]:
+    """Every module inside this package the roots reach, and the source of each."""
+    seen: Dict[str, bytes] = {}
+    todo = sorted(roots)
+    while todo:
+        module = todo.pop()
+        if module in seen:
+            continue
+        path = _source(module)
+        if path is None:
+            raise LookupError(module)
+        seen[module] = path.read_bytes()
+        todo.extend(_imports(module, seen[module]))
+    return seen
+
+
+def _sources(domain: str) -> Dict[str, bytes]:
+    """What a verdict in this domain reads, by module: the import closure of its verifier and of the runner, which is
+    verifiers/__init__.py (run_for_domain drives every domain, and calls verifiers/spec.py for each), and derivation.py,
+    which folds every verdict. Derivation is hashed but not walked: it imports the bridges and mathematics for all, and
+    a domain that never reads them would move with them. Empty for a domain with no verifier."""
+    from . import verifiers as _V
+    _V._load_plugins()
+    import importlib
+    d = (domain or "").strip().lower()
+    name = _V.VERIFIERS.get(d) or _V.VERIFIERS.get(d.replace("-", "_"))
+    if not name:
+        return {}
+    importlib.import_module(name)
+    seen = _closure({name, _V.__name__})
+    derivation = __package__ + ".derivation"
+    return dict(seen, **{derivation: _source(derivation).read_bytes()})
+
+
+def verifier_closure(domain: str) -> List[str]:
+    """The modules a domain's fingerprint hashes, sorted. Empty for a domain with no verifier."""
+    return sorted(_sources(domain))
+
+
 def verifier_fingerprint(domain: str) -> str:
-    """SHA-256 of the source a verdict reads, cached per process: the verifier module, and for mathematics also
-    derivation.py (the sympy moat). physics reads its text through mathematics' parser, so it covers that module too.
-    Part of the key: the same packet under changed code is a different bucket."""
+    """SHA-256 of the source a verdict reads (_sources), cached per process. Part of the key: the same packet under
+    changed code is a different bucket, whichever module on the way to the verdict changed."""
     d = (domain or "").strip().lower()
     if d in _FINGERPRINTS:
         return _FINGERPRINTS[d]
     try:
-        if d in ("mathematics", "math"):
-            from . import derivation as _mod
-            from .verifiers import mathematics as _math
-            mods = [_mod, _math]
-        else:
-            from . import verifiers as _V
-            _V._load_plugins()
-            import importlib
-            name = _V.VERIFIERS.get(d) or _V.VERIFIERS.get(d.replace("-", "_"))
-            mods = [importlib.import_module(name)] if name else []
-            if name and name == _V.VERIFIERS.get("physics"):
-                mods.append(importlib.import_module(_V.VERIFIERS["mathematics"]))
+        sources = _sources(d)
         h = hashlib.sha256()
-        for m in mods:
-            p = getattr(m, "__file__", None)
-            if p and os.path.exists(p):
-                h.update(Path(p).read_bytes())
-        fp = h.hexdigest()[:16] if mods else "unknown"
+        for module in sorted(sources):
+            h.update(module.encode("utf-8") + b"\0" + sources[module])
+        fp = h.hexdigest()[:16] if sources else "unknown"
     except Exception:  # noqa: BLE001 — a fingerprint must never break a verdict; unknown just means no memo
         fp = "unknown"
     _FINGERPRINTS[d] = fp
@@ -141,4 +202,4 @@ def stats() -> Dict[str, Any]:
                      "verdict sealed the first time, never a recompute"}
 
 
-__all__ = ["through", "key_for", "lookup", "store", "verifier_fingerprint", "stats", "enabled"]
+__all__ = ["through", "key_for", "lookup", "store", "verifier_closure", "verifier_fingerprint", "stats", "enabled"]

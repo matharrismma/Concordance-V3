@@ -158,6 +158,8 @@ def verify_word_count(strongs: str, claimed_count: Any) -> VerifierResult:
                         {"strongs": strongs, "claimed": claimed, "actual": actual})
     actual_i = int(actual) if float(actual).is_integer() else actual
     r = band(name, actual_i, claimed, 0, "count", {"strongs": strongs, "claimed": claimed, "actual": actual_i}, fmt="{:.0f}")
+    if r.status == "ERROR":
+        return r
     return (confirm if r.passed else mismatch)(name, f"{strongs} occurrences in the corpus: {r.detail}", r.data)
 
 

@@ -25,20 +25,28 @@ GEOM_VERIFY shape (any subset):
 """
 from __future__ import annotations
 import math
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 
 
-def _window(spec: Dict[str, Any], threshold: float, actual: float) -> float:
+def _literal_key(spec: Dict[str, Any]) -> Optional[str]:
+    return next((k for k in spec if k.endswith("_as_written") and spec.get(k) not in (None, "")), None)
+
+
+def _window(spec: Dict[str, Any], threshold: float, actual: float, claimed: float, data: Dict[str, Any]) -> float:
     """THE ONE RULE (2026-10-08, the failure report H6, found by the recall set): when the plain-text form hands over the
     claimed value as written (any `*_as_written` key), its stated figures set the window - half a unit in the last
-    place, doubled by a hedge, exact for a one-figure claim without one. A structured call keeps the flat default."""
-    key = next((k for k in spec if k.endswith("_as_written") and spec.get(k) not in (None, "")), None)
+    place, doubled by a hedge, exact for a one-figure claim without one. A structured call keeps the flat default.
+    `claimed` is the value THIS check judges, whichever check the key was written for, so a literal sets the window only
+    for the claim it states: beside any other claim in the packet it can only narrow, and `data` records that."""
+    key = _literal_key(spec)
     if key is None:
         return threshold
     from .base import window_for
-    thr, _info = window_for(spec, key, threshold, 1.0, actual)
+    thr, info = window_for(spec, key, threshold, 1.0, actual, claimed=claimed)
+    if info.get("literal_not_the_claim"):
+        data.update({k: info[k] for k in ("stated_literal", "literal_not_the_claim")})
     return thr
 from .base import dispatch  # declarative run() driver
 
@@ -86,9 +94,17 @@ def verify_pythagorean(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-6)
     diff = abs(sides_squared_sum - c_squared)
     threshold = max(1e-9, rel_tol * c_squared)
-    threshold = _window(spec, threshold, c_squared)
+    literal: Dict[str, Any] = {}
+    key = _literal_key(spec)
+    if key is not None:
+        # A yes or a no states no number, so no literal is this claim's own and none may help it: "is right" takes
+        # the smaller window, and "is not right", which a wider window refutes, the larger.
+        from .base import window_for
+        narrowed, literal = window_for(spec, key, threshold, 1.0, c_squared, claimed=None)
+        threshold = narrowed if bool(claimed) else max(threshold, literal["literal_asked"])
+        literal = {k: literal[k] for k in ("stated_literal", "literal_not_the_claim")}
     actual = (diff <= threshold) and (cf >= af and cf >= bf)
-    data = {"a": af, "b": bf, "c": cf,
+    data = {"a": af, "b": bf, "c": cf, **literal,
             "a_sq_plus_b_sq": sides_squared_sum,
             "c_sq": c_squared, "diff": diff,
             "actual_right_triangle": actual,
@@ -119,8 +135,8 @@ def verify_polygon_angle_sum(spec: Dict[str, Any]) -> VerifierResult:
     actual = (nf - 2) * 180.0
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-6)
     threshold = max(1e-6, rel_tol * actual)
-    threshold = _window(spec, threshold, actual)
     data = {"n": nf, "rule": "(n-2)·180°"}
+    threshold = _window(spec, threshold, actual, c, data)
     return band(name, actual, c, threshold, "sum_deg", data, fmt="{:g}", unit="°")
 
 
@@ -153,7 +169,7 @@ def verify_circle_properties(spec: Dict[str, Any]) -> VerifierResult:
             ac = float(a_claim)
             data["claimed_area"] = ac
             threshold = max(1e-6, rel_tol * actual_area) if actual_area > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_area)
+            threshold = _window(spec, threshold, actual_area, ac, data)
             results.append(band(name, actual_area, ac, threshold, "area", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_circle_area must be numeric")
@@ -162,7 +178,7 @@ def verify_circle_properties(spec: Dict[str, Any]) -> VerifierResult:
             cc = float(c_claim)
             data["claimed_circumference"] = cc
             threshold = max(1e-6, rel_tol * actual_circ) if actual_circ > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_circ)
+            threshold = _window(spec, threshold, actual_circ, cc, data)
             results.append(band(name, actual_circ, cc, threshold, "circumference", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_circle_circumference must be numeric")
@@ -200,7 +216,7 @@ def verify_rectangle_properties(spec: Dict[str, Any]) -> VerifierResult:
             caf = float(ca)
             data["claimed_rect_area"] = caf
             threshold = max(1e-6, rel_tol * actual_area) if actual_area > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_area)
+            threshold = _window(spec, threshold, actual_area, caf, data)
             results.append(band(name, actual_area, caf, threshold, "area", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_rect_area must be numeric")
@@ -210,7 +226,7 @@ def verify_rectangle_properties(spec: Dict[str, Any]) -> VerifierResult:
             cpf = float(cp)
             data["claimed_rect_perimeter"] = cpf
             threshold = max(1e-6, rel_tol * actual_perim) if actual_perim > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_perim)
+            threshold = _window(spec, threshold, actual_perim, cpf, data)
             results.append(band(name, actual_perim, cpf, threshold, "perimeter", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_rect_perimeter must be numeric")
@@ -251,7 +267,7 @@ def verify_sphere_properties(spec: Dict[str, Any]) -> VerifierResult:
             cvf = float(cv)
             data["claimed_sphere_volume"] = cvf
             threshold = max(1e-6, rel_tol * actual_vol) if actual_vol > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_vol)
+            threshold = _window(spec, threshold, actual_vol, cvf, data)
             results.append(band(name, actual_vol, cvf, threshold, "volume", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_sphere_volume must be numeric")
@@ -261,7 +277,7 @@ def verify_sphere_properties(spec: Dict[str, Any]) -> VerifierResult:
             caf = float(ca)
             data["claimed_sphere_surface_area"] = caf
             threshold = max(1e-6, rel_tol * actual_area) if actual_area > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_area)
+            threshold = _window(spec, threshold, actual_area, caf, data)
             results.append(band(name, actual_area, caf, threshold, "surface_area", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_sphere_surface_area must be numeric")
@@ -305,7 +321,7 @@ def verify_cylinder_properties(spec: Dict[str, Any]) -> VerifierResult:
             cvf = float(cv)
             data["claimed_cyl_volume"] = cvf
             threshold = max(1e-6, rel_tol * actual_vol) if actual_vol > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_vol)
+            threshold = _window(spec, threshold, actual_vol, cvf, data)
             results.append(band(name, actual_vol, cvf, threshold, "volume", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_cyl_volume must be numeric")
@@ -344,7 +360,7 @@ def verify_cube_properties(spec: Dict[str, Any]) -> VerifierResult:
             cvf = float(cv)
             data["claimed_cube_volume"] = cvf
             threshold = max(1e-6, rel_tol * actual_vol) if actual_vol > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_vol)
+            threshold = _window(spec, threshold, actual_vol, cvf, data)
             results.append(band(name, actual_vol, cvf, threshold, "volume", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_cube_volume must be numeric")
@@ -354,7 +370,7 @@ def verify_cube_properties(spec: Dict[str, Any]) -> VerifierResult:
             caf = float(ca)
             data["claimed_cube_surface_area"] = caf
             threshold = max(1e-6, rel_tol * actual_area) if actual_area > 0 else 1e-6
-            threshold = _window(spec, threshold, actual_area)
+            threshold = _window(spec, threshold, actual_area, caf, data)
             results.append(band(name, actual_area, caf, threshold, "surface_area", None, fmt="{:.6f}"))
         except (TypeError, ValueError):
             return error(name, "claimed_cube_surface_area must be numeric")

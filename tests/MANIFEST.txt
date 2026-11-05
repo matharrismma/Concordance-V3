@@ -15,6 +15,7 @@ test_audit_calculus.py
 test_audit_constant_units.py
 test_audit_extract.py
 test_audit_nonlinear.py
+test_band_consumers.py
 test_benchmark.py
 test_binding.py
 test_biology.py
@@ -99,6 +100,7 @@ test_measured_restatement_audit.py
 test_measured_topological_order.py
 test_measurement_consistency.py
 test_medicine.py
+test_memo_closure.py
 test_meteorology.py
 test_molecular_geometry.py
 test_music_theory.py
@@ -157,6 +159,7 @@ test_soil_science.py
 test_spectral.py
 test_sports_analytics.py
 test_stated_precision.py
+test_stated_window.py
 test_statistics.py
 test_stdlib_only.py
 test_thermodynamics.py

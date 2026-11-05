@@ -276,6 +276,8 @@ def verify_pvalue_calibration(spec: Dict[str, Any]) -> VerifierResult:
     checks = [band("statistics.pvalue_calibration", float(p), claimed_p, tol, "p", None, fmt="{:.6g}"),
               bound("statistics.pvalue_calibration", ratio, ratio_threshold, "max", "p_ratio", None, fmt="{:.2f}")]
     m = merge_checks("statistics.pvalue_calibration", checks, data)
+    if m.status == "ERROR":
+        return m
     if m.status == "CONFIRMED":
         return confirm("statistics.pvalue_calibration",
                        f"claimed p={claimed_p}, recomputed p={p:.6g} "
@@ -414,6 +416,8 @@ def verify_confidence_interval(spec: Dict[str, Any]) -> VerifierResult:
                 band("statistics.confidence_interval", recompute_lo, lo, tol, "ci_low", None, fmt="{:.6g}"),
                 band("statistics.confidence_interval", recompute_hi, hi, tol, "ci_high", None, fmt="{:.6g}"),
             ], data)
+            if m.status == "ERROR":
+                return m
             if m.status != "CONFIRMED":
                 return mismatch(
                     "statistics.confidence_interval",
@@ -585,6 +589,8 @@ def verify_measurement_consistency(spec: Dict[str, Any]) -> VerifierResult:
         if dof > 0:
             checks.append(bound(name, birge, birge_thr, "max", "birge_ratio", None, fmt="{:.2f}"))
         m = merge_checks(name, checks, data)
+        if m.status == "ERROR":
+            return m
         if m.status == "CONFIRMED":
             return confirm(
                 name,
@@ -625,6 +631,8 @@ def verify_measurement_consistency(spec: Dict[str, Any]) -> VerifierResult:
             return error(name, "rel_level is not a number")
         data["rel_level"] = rel_level
         b = bound(name, rel_spread, rel_level, "max", "relative_spread", data, fmt="{:.2e}")
+        if b.status == "ERROR":
+            return b
         if b.status == "CONFIRMED":
             return confirm(
                 name,
@@ -666,6 +674,8 @@ def verify_trajectory(spec: Dict[str, Any]) -> VerifierResult:
     except (TypeError, ValueError):
         return error(name, "claimed_floor must be numeric")
     b = band(name, lb, cl, 1e-4, "floor", data, fmt="{:.4f}")
+    if b.status == "ERROR":
+        return b
     if b.status != "CONFIRMED":
         return mismatch(name, f"Wilson floor for {s}/{n} at {conf:g} is {lb:.4f}, claimed {cl:.4f}; {b.detail}", b.data)
     return confirm(name, f"Wilson floor for {s}/{n} at {conf:g} is {lb:.4f} (rate {s/n:.4f}); the conservative "
