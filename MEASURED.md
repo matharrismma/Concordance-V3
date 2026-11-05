@@ -342,13 +342,35 @@ Per domain, the benchmark cases each restatement was applied to; each declined t
   a broken claim. The gap is open and filed as its own run (this run's plan, in
   `docs/harness/runs/2026-11-03-restatement-audit.jsonl`); the test pins today's reading, so the run that fixes it
   updates the test.
-- **gcd and lcm, by symbol order.** checker-28 found it by probing R4 outside the population: the mathematics verifier
-  compares a sign-ambiguous polynomial gcd or lcm exactly, and sympy picks the sign by the order of the symbols.
-  `gcd(y - x, x - y) = x - y` and `gcd(y**2 - x**2, x - y) = x - y` read HOLDS and, renamed by R4, BROKEN;
-  `lcm(y - x, x - y) = x - y` reads BROKEN and, renamed, HOLDS. A gcd is defined only up to a unit, so the two
-  verdicts cannot both be right. No benchmark case or tier row holds a gcd or an lcm, so KNOWN does not list it. The
-  lead's want note in this run's ledger (2026-11-03T14:20:34Z) holds every V3 change to that handling until its
-  fixing run lands and files it as its own run; this run's test recomputes the three readings.
+- **gcd and lcm, by symbol order.** checker-28 found it by probing R4 outside the population, and run
+  2026-11-04-gcd-lcm-order measured what lay under it: a value nobody bound. sympy evaluates a gcd or lcm of expressions
+  as polynomials before a binder or a substitution sees it, so the sum of gcd(k, 12) for k from 1 to 4, which is 10, came
+  to 4. A polynomial gcd is defined only up to a unit, and sympy picks the unit, scale and sign alike, by its default
+  generator order, which its own table sets from the names, with x before a. Poly and degree read that order, and degree
+  evaluates before a binder too. A third number is read as a generator, so gcd(12, 18, 5) came to 6, and a float
+  answers 1. So a gcd or lcm is now read over exact rationals alone, as the fold of sympy's two-argument function:
+  `gcd(12, 18, 5) = 1` reads HOLDS and `gcd(12, 18, 5) = 6` reads BROKEN. A gcd or lcm of anything else, a Poly or degree
+  on generators nobody named, and a degree or Poly with a free symbol inside a binder, solve and solveset among them, or
+  in modes system, limit and solve are unbound: `UnboundRefused` is raised before the call runs, and the claim reads
+  INCOMPLETE in every mode, with a reason that says what would bind it. A generator is named by a symbol or by an
+  expression sympy discovers in the argument; sympy takes anything else as a generator and answers 0.
+  `Sum(gcd(k, 12), (k, 1, 4)) = 4`, `Subs(gcd(x, 12), x, 6) = 1`, `gcd(x, x + 2) = 1`, `gcd(12.0, 18.0) = 1`,
+  `degree(Poly(x**2 + y**3)) = 2`, `degree(x**2 + 1, x + 1) = 0`, `Subs(degree(x**2 + 1), x, 2) = 2` and
+  `gcd(solve(degree(x**2 + 1) - x, x), 4) = 2` each read HOLDS before this rule. `gcd(y - x, x - y) = x - y` and `gcd(y**2 - x**2, x - y) = x - y` read INCOMPLETE and,
+  renamed by R4, INCOMPLETE; `lcm(y - x, x - y) = x - y` reads INCOMPLETE and, renamed, INCOMPLETE. Nothing the audit
+  measures moves, since no benchmark case or tier row reaches gcd or lcm through an expression, so KNOWN does not list
+  it. Three misses are named, and `tests/test_bound_values.py` holds each. A gcd or lcm with a non-rational argument reads
+  INCOMPLETE, the true ones with the false: `gcd(x**2 - 1, x - 1) = x - 1` read HOLDS and now reads INCOMPLETE. A claim
+  building a Poly on default generators reads INCOMPLETE even where nothing later reads their order, as
+  `degree(Poly(x*y)) = 1` does. A degree or Poly with a free symbol inside a binder, or in modes system, limit and solve,
+  reads INCOMPLETE even when nothing substitutes that symbol, as `Sum(degree(y**2 + 1), (k, 1, 3)) = 6` does: the reader
+  counts binders and does not work out which symbol each one binds. A sweep of every other name on the allowlist, in
+  that test file behind `-m slow`, found no other function that reads an order or evaluates before a binder; review found
+  solve and solveset, which its Sum oracle cannot see. One claim on
+  `Mod` moved under a rename by the pole comparison and not by the function, which is the pole class this run's step
+  poles reads. Nine finite sums such as `Sum(log(k), (k, 1, 3))` read BROKEN against the three terms they equal, because
+  simplify leaves them unreduced or the pole guard reads the bound k as a pole: a false BROKEN at the run's base too, and
+  no eager function.
 
 **Time.** In this run the benchmark took 21.5 s and the tier 3.0 s, on this laptop with another heavy Python process
 running throughout; the same audit on the same laptop took between 18.8 s and 36.3 s for the benchmark today. Times

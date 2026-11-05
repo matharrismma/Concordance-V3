@@ -10,8 +10,8 @@ every number and name the section quotes and compute each one again:
           fixed response, so nothing runs a verifier and nothing changes): every restatement, decline, coverage
           count and total is the tool's. The MATH_VERIFY routing (mathematics.py's own _RULES), the numeric
           footprint (the tier's steps), and the two gaps, recomputed through the real verifiers: frame_seq 1 read
-          as 1.0, and the three gcd/lcm claims renamed by R4. Those two pin today's defective readings, so the runs
-          that fix them update these tests
+          as 1.0, and the three gcd/lcm claims renamed by R4. The first pins today's defective reading, so the run
+          that fixes it updates this test. The second pins the reading run 2026-11-04-gcd-lcm-order left: not checkable
   slow    the whole audit for real, every quoted number compared with its output exactly, its changes included
 
 Times are this laptop's and its load's; the section says so, and no test pins them. The tools are imported inside
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import re
 from collections import Counter
 from pathlib import Path
@@ -30,8 +31,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 HEADING = "## The restatement audit: measurement 4"
 FRAME_SEQ = ("golden:pressure_fighting:true", "check:pressure_fighting.observation:true")
-GCD = (("gcd(y - x, x - y)", "x - y", "HOLDS", "BROKEN"), ("gcd(y**2 - x**2, x - y)", "x - y", "HOLDS", "BROKEN"),
-       ("lcm(y - x, x - y)", "x - y", "BROKEN", "HOLDS"))
+GCD = (("gcd(y - x, x - y)", "x - y", "INCOMPLETE", "INCOMPLETE"),
+       ("gcd(y**2 - x**2, x - y)", "x - y", "INCOMPLETE", "INCOMPLETE"),
+       ("lcm(y - x, x - y)", "x - y", "INCOMPLETE", "INCOMPLETE"))
 NAMES = {"R1": "key order", "R2": "equality swap", "R3": "whitespace between tokens", "R4": "symbol rename",
          "R5": "step-id rename"}
 PATHS = ("derivation", "compose", "mcp", "mcp-document", "audit")
@@ -40,7 +42,7 @@ STATED = (
     "It is an audit, never a vote", "nothing in src/ reads it",
     "the audit holds no such restatement", "this run's test recomputes it",
     "the test pins today's reading, so the run that fixes it updates the test",
-    "so KNOWN does not list it", "2026-11-03T14:20:34Z",
+    "no benchmark case or tier row reaches gcd or lcm through an expression", "reads INCOMPLETE in every mode",
     "on this laptop with another heavy Python process running throughout", "no test pins them",
     "`PYTHONPATH=src python tools/restatement_audit.py --json audit.json`",
     "`--benchmark per-domain --tier fast`", "`PYTHONPATH=src python -m pytest tests/test_measured_restatement_audit.py",
@@ -112,8 +114,8 @@ def quoted():
     q["frame_seq"] = [c for c in FRAME_SEQ if c in words]
     q["frame_seq_cited"] = all(s in words for s in ('"NO_MATCH: frame_seq must be an integer >= 1"',
                                                     "pressure_fighting.py:92", "frame_seq 1 rewritten as 1.0"))
-    q["gcd"] = re.findall(r"(gcd|lcm)\(([^)]*)\) = x - y (?:and gcd\(([^)]*)\) = x - y )?reads? (HOLDS|BROKEN) and, "
-                          r"renamed(?: by R4)?, (HOLDS|BROKEN)", words.replace("`", ""))
+    q["gcd"] = re.findall(r"(gcd|lcm)\(([^)]*)\) = x - y (?:and gcd\(([^)]*)\) = x - y )?reads? (HOLDS|BROKEN|INCOMPLETE) "
+                          r"and, renamed(?: by R4)?, (HOLDS|BROKEN|INCOMPLETE)", words.replace("`", ""))
     m = _search(r"the benchmark took ([\d.]+) s and the tier ([\d.]+) s.*?between ([\d.]+) s and ([\d.]+) s for the "
                 r"benchmark", words, "the times")
     q["times"] = tuple(map(float, m.groups()))
@@ -249,8 +251,9 @@ def test_the_frame_seq_gap_is_recomputed():
 
 
 def test_the_gcd_and_lcm_readings_are_recomputed():
-    """Outside the audit's population: each claim, as given and renamed by R4, through benchmark.verify. The two
-    verdicts cannot both be right; today's defective readings are pinned, so the run that fixes them updates this."""
+    """Outside the audit's population: each claim, as given and renamed by R4, through benchmark.verify. A gcd is
+    defined only up to a unit, so these read HOLDS and BROKEN for one claim until run 2026-11-04-gcd-lcm-order, and the
+    two verdicts could not both be right. Each now reads not checkable, as given and renamed."""
     q = quoted()
     R = _load("restate")
     spec = importlib.util.spec_from_file_location("_measured_restatement_benchmark", ROOT / "tools" / "benchmark.py")
@@ -263,9 +266,24 @@ def test_the_gcd_and_lcm_readings_are_recomputed():
         assert o.applied and o.mapping == {0: {"y": "v0", "x": "v1"}}
         readings.append((a, b, B.verify(copy.deepcopy(claim))["verdict"], B.verify(o.after[0]["spec"])["verdict"]))
     assert readings == list(GCD)
-    # the record names each: gcd(y - x, x - y) and gcd(y**2 - x**2, x - y) HOLDS then BROKEN, lcm BROKEN then HOLDS
+    # the record names each: gcd(y - x, x - y), gcd(y**2 - x**2, x - y) and lcm(y - x, x - y), INCOMPLETE both ways
     assert [(f, args, also, before, after) for f, args, also, before, after in q["gcd"]] == [
-        ("gcd", "y - x, x - y", "y**2 - x**2, x - y", "HOLDS", "BROKEN"), ("lcm", "y - x, x - y", "", "BROKEN", "HOLDS")]
+        ("gcd", "y - x, x - y", "y**2 - x**2, x - y", "INCOMPLETE", "INCOMPLETE"),
+        ("lcm", "y - x, x - y", "", "INCOMPLETE", "INCOMPLETE")]
+
+
+def test_no_benchmark_case_or_tier_row_reaches_gcd_or_lcm_through_an_expression():
+    """The record's reason nothing the audit measures moved: no text in the population calls gcd or lcm. Its gcd cases
+    are integer packets, whose keys are no call."""
+    tool = _load("restatement_audit")
+    H = tool._telemetry()
+    with H.isolated():
+        cases = [c["subject"] for c in tool.benchmark_population(H)]
+    rows = H._tier().rows()
+    assert len(cases) > 1000 and rows
+    call = re.compile(r"\b(gcd|lcm)\s*\(")
+    assert [s for s in cases if call.search(json.dumps(s))] == []
+    assert [r["text"] or r["steps"] for r in rows if call.search(json.dumps([r["text"], r["steps"]]))] == []
 
 
 @pytest.mark.slow

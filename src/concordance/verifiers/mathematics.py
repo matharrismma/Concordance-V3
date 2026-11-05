@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import ast as _ast
 import builtins as _builtins
+import functools as _functools
+import itertools as _itertools
 import math as _math
 import operator as _operator
 import re as _re
@@ -163,6 +165,14 @@ _UNEVALUATED_FUNCS = frozenset({
     "csch", "sech", "sinh", "tanh", "exp", "ln", "log", "sqrt", "cbrt",
 })
 
+# The calls whose value is read only once the claim has bound it: see _gcd_or_lcm and _require_generators.
+_GCD_LCM = frozenset({"gcd", "lcm"})
+_GENERATOR_READERS = frozenset({"Poly", "degree"})
+# The calls that substitute a value into what they are given. A degree or a Poly evaluates as it is read, so inside
+# one of these it answers for the symbol and never for the value. diff and an indefinite integrate substitute nothing.
+_BINDERS = frozenset({"Sum", "summation", "Product", "product", "Subs", "limit", "Limit", "solve", "solveset"})
+_BINDERS_BY_LIMITS = frozenset({"integrate", "Integral"})
+
 _ARITHMETIC = {_ast.Add: _operator.add, _ast.Sub: _operator.sub, _ast.Mult: _operator.mul,
                _ast.Div: _operator.truediv}
 _TERMS, _FACTORS = (_ast.Add, _ast.Sub), (_ast.Mult, _ast.Div)
@@ -178,6 +188,11 @@ class ExpressionRefused(ValueError):
 class NoMeaningRefused(ExpressionRefused):
     """A value the rule refuses. Its own kind, because a text refused this way is arithmetic with no
     meaning, never prose and never a claim that can be set aside: see _refuse_no_meaning."""
+
+
+class UnboundRefused(NoMeaningRefused):
+    """A value the claim never bound, refused before the call runs: see _gcd_or_lcm and _require_generators. Its own
+    kind, because every mode reads it as not checkable, where some read other refusals as errors."""
 
 
 class PowerRefused(ExpressionRefused):
@@ -313,12 +328,99 @@ def _refuse_no_meaning(value, written: bool, carried: bool) -> bool:
     return infinite
 
 
+def _brief(value) -> str:
+    """A value as a reason quotes it: short, so what the reason asks for is never cut off."""
+    return str(value)[:40]
+
+
+def _walk(values):
+    """Each element of these values through every sequence, by sympy's own test for one. A dict is no sequence of
+    numbers, so it stands as one element."""
+    for value in values:
+        if hasattr(value, "__iter__") and not isinstance(value, (dict, _sp.Dict)):
+            yield from _walk(value)
+        else:
+            yield value
+
+
+def _elements(values):
+    """_walk, stopped one past what a text can write: a set can have no end. Lazy, so a first answer ends the walk."""
+    return _itertools.islice(_walk(values), _MAX_AST_NODES + 1)
+
+
+def _gcd_or_lcm(function, name: str, args: list):
+    """THE RULE for gcd and lcm: they are read over exact rationals and nothing else. sympy reads anything else as
+    polynomials, before a binder can substitute, and takes a unit it picks by the symbols' order; given a third
+    number it reads that as a generator, and given a float it answers 1. So an element that is not an exact rational
+    leaves the value unbound, and a bound call is the fold of sympy's two-argument function, where no number can be
+    read as a generator. One element is its absolute value, so no fold keeps a sign."""
+    elements = []
+    for element in _elements(args):
+        if not getattr(element, "is_Rational", False):
+            raise UnboundRefused(f"{name} reads exact rational numbers and {_brief(element)} is not one: its value would "
+                                 f"rest on a polynomial reading the claim never stated, whose unit sympy picks by the "
+                                 f"symbols' order. Write exact numbers, or use mode polynomial with ring and generators")
+        elements.append(element)
+    if len(args) < 2 and not any(hasattr(arg, "__iter__") for arg in args):
+        return function(*args)      # no sequence and no second number: sympy refuses it, and it stays refused
+    if not 0 < len(elements) <= _MAX_AST_NODES:
+        raise UnboundRefused(f"{name} of {'more numbers than a text can write' if elements else 'an empty sequence'} "
+                             f"has no value to read. State the numbers")
+    if len(elements) == 1:
+        return abs(elements[0])
+    return _functools.reduce(function, elements)
+
+
+def _generators(value) -> tuple:
+    """The generators sympy's own discovery finds in a value, in sympy's order. None where it reads none: what it
+    cannot read, the call itself then answers as sympy does."""
+    from sympy.polys.polytools import poly_from_expr
+    try:
+        return poly_from_expr(value)[0].gens
+    except Exception:
+        return ()
+
+
+def _require_generators(name: str, args: list, binders: int) -> None:
+    """THE RULE for Poly and degree: a value resting on generators nobody named is unbound. sympy discovers them and
+    orders them by their names, so with two or more the value moves with what the symbols are called. A generator is
+    named by a symbol, or by an expression discovery finds in the argument. Anything else in a generator's place, a
+    number, a boolean, a sequence, a set or another expression, names none, and sympy takes it as a generator all the
+    same and answers 0, so it leaves the value unbound wherever there is a generator to miss: a constant has none. Poly
+    reads a sequence of those as its generators, and a Poly carries the generators the claim gave it. Inside a binder, a
+    value with a free symbol is unbound however it was written, since it evaluates before the binder substitutes: the
+    reader counts binders and does not work out which symbol each one binds, so this refuses a value whose symbol
+    nothing substitutes too."""
+    from sympy.utilities.iterables import is_sequence
+    if binders and any(getattr(element, "free_symbols", None) for element in _elements(args)):
+        raise UnboundRefused(f"{name} of {_brief(args[0])} evaluates before the binder around it substitutes a value, so "
+                             f"it would rest on the symbol and never on the value. Write the number it should be, or "
+                             f"read it outside the binder")
+    offered = args[1:]
+    if name == "Poly" and len(offered) == 1 and is_sequence(offered[0]):
+        offered = list(offered[0])
+    if not args or (offered and all(isinstance(gen, _sp.Symbol) for gen in offered)):
+        return
+    carried = isinstance(args[0], _sp.Poly)
+    found = args[0].gens if carried else _generators(args[0])
+    stray = [gen for gen in offered if not isinstance(gen, _sp.Symbol) and gen not in found]
+    if stray and found:
+        raise UnboundRefused(f"{name} of {_brief(args[0])} takes {_brief(stray[0])} as a generator, which names none: only "
+                             f"a symbol or a generator found in it does. Name the generators in the call, or use mode "
+                             f"polynomial with ring and generators")
+    if not offered and not carried and len(found) > 1:
+        raise UnboundRefused(f"{name} of {_brief(args[0])} rests on the generators sympy discovers, {_brief(found)}, in an "
+                             f"order their names set. Name the generators in the call, or use mode polynomial with ring "
+                             f"and generators")
+
+
 class _Reader:
     """Builds sympy objects from a bounded tree. A node it does not name is refused."""
 
-    def __init__(self, source: str, names: Dict[str, Any], rational: bool, evaluate: bool):
+    def __init__(self, source: str, names: Dict[str, Any], rational: bool, evaluate: bool, binders: int = 0):
         self.source, self.names, self.rational, self.evaluate = source, names, rational, evaluate
         self.carried = False    # whether a value the node being built was built from held an infinity
+        self.binders = binders  # how many calls that substitute a value the node being built sits inside
 
     def read(self, node, in_call: bool = False):
         """Every node passes through here, so each built value meets the rule at its own node. Only a read
@@ -371,6 +473,10 @@ class _Reader:
             raise ExpressionRefused(f"{name} is not a value")
         return Symbol(name)
 
+    def _evaluating(self):
+        """The reader of what an unevaluated read still evaluates."""
+        return self if self.evaluate else _Reader(self.source, self.names, self.rational, True, self.binders)
+
     def _operand(self, node):
         value = self.read(node)
         if not isinstance(value, _SYMPY_VALUES) or isinstance(value, _sp.Tuple):
@@ -381,7 +487,7 @@ class _Reader:
         op = type(node.op)
         if op is _ast.Mod:
             # sympy's evaluate=False leaves % and everything under it evaluated.
-            reader = self if self.evaluate else _Reader(self.source, self.names, self.rational, True)
+            reader = self._evaluating()
             return reader._operand(node.left) % reader._operand(node.right)
         if op is not _ast.Pow and op not in _ARITHMETIC:
             raise ExpressionRefused(f"the operator {op.__name__} is not read as mathematics")
@@ -442,12 +548,24 @@ class _Reader:
             raise ExpressionRefused(f"{name} is not bound to a function")
         if node.keywords:
             raise ExpressionRefused("a call takes no keywords")
-        args = [self.read(arg, in_call=True) for arg in node.args]
+        # What follows the integrand and is no bare symbol is read as limits, in whatever form it was written.
+        binds = name in _BINDERS or (name in _BINDERS_BY_LIMITS
+                                     and not all(isinstance(arg, _ast.Name) for arg in node.args[1:]))
+        self.binders += binds
+        # The rule reads values, so it reads evaluated arguments even here in an unevaluated read, as % does: there
+        # 2*3 is a product written out, and it is still the number 6.
+        reader = self._evaluating() if name in _GCD_LCM or name in _GENERATOR_READERS else self
+        args = [reader.read(arg, in_call=True) for arg in node.args]
+        self.binders -= binds
         if name == "Pow" and len(args) >= 2:
             _bound_power(args[0], args[1])
+        if name in _GENERATOR_READERS:
+            _require_generators(name, args, self.binders)
         # sympy's rational read rewrites the name Float as well as the numbers.
         function = _sp.Rational if self.rational and name == "Float" else _FUNCTIONS[name]
-        if not self.evaluate and name in _UNEVALUATED_FUNCS:
+        if name in _GCD_LCM:
+            value = _gcd_or_lcm(function, name, args)
+        elif not self.evaluate and name in _UNEVALUATED_FUNCS:
             value = function(*args, evaluate=False)
         else:
             value = function(*args)
@@ -461,7 +579,7 @@ class _Reader:
 
 
 def parse_expression(text, names: Dict[str, Any] = None, rational: bool = False, evaluate: bool = True,
-                     word_mod: bool = False):
+                     word_mod: bool = False, binders: int = 0):
     """Read an expression text into sympy objects. The one way any text reaches sympy.
 
     It normalises the text once, and everything after reads exactly that text: the limits apply to
@@ -471,7 +589,8 @@ def parse_expression(text, names: Dict[str, Any] = None, rational: bool = False,
     names maps the caller's names to sympy values and wins over the constants. rational=True reads
     decimals as exact rationals, as sympify's rational=True does. evaluate=False builds what sympify's
     evaluate=False builds, for reading pole bases. word_mod=True reads the word form of mod, which
-    mathematics has and physics does not. A text the parser will not read, and any failure while
+    mathematics has and physics does not. binders=1 reads a text the caller will substitute a value
+    into, as if inside a call that does. A text the parser will not read, and any failure while
     reading it, raises ExpressionRefused."""
     if not _ensure_sympy():
         # stdlib-only box: the symbolic-math checks need sympy. Raise a _PARSE_ERRORS member so
@@ -491,14 +610,14 @@ def parse_expression(text, names: Dict[str, Any] = None, rational: bool = False,
                 raise ExpressionRefused("a text or name Unicode normalisation would change")
         tree = _ast.parse(source, mode="eval")
         _bound_tree(tree)
-        return _Reader(source, names, rational, evaluate).read(tree.body)
+        return _Reader(source, names, rational, evaluate, binders).read(tree.body)
     except ExpressionRefused:
         raise
     except Exception as e:  # a syntax error, RecursionError, or sympy refusing what it was handed
         raise ExpressionRefused(f"expression is not read as mathematics: {type(e).__name__}") from None
 
 
-def _parse(expr: str, var_names: List[str] = None, rational: bool = False, evaluate: bool = True):
+def _parse(expr: str, var_names: List[str] = None, rational: bool = False, evaluate: bool = True, binders: int = 0):
     if not _ensure_sympy():
         raise ValueError("requires the optional math extra (sympy); not installed on this box")
     locals_ = {n: Symbol(n) for n in (var_names or [])}
@@ -508,7 +627,7 @@ def _parse(expr: str, var_names: List[str] = None, rational: bool = False, evalu
     # or 6*0.1 = 0.60 is TRUE by exact arithmetic rather than tripping on the last IEEE-754 bit. This
     # TIGHTENS exactness (no float wobble); it never loosens it. Default off to leave every symbolic
     # caller (equality/derivative/limit/series) unchanged.
-    return parse_expression(expr, locals_, rational, evaluate, word_mod=True)
+    return parse_expression(expr, locals_, rational, evaluate, word_mod=True, binders=binders)
 
 
 def _pole_bases(expr):
@@ -704,9 +823,9 @@ def verify_limit(spec: Dict[str, Any]) -> VerifierResult:
         return na("mathematics.limit")
     try:
         x = Symbol(var)
-        ef = _parse(f, [var])
-        ep = _parse(str(point), [var])
-        ec = _parse(str(claimed), [var])
+        ef = _parse(f, [var], binders=1)
+        ep = _parse(str(point), [var], binders=1)
+        ec = _parse(str(claimed), [var], binders=1)
         actual = limit(ef, x, ep)
         if simplify(actual - ec) == 0:
             return confirm("mathematics.limit", f"lim_{{{var}->{point}}} {f} = {actual}, matches {claimed}")
@@ -730,11 +849,11 @@ def verify_solve(spec: Dict[str, Any]) -> VerifierResult:
         x = Symbol(var)
         if "=" in eq and "==" not in eq:
             lhs, rhs = eq.split("=", 1)
-            eq_expr = _parse(lhs, [var]) - _parse(rhs, [var])
+            eq_expr = _parse(lhs, [var], binders=1) - _parse(rhs, [var], binders=1)
         else:
-            eq_expr = _parse(eq, [var])
+            eq_expr = _parse(eq, [var], binders=1)
         actual = sorted(solve(eq_expr, x), key=lambda s: str(s))
-        claimed_set = sorted([_parse(str(c), [var]) for c in claimed], key=lambda s: str(s))
+        claimed_set = sorted([_parse(str(c), [var], binders=1) for c in claimed], key=lambda s: str(s))
         if len(actual) != len(claimed_set):
             return mismatch("mathematics.solve",
                             f"solutions count mismatch: actual {actual} vs claimed {claimed_set}")
@@ -770,6 +889,8 @@ def verify_inequality(spec):
     try:
         # SAME guards as equality (rejects '#'-truncation, giant exponents, oversized ASTs)
         L, R = _parse(lhs, [var]), _parse(rhs, [var])
+    except UnboundRefused as e:
+        return _refused("mathematics.inequality", e)
     except _PARSE_ERRORS as e:
         return error("mathematics.inequality", f"parse error: {e}")
     x = sp.Symbol(var, real=True)
@@ -1044,10 +1165,13 @@ def verify_calc_chain(spec: Dict[str, Any]) -> VerifierResult:
         return False
 
     step_failures: List[str] = []
+    unbound = None      # read last: a chain is false on any false step, and a refusal must not hide one
     for i, (lhs, rhs) in enumerate(pairs):
         try:
             if not _ok(lhs, rhs):
                 step_failures.append(f"step {i + 1}: {lhs.strip()} != {rhs.strip()}")
+        except UnboundRefused as e:
+            unbound = e
         except _PARSE_ERRORS:
             step_failures.append(f"step {i + 1}: unparseable ({lhs.strip()}={rhs.strip()})")
     final_failure = None
@@ -1055,6 +1179,8 @@ def verify_calc_chain(spec: Dict[str, Any]) -> VerifierResult:
         try:
             if not _ok(str(claimed_answer), pairs[-1][1]):
                 final_failure = f"final answer {claimed_answer} != last step {pairs[-1][1].strip()}"
+        except UnboundRefused as e:
+            unbound = e
         except _PARSE_ERRORS:
             final_failure = f"final answer {claimed_answer} not comparable"
     failures = step_failures + ([final_failure] if final_failure else [])
@@ -1071,6 +1197,8 @@ def verify_calc_chain(spec: Dict[str, Any]) -> VerifierResult:
         data["need"] = "the final computation, written as a step"
     if failures:
         return mismatch(name, "; ".join(failures)[:300], data)
+    if unbound is not None:
+        return _refused(name, unbound)
     tail = f"; final answer {claimed_answer}" if claimed_answer is not None else ""
     return confirm(name, f"all {len(pairs)} steps verified{tail}", data)
 
@@ -1094,6 +1222,8 @@ def verify_numeric(spec: Dict[str, Any]) -> VerifierResult:
         val = _parse(str(expr), spec.get("variables") or [])
         fv = float(val.evalf() if hasattr(val, "evalf") else val)
         cv = float(claimed)
+    except UnboundRefused as e:
+        return _refused(name, e)
     except _PARSE_ERRORS as e:
         return error(name, f"could not evaluate {expr!r}: {type(e).__name__}")
     except (TypeError, ValueError):
@@ -1199,22 +1329,29 @@ def verify_system(spec: Dict[str, Any]) -> VerifierResult:
     if not eqs or not isinstance(claimed, dict):
         return na(name)
     try:
-        subs = {Symbol(k): _parse(str(v), var_names) for k, v in claimed.items()}
+        subs = {Symbol(k): _parse(str(v), var_names, binders=1) for k, v in claimed.items()}
+    except UnboundRefused as e:
+        return _refused(name, e)
     except _PARSE_ERRORS as e:
         return error(name, f"unparseable claimed value: {type(e).__name__}")
     failures = []
+    unbound = None      # read last: a system is false on any false equation, and a refusal must not hide one
     for eq in eqs:
         if "=" not in str(eq):
             return error(name, f"equation has no '=': {eq!r}")
         lhs, rhs = str(eq).split("=", 1)
         try:
-            if simplify((_parse(lhs, var_names) - _parse(rhs, var_names)).subs(subs)) != 0:
+            if simplify((_parse(lhs, var_names, binders=1) - _parse(rhs, var_names, binders=1)).subs(subs)) != 0:
                 failures.append(str(eq).strip())
+        except UnboundRefused as e:
+            unbound = e
         except _PARSE_ERRORS:
             return error(name, f"unparseable equation: {eq!r}")
     data = {"equations": [str(e).strip() for e in eqs], "claimed_solution": claimed}
     if failures:
         return mismatch(name, "solution fails: " + "; ".join(failures)[:200], data)
+    if unbound is not None:
+        return _refused(name, unbound)
     return confirm(name, f"claimed solution satisfies all {len(eqs)} equations", data)
 
 

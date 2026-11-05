@@ -19,6 +19,7 @@ test_band_consumers.py
 test_benchmark.py
 test_binding.py
 test_biology.py
+test_bound_values.py
 test_bridges.py
 test_bsd_formula.py
 test_bucket.py
