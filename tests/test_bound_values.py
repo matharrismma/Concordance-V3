@@ -274,7 +274,8 @@ def test_no_sequence_and_no_second_number_stays_refused_as_sympy_refuses_it(name
     "Poly(x**2 + y**3)", "Poly(x**2 + y**3, ())", "Poly(x**2 + y**3, 2)", "Poly(sin(x)**2 + cos(x)**3)",
     "degree(x**2 + sin(x)**3)", "degree(x**2 + sin(x)**3, 0)", "degree(x**2 + y**3, 1)", "degree(pi*x**2 + 1)",
     "degree(x**2 + y**3, solveset(sin(pi*x), x))", "Poly(x**2 + y**3, x**2)",
-    # one generator is enough to miss: sympy takes what stands in its place as a generator, and answers 0
+    # one generator is enough to miss: sympy reads an integer in its place as a generator's index, and most of the rest as
+    # a generator it does not find, where it answers 0
     "degree(x**2 + 1, 0)", "degree(x**2 + 1, pi)", "degree(x**2 + 1, true)", "degree(x**2 + 1, (x,))", "degree(x**2 + 1, ())",
     "degree(x**2 + 1, FiniteSet(x))", "Poly(x**2 + 1, x + 1)", "Poly(x**2 + 1, true)", "Poly(x**2 + 1, 2)",
     # a named generator beside one that names none, and a sequence holding one
@@ -546,12 +547,14 @@ def test_what_was_found_is_sympys_own_reading():
     # Poly and degree read that order, and degree evaluates before a binder
     assert sympy.degree(sympy.Poly(x**2 + y**3)) == 2 and sympy.degree(sympy.Poly(y**2 + x**3)) == 3
     assert sympy.degree(x**2 + 1) == 2 and sympy.degree(5) == 0
+    # in a generator's place an integer is an index, and most of the rest a generator it does not find
+    assert sympy.degree(x**2 + 1, 0) == 2 and sympy.degree(x**2 + 1, x + 1) == 0 and sympy.degree(x**2 + 1, sympy.pi) == 0
 
 
 def _paragraph():
     text = (ROOT / "MEASURED.md").read_text(encoding="utf-8")
     start = text.index("- **gcd and lcm, by symbol order.**")
-    return re.sub(r"\s+", " ", text[start:text.index("**Time.**", start)])
+    return re.sub(r"\s+", " ", text[start:text.index("- **Poles, as written.**", start)])
 
 
 def test_every_reading_the_record_quotes_is_a_row_here():
@@ -570,8 +573,9 @@ def test_the_record_says_what_the_rule_does_and_names_its_misses():
                   "the true ones with the false", "even where nothing later reads their order",
                   "even when nothing substitutes that symbol", "`tests/test_bound_values.py`", "Nine finite sums",
                   "solve and solveset among them", "by an expression sympy discovers in the argument",
-                  "which its Sum oracle cannot see",
-                  "moved under a rename by the pole comparison and not by the function"):
+                  "which its Sum oracle cannot see", "as a generator's index",
+                  "moved under a rename by the pole comparison and not by the function",
+                  "and it still does: `Mod` is a call"):
         assert words in para, words
     assert len(SUMS_NOT_REDUCED) == 9
     assert "alphabetical" not in para and "sign-ambiguous" not in para
@@ -616,9 +620,9 @@ def test_every_allowlisted_name_is_classified_exactly_once():
 
 
 # What the sweep found that is neither order-reading nor eager, so a change to any of them fails it until it is read.
-# (a) Class C, step poles' to close: two pole bases that differ only as written read as two poles, so the claim the
-# sweep writes reads BROKEN when a rename puts y + x where the value prints x + y. That step empties this and the test
-# below it.
+# (a) Class C, which stays: two pole bases that differ only as written read as two poles, so the claim the sweep writes
+# reads BROKEN when a rename puts y + x where the value prints x + y. Step poles-product lifts such a BROKEN only on proof, and
+# Mod is a call off the list that proof reads, so this is its named miss and the set stands as it was.
 MOD_MOVES = ("Mod(x**2 - y**2, x + y)", "(x + y)*(Mod((x**2 - y**2)/(x + y), 1))")
 MOVED_BY_POLES = frozenset({("x and y exchanged", MOD_MOVES[0]), ("outside the table", MOD_MOVES[0])})
 # (b) A false BROKEN on a true claim, and no eager function: Sum(f(k)).doit() equals the three terms, as the test below
@@ -635,7 +639,8 @@ SUMS_NOT_REDUCED = (
 
 
 def test_a_pole_written_the_other_way_still_moves_the_sweeps_claim():
-    """Today's reading of class C, pinned: step poles reads these as one pole, and updates this and MOVED_BY_POLES."""
+    """Class C as the sweep meets it, pinned. The two bases are one pole, and the proof that would say so reads no call, so
+    the base's BROKEN stands under these renames: the named miss of step poles-product, which the sweep below also reads."""
     a, b = MOD_MOVES
     assert read("equality", {"expr_a": a, "expr_b": b}) == H
     for name, text in sorted(MOVED_BY_POLES):

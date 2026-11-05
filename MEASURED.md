@@ -353,7 +353,8 @@ Per domain, the benchmark cases each restatement was applied to; each declined t
   on generators nobody named, and a degree or Poly with a free symbol inside a binder, solve and solveset among them, or
   in modes system, limit and solve are unbound: `UnboundRefused` is raised before the call runs, and the claim reads
   INCOMPLETE in every mode, with a reason that says what would bind it. A generator is named by a symbol or by an
-  expression sympy discovers in the argument; sympy takes anything else as a generator and answers 0.
+  expression sympy discovers in the argument. Anything else names none: sympy reads an integer there as a generator's
+  index, so degree(x**2 + 1, 0) is 2, and most of the rest as a generator it does not find, where it answers 0.
   `Sum(gcd(k, 12), (k, 1, 4)) = 4`, `Subs(gcd(x, 12), x, 6) = 1`, `gcd(x, x + 2) = 1`, `gcd(12.0, 18.0) = 1`,
   `degree(Poly(x**2 + y**3)) = 2`, `degree(x**2 + 1, x + 1) = 0`, `Subs(degree(x**2 + 1), x, 2) = 2` and
   `gcd(solve(degree(x**2 + 1) - x, x), 4) = 2` each read HOLDS before this rule. `gcd(y - x, x - y) = x - y` and `gcd(y**2 - x**2, x - y) = x - y` read INCOMPLETE and,
@@ -367,10 +368,55 @@ Per domain, the benchmark cases each restatement was applied to; each declined t
   counts binders and does not work out which symbol each one binds. A sweep of every other name on the allowlist, in
   that test file behind `-m slow`, found no other function that reads an order or evaluates before a binder; review found
   solve and solveset, which its Sum oracle cannot see. One claim on
-  `Mod` moved under a rename by the pole comparison and not by the function, which is the pole class this run's step
-  poles reads. Nine finite sums such as `Sum(log(k), (k, 1, 3))` read BROKEN against the three terms they equal, because
+  `Mod` moved under a rename by the pole comparison and not by the function, and it still does: `Mod` is a call, off the
+  list step poles-product's proof reads, so it is that step's named miss. Nine finite sums such as
+  `Sum(log(k), (k, 1, 3))` read BROKEN against the three terms they equal, because
   simplify leaves them unreduced or the pole guard reads the bound k as a pole: a false BROKEN at the run's base too, and
   no eager function.
+- **Poles, as written.** Run 2026-11-04-gcd-lcm-order's step poles-product measured the equality guard: it compared pole
+  bases as written, so one denominator written two ways read as two poles and a true identity read BROKEN.
+  `1/(y + x) = 1/(x + y)`, `1/(x - y) = -1/(y - x)`, `1/(2*x - 2*y) = 1/(2*(x - y))` and
+  `1/(x**2 - y**2) = 1/((x - y)*(x + y))` each did. Three attempts at this failed review: two lifted false claims, and each
+  spent more than its limits said. So the rule is narrow. The compare can only lift a BROKEN, and only on proof, and anything
+  it cannot prove keeps the base's reading, so its worst case is what the base did. `_domain_mismatch` stays as it was, and
+  there is no new refusal. One helper, `_same_zeros`, is asked before a confirm once that guard has named a difference. It
+  runs only on a rational function with rational coefficients, written out on each whole side, because the guard reads only
+  what stands in the unevaluated read, and a term that cancels takes its pole with it. Each side is read twice before
+  anything is evaluated. The text's syntax tree is a list of what may stand: a name, an integer, a sign on a name or an
+  integer, and +, -, *, / and ** with an integer exponent. And the unevaluated value holds nothing but sums, products,
+  integer powers, symbols and rationals. Both reads are needed: pi, E and I are names to the first, and a call and a % have
+  already run by the second, so what sat under them was never read. The plan took any unary sign, and the build narrowed
+  that: sympy adds a negated sum's terms back up, so `-(1/x - 1/x) + 1/(y + x) = 1/(x + y)` loses its pole in the unevaluated
+  read with no call in the text, and would have read HOLDS. Every written factor of every pole base then builds as a
+  polynomial over QQ and compares by primitive part with its sign fixed. What matches leaves the compare, and a side left
+  alone ends it. What is left on both sides is multiplied out in sympy's sparse polynomial ring, and the two products must
+  be one polynomial up to a nonzero rational. A product has exactly the zeros of its factors, so equal products prove the
+  zeros equal, and `1/(x**60 - y**60) = 1/((x**30 - y**30)*(x**30 + y**30))` reads HOLDS. This is a check and not a search,
+  so nothing factors and no degree budget exists. The attempt before this one factored, inside a degree budget, and no limit
+  read beforehand bounded that: a product of 60 terms at degree 20 in 12 symbols, inside all of them, took 17 s in
+  factor_list. Nor is the product a Poly's, which is dense and walks every power of every symbol: a claim of 161 characters,
+  384 terms a side, took 4.8 s that way and 0.06 s in the ring. Two paths confirmed without reading the guard at all, the
+  exact-decimal and the stated-precision, which a side reaches once it cancels to a number: `0.1*x/x + 0.2 = 0.3` read HOLDS
+  beside `x/x = 1` reading BROKEN, and so did `x/x*3.14159 = 3.14` stated to 3.14. Now every confirm reads this answer, and
+  both read BROKEN, as does a claim with a pole in a term 0 multiplies, inside a window stated to 3.1. A pole the exact
+  compare cannot prove keeps the base's BROKEN, the true ones with the false: a float, a non-rational constant, a
+  non-polynomial base, anything off the list, a claim past the term bound, or a power's multiplicity the written factors
+  drop. That is the miss this names, and `tests/test_poles.py` holds it. `1/(x**2 - 2*x*y + y**2) = 1/(x - y)**2` is true
+  and its power's multiplicity is dropped, and `1/simplify(y + x) = 1/(y + x)` is true and off the list, and a rename that
+  writes the sum in sympy's order reads HOLDS, so that one row is left out of the rename test and says why. Three limits end
+  the proof, each measured with sympy 1.14.0 on this laptop against a verify's 8 s, and past any of them the proof ends, so
+  a limit only ever keeps a BROKEN. The term bound is 500 terms per claim over every written factor, read without expanding,
+  and 500 for each side's product, read before the multiplication runs. A value no rational function of its free symbols
+  reads past it. Each written factor weighs at most 64, its degree and about its coefficients' bits, read without expanding,
+  which the plan's degree 60 needs: a term count sees neither, and twelve terms near degree 9000 in each of twelve symbols
+  took 19.9 s to build, and eight binomials with coefficients of 500,000 bits did not multiply out in 25 s. And a claim holds
+  at most 12 symbols, since Poly is dense in them: 280 symbols took 2.4 s to build, and 12 take nothing a clock reads. A
+  worked detail skips its expand and its simplify for a value past the term bound and for a claim the proof lifted, and
+  falls through to its plain detail. The guard used to answer before that ran, and simplify on a side has no bound a term
+  count can give: ten fractions in ten symbols, 22 terms by the estimate, did not finish in 30 s. Cost is pinned by counts and
+  never by timing: spies prove no claim makes a factor_list call and no dense Poly multiplication runs in the compare, a spy
+  on expand reads the terms of what expand returns, a property test holds the estimate to them, and a claim with a non-zero
+  difference reaches the proof only on the stated-precision path, where the term bound holds it to the same cost.
 
 **Time.** In this run the benchmark took 21.5 s and the tier 3.0 s, on this laptop with another heavy Python process
 running throughout; the same audit on the same laptop took between 18.8 s and 36.3 s for the benchmark today. Times

@@ -103,6 +103,12 @@ _MAX_AST_NODES = 2000
 _MAX_AST_DEPTH = 60
 _MAX_EXPR_CHARS = 4000
 
+# What the pole proof may spend, set by measurement with sympy 1.14.0 (MEASURED.md, "Poles, as written"). Past any limit the
+# proof ends and the guard's reading stands, so a limit can never move a verdict but back to what it was.
+_MAX_POLE_TERMS = 500       # every written factor of one claim, each side's product, and what a worked detail expands
+_MAX_POLE_WEIGHT = 64       # one written factor's degree and coefficient bits, read without expanding: see _weight
+_MAX_POLE_SYMBOLS = 12      # the symbols of one claim, which every Poly is dense in
+
 # SECURITY (red team 2026-08-06, CRITICAL; replaced 2026-11-04): sympy.sympify() EVALUATES arbitrary
 # Python, and an expr that named its way out of it was an unauthenticated RCE reachable from public
 # POST /verify. A guard in front of it was tried and is withdrawn: a check on a text that something
@@ -385,9 +391,10 @@ def _require_generators(name: str, args: list, binders: int) -> None:
     """THE RULE for Poly and degree: a value resting on generators nobody named is unbound. sympy discovers them and
     orders them by their names, so with two or more the value moves with what the symbols are called. A generator is
     named by a symbol, or by an expression discovery finds in the argument. Anything else in a generator's place, a
-    number, a boolean, a sequence, a set or another expression, names none, and sympy takes it as a generator all the
-    same and answers 0, so it leaves the value unbound wherever there is a generator to miss: a constant has none. Poly
-    reads a sequence of those as its generators, and a Poly carries the generators the claim gave it. Inside a binder, a
+    number, a boolean, a sequence, a set or another expression, names none. sympy reads an integer there as a generator's
+    index, so degree(x**2 + 1, 0) is 2, and most of the rest as a generator it does not find, where it answers 0. So each
+    leaves the value unbound wherever there is a generator to miss: a constant has none. Poly reads a sequence of those
+    as its generators, and a Poly carries the generators the claim gave it. Inside a binder, a
     value with a free symbol is unbound however it was written, since it evaluates before the binder substitutes: the
     reader counts binders and does not work out which symbol each one binds, so this refuses a value whose symbol
     nothing substitutes too."""
@@ -668,6 +675,133 @@ def _domain_mismatch(a_str, b_str, var_names):
     return ", ".join(sorted(str(p) for p in diff_)) if diff_ else None
 
 
+def _term_estimate(value) -> int:
+    """At most how many terms expanding a value writes, read without expanding it, and one past the bound for anything
+    that count is not true of. It is true only of a rational function of the free symbols, built here from what the count
+    can see: atoms, sums, which add, products, which multiply, and integer powers, which count the terms of their
+    multinomial, an inverse too, since expand multiplies out a denominator. A number may also take a rational power. Past
+    those, expand reaches what no count sees: it splits a**(60 + t) into a**60*a**t and multiplies that out, and
+    exp(60*log(a) + t) is the same power. The count stops one past the bound, so no nesting can make the estimate the cost."""
+    over = _MAX_POLE_TERMS + 1
+    if getattr(value, "is_Atom", False):
+        return 1
+    if isinstance(value, _sp.Pow) and (value.exp.is_Integer or (value.exp.is_Rational and not value.base.free_symbols)):
+        terms = _term_estimate(value.base)
+        return min(_math.comb(min(_ceiling(abs(value.exp)), over) + terms - 1, terms - 1), over)
+    product = isinstance(value, _sp.Mul)
+    if not product and not isinstance(value, _sp.Add):
+        return over
+    total = int(product)
+    for part in value.args:
+        terms = _term_estimate(part)
+        total = min(total * terms if product else total + terms, over)
+    return total
+
+
+def _written_out(node) -> bool:
+    """THE LIST, on the text's syntax tree: a name, an integer, a sign on one of those, and +, -, *, / and ** with an
+    integer exponent. It is a list of what may stand, so anything else ends the proof. A call and a % have already run in
+    the unevaluated read, so what sat under them was never read for a pole. A decimal reads as a float, where two zeros can
+    become one. A sign stands on a name or an integer alone: sympy adds a negated sum's terms back up, so -(1/x - 1/x) is 0
+    in the unevaluated read and its pole is gone with no call in the text."""
+    if isinstance(node, _ast.BinOp):
+        if isinstance(node.op, _ast.Pow):
+            exponent = node.right.operand if isinstance(node.right, _ast.UnaryOp) else node.right
+            return _written_out(node.left) and isinstance(exponent, _ast.Constant) and _written_out(node.right)
+        return type(node.op) in _ARITHMETIC and _written_out(node.left) and _written_out(node.right)
+    if isinstance(node, _ast.UnaryOp):
+        return (isinstance(node.op, (_ast.USub, _ast.UAdd)) and isinstance(node.operand, (_ast.Name, _ast.Constant))
+                and _written_out(node.operand))
+    return isinstance(node, _ast.Name) or (isinstance(node, _ast.Constant) and type(node.value) is int)
+
+
+def _rational_value(value) -> bool:
+    """The same list on the unevaluated value: a sum, a product, an integer power, a symbol or a rational, and nothing else.
+    The syntax tree cannot say this alone, since pi, E and I are names there and only the value knows they are no symbols."""
+    if isinstance(value, _sp.Pow):
+        return value.exp.is_Integer and _rational_value(value.base)
+    if isinstance(value, (_sp.Add, _sp.Mul)):
+        return all(map(_rational_value, value.args))
+    return value.is_Symbol or value.is_Rational
+
+
+def _weight(value) -> int:
+    """What a value of the list weighs, read without expanding: its degree at most, and about its coefficients' bits, which
+    the factors of a term add to and a power multiplies. A term count cannot see either, and each is a cost of its own. Poly
+    is dense, so twelve terms near degree 9000 in each of twelve symbols took 19.9 s to build, and eight binomials with
+    coefficients of 500,000 bits did not multiply out in 25 s, in a ring or anywhere."""
+    if isinstance(value, _sp.Pow):
+        return _weight(value.base) * abs(int(value.exp))
+    if isinstance(value, _sp.Mul):
+        return sum(map(_weight, value.args))
+    if isinstance(value, _sp.Add):
+        return max(map(_weight, value.args))
+    return 1 if value.is_Symbol else int(max(abs(value.p), value.q)).bit_length()
+
+
+def _written_factors(base) -> list:
+    """A pole base's factors as written: a product's arguments and the base of a positive integer power, nothing expanded.
+    Each one's zeros are zeros of the base, and every zero of the base is a zero of one of them."""
+    if isinstance(base, _sp.Mul):
+        return [factor for arg in base.args for factor in _written_factors(arg)]
+    if isinstance(base, _sp.Pow) and base.exp.is_Integer and base.exp > 0:
+        return _written_factors(base.base)
+    return [base]
+
+
+def _unit_free(poly):
+    """A polynomial's primitive part with its sign fixed, so two that differ by a nonzero constant are one. Which sign is
+    any fixed choice, since it is only ever compared, so sympy's order of the symbols cannot move an answer."""
+    part = poly.primitive()[1]
+    return -part if part.LC() < 0 else part
+
+
+def _product(polys, ring):
+    """Polynomials multiplied out in sympy's sparse ring, whose cost is their terms. A Poly's own product is dense, so it walks
+    every power of every symbol: a claim of 161 characters, inside every limit here, took 4.8 s that way and 0.06 s this way."""
+    return _functools.reduce(_operator.mul, (ring.from_dict(poly.as_dict(native=True)) for poly in polys))
+
+
+def _same_zeros(a_str, b_str, var_names) -> bool:
+    """Whether the two sides' denominators are proved to vanish together. Asked before a confirm, once _domain_mismatch has
+    named a difference, so a claim with a non-zero difference reaches it on the stated-precision path alone. It can only
+    lift: True reads as if no difference were named, and anything else, every failure included, keeps the guard's reading.
+    So its worst case is what the guard did alone, and there is no third answer. Each side must be a rational function with
+    rational coefficients, written out, read twice before anything is evaluated, because _pole_bases reads only what stands
+    in that read: a term that cancels takes its pole with it, and the proof must see every denominator or none. Then the
+    written factors of every pole base compare as polynomials over QQ, and what matches leaves. What is left on both sides
+    is multiplied out, since a product has exactly the zeros of its factors, so equal products prove the zeros equal. That
+    is a check and not a search, so nothing here factors: no limit read beforehand bounds what factoring costs."""
+    try:
+        if not all(_written_out(_ast.parse(_normalise_expression(text, True), mode="eval").body) for text in (a_str, b_str)):
+            return False
+        sides = [_parse(text, var_names, evaluate=False) for text in (a_str, b_str)]
+        if not all(map(_rational_value, sides)):
+            return False
+        left, right = ({factor for base in _pole_bases(side) for factor in _written_factors(base)} for side in sides)
+        factors = left | right
+        numbers = {factor for factor in factors if factor.is_number}
+        if not all(number.is_Rational and number != 0 for number in numbers):
+            return False
+        symbols = sorted(sides[0].free_symbols | sides[1].free_symbols, key=str)
+        if (len(symbols) > _MAX_POLE_SYMBOLS or sum(map(_term_estimate, factors)) > _MAX_POLE_TERMS
+                or max(map(_weight, factors)) > _MAX_POLE_WEIGHT):
+            return False
+        polys = {factor: _sp.Poly(factor, *symbols, domain="QQ") for factor in factors - numbers}
+        if any(poly.is_zero for poly in polys.values()):
+            return False        # a denominator that is zero everywhere has no zeros to compare
+        left, right = ({_unit_free(poly) for factor, poly in polys.items() if factor in side} for side in (left, right))
+        left, right = left - right, right - left
+        if not left or not right:
+            return not left and not right
+        if max(_math.prod(len(poly.terms()) for poly in side) for side in (left, right)) > _MAX_POLE_TERMS:
+            return False
+        ring = _sp.ring(symbols, _sp.QQ)[0]
+        return _product(left, ring).monic() == _product(right, ring).monic()
+    except Exception:
+        return False
+
+
 _REFUSAL = "cannot parse "
 
 
@@ -676,9 +810,28 @@ def _refused(name: str, reason, what: str = "expression") -> VerifierResult:
     return na(name, f"{_REFUSAL}{what}: {reason}")
 
 
-def _worked_equality(a, b, ea, eb):
+_REMOVABLE = "a removable singularity makes this NOT an unconditional identity (e.g. x/x is undefined at x=0)"
+
+
+def _pole_answer(a, b, dm, var_names, consequence: str = _REMOVABLE):
+    """What the poles answer before a confirm, or None when they raise nothing. Every confirm in verify_equality reads this
+    first, however the two sides came to agree: a side that cancelled to a number still has the pole it was written with,
+    so arithmetic and a stated window can no more lift a removable singularity than simplify can. Only the proof lifts."""
+    if dm and not _same_zeros(a, b, var_names):
+        return mismatch("mathematics.equality",
+                        f"{a} == {b} holds only off the singular set (denominator vanishes at: {dm}); {consequence}")
+    return None
+
+
+def _worked_equality(a, b, ea, eb, lifted=None):
     """Human-readable detail SHOWING the work behind a confirmed equality (the canonical
-    form both sides reduce to). Every form is computed by sympy, never fabricated."""
+    form both sides reduce to). Every form is computed by sympy, never fabricated. A value that
+    is no rational function of its free symbols, or is past the term bound, is not worked, and the
+    plain detail stands. Nor is a claim the proof lifted: the guard used to answer before this
+    ran, and simplify on one side has no bound a term count can give: ten fractions in ten
+    symbols estimate 22 terms, and it did not finish in 30 s."""
+    if lifted or max(_term_estimate(ea), _term_estimate(eb)) > _MAX_POLE_TERMS:
+        return f"{a} = {b}; the difference simplifies to 0"
     try:
         ca, cb = expand(ea), expand(eb)
         if ca == cb:
@@ -706,18 +859,11 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
         diff_ = simplify(ea - eb)
         _dm = _domain_mismatch(a, b, var_names)
         if diff_ == 0:
-            if _dm:
-                return mismatch("mathematics.equality",
-                    f"{a} == {b} holds only off the singular set (denominator vanishes at: "
-                    f"{_dm}); a removable singularity makes this NOT an unconditional "
-                    f"identity (e.g. x/x is undefined at x=0)")
-            return confirm("mathematics.equality", _worked_equality(a, b, ea, eb))
+            return (_pole_answer(a, b, _dm, var_names)
+                    or confirm("mathematics.equality", _worked_equality(a, b, ea, eb, _dm)))
         if expand(ea - eb) == 0:
-            if _dm:
-                return mismatch("mathematics.equality",
-                    f"{a} == {b} holds only off the singular set (denominator vanishes at: "
-                    f"{_dm}); not an unconditional identity")
-            return confirm("mathematics.equality", _worked_equality(a, b, ea, eb))
+            return (_pole_answer(a, b, _dm, var_names, "not an unconditional identity")
+                    or confirm("mathematics.equality", _worked_equality(a, b, ea, eb, _dm)))
         # EXACT DECIMALS (2026-10-08, the failure report C3): "0.1 + 0.2 = 0.3" is TRUE, and IEEE-754 left
         # 5.55e-17 behind, which read as a mismatch. When both sides are plain numbers, re-read every decimal
         # as the exact rational it writes (0.1 = 1/10) and compare exactly — the same arithmetic that already
@@ -729,9 +875,10 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
             try:
                 ra, rb = _parse(a, var_names, rational=True), _parse(b, var_names, rational=True)
                 if simplify(ra - rb) == 0:
-                    return confirm("mathematics.equality",
-                                   f"{a} = {b}; by exact rational arithmetic both sides reduce to {ra}",
-                                   {"exact_rational": str(ra)})
+                    return (_pole_answer(a, b, _dm, var_names)
+                            or confirm("mathematics.equality",
+                                       f"{a} = {b}; by exact rational arithmetic both sides reduce to {ra}",
+                                       {"exact_rational": str(ra)}))
             except NoMeaningRefused:
                 raise       # undefined by exact arithmetic: the float read's window must not certify it
             except _PARSE_ERRORS:
@@ -755,9 +902,10 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
                     if bd.status == "ERROR":
                         return bd
                     if bd.passed:
-                        return confirm("mathematics.equality",
-                                       f"{a} = {fa:.10g} agrees with {b} at the stated precision of {sig} significant "
-                                       f"figure(s) (half a unit in the last place = ±{tol:g})", bd.data)
+                        return (_pole_answer(a, b, _dm, var_names)
+                                or confirm("mathematics.equality",
+                                           f"{a} = {fa:.10g} agrees with {b} at the stated precision of {sig} significant "
+                                           f"figure(s) (half a unit in the last place = ±{tol:g})", bd.data))
             if foreign:
                 return mismatch("mathematics.equality", f"{a} - ({b}) simplifies to {diff_}", foreign)
         return mismatch("mathematics.equality", f"{a} - ({b}) simplifies to {diff_}")

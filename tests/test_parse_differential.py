@@ -390,8 +390,11 @@ REFUSED = {
 }
 
 # Two sides that differ only in how a sum or a product nests, and the claims around them: each read by pole sets against
-# sympy's evaluate=False, and by the verdict it read at the step's base. A sum a call returned stays whole, so
-# 1/(expand(x+y)+z) keeps its own pole base: flattening by value would move it from BROKEN to HOLDS.
+# sympy's evaluate=False, and by the verdict it reads. A sum a call returned stays whole, so 1/(expand(x+y)+z) keeps its own
+# pole base: flattening by value would move it from BROKEN to HOLDS. 1/(x-(y-z)) read BROKEN at this test's step, and that
+# was wrong: both denominators are the one polynomial x - y + z, so the claim is a true identity with one pole. It reads HOLDS
+# since step poles-product of run 2026-11-04-gcd-lcm-order, where the build and the guard stayed as they were and a proof
+# lifted it. A call is off that proof's list, so the two expand rows keep their BROKEN.
 POLE_PAIRS = [
     ("1/(x+(y+z))", "1/(x+y+z)", "HOLDS"),
     ("1/(x+y+z)", "1/(x+(y+z))", "HOLDS"),
@@ -399,7 +402,7 @@ POLE_PAIRS = [
     ("1/(a+(b+c))", "1/(a+b+c)", "HOLDS"),
     ("1/(x+(y+1))", "1/(x+y+1)", "HOLDS"),
     ("1/(x+(y-z))", "1/(x+y-z)", "HOLDS"),
-    ("1/(x-(y-z))", "1/(x-y+z)", "BROKEN"),
+    ("1/(x-(y-z))", "1/(x-y+z)", "HOLDS"),
     ("(a+(b+c))**-1", "(a+b+c)**-1", "HOLDS"),
     ("1/(x+(y+z))+1", "1+1/(x+y+z)", "HOLDS"),
     ("(x+(y+z))/(x+(y+z))", "1", "BROKEN"),
