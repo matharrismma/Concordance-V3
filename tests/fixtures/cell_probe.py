@@ -219,6 +219,7 @@ def _golden(domain: str):
 
 
 EQUALITY = {"mode": "equality", "params": {"expr_a": "(a+b)**2", "expr_b": "a**2+2*a*b+b**2", "variables": {}}}
+POLYNOMIAL = {"mode": "polynomial", "params": {"gcd": ["y - x", "x - y"], "claimed_gcd": "x - y", "generators": ["x", "y"], "ring": "QQ"}}
 DRAFTS = [{"writer": "a", "claims": [{"id": "pay", "value": 100.0}]}, {"writer": "b", "claims": [{"id": "pay", "value": 120.0}]}]
 TOOL_ARGS = {
     "verify": {"mode": "equality", "params": EQUALITY["params"], "seal": False},
@@ -254,6 +255,8 @@ def wall_mode() -> None:
     sealed = json.loads(out)
     verdicts["equality"] = sealed["verdict"]
     h = sealed["seal"]["content_hash"]
+    _s, out = go("POST", "/verify", {"seal": ["0"]}, POLYNOMIAL)
+    verdicts["polynomial_mode"] = json.loads(out)["verdict"]
     verdicts["steps"] = {}
     for domain in ("physics", "statistics", "formal_logic", "computer_science", "polynomial"):
         _s, out = go("POST", "/verify", {"seal": ["0"]}, {"steps": [_golden(domain)]})

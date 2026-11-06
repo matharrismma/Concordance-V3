@@ -143,6 +143,7 @@ _MATH_MODES = {
     "numeric": _math.verify_numeric,              # evaluate an expression, check a claimed value
     "number_theory": _math.verify_number_theory,  # gcd / lcm / primality / factorial / binomial / modulo
     "system": _math.verify_system,                # a claimed solution to a system, by substitution
+    "polynomial": _math.polynomial_claim,         # a gcd or lcm of polynomials, in the ring and generators stated
 }
 
 

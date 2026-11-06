@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from . import verifiers as _V
 
 _MATH_MODES = {"equality", "inequality", "derivative", "integral", "limit", "solve", "numeric",
-               "calc_chain", "system", "number_theory"}
+               "calc_chain", "system", "number_theory", "polynomial"}
 
 
 def _module_for(domain: str) -> Optional[str]:

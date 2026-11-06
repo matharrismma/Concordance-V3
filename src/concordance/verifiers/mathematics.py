@@ -1908,40 +1908,207 @@ def verify_numeric(spec: Dict[str, Any]) -> VerifierResult:
     return mismatch(name, f"{expr} = {fv:.10g}, claimed {cv} — off by {diff:.4g}; {bd.detail}", data)
 
 
+# The claims a number-theory spec can hold, each a value and its claimed answer. A spec holds one.
+_NUMBER_CLAIMS = (("gcd", "claimed_gcd"), ("lcm", "claimed_lcm"), ("is_prime", "claimed_prime"),
+                  ("factorial", "claimed_factorial"), ("binomial", "claimed_binomial"), ("modulo", "claimed_modulo"))
+_MALFORMED_NUMBER = "malformed number-theory input"
+
+
+def _claims_held(spec: Dict[str, Any]) -> list:
+    """The claims a spec states: a value and its claimed answer, both there. A key alone claims nothing."""
+    return [claim for claim in _NUMBER_CLAIMS if all(key in spec for key in claim)]
+
+
+def _more_than_one_claim(name: str, held: list) -> VerifierResult:
+    return error(name, f"{_MALFORMED_NUMBER}: a spec holds one claim, and this one holds {' and '.join(key for key, _ in held)}")
+
+
+def _exact_integer(value) -> int:
+    """The one way a number-theory value is read: an int, a finite float with no fraction, or a text of an integer.
+    int() alone drops a fraction and takes a bool for 1, so anything else stops here. Each refusal is a member of the
+    malformed path, as int()'s own refusal of a text was."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise TypeError(f"{value!r} is not an integer")
+    if isinstance(value, float) and not (_math.isfinite(value) and value.is_integer()):
+        raise ValueError(f"{value!r} is not an integer")
+    return int(value)
+
+
+def _exact_integers(value, count: int = None) -> list:
+    """A list of integers, of exactly count where the claim reads a pair. Iterating a text would read it digit by digit, a
+    dict by its keys, and indexing a longer list would drop the rest, so none of them reaches _exact_integer."""
+    if not isinstance(value, list) or count not in (None, len(value)):
+        raise TypeError(f"expected a list{f' of exactly {count}' if count else ''}, got {_brief(value)}")
+    return [_exact_integer(item) for item in value]
+
+
+def _claimed_integer(value):
+    """A claimed value as it is compared. One with a fraction stands as written: it is a number the answer is not, so it reads
+    BROKEN, where an input with one reads malformed. A text whose value is an integer never has a float with a fraction, so
+    this cannot read a true claim false. Everything else is read as an input is."""
+    number = float(value) if isinstance(value, str) else value
+    if isinstance(number, float) and _math.isfinite(number) and not number.is_integer():
+        return value
+    return _exact_integer(value)
+
+
 def verify_number_theory(spec: Dict[str, Any]) -> VerifierResult:
     """Number-theory claims — gcd, lcm, primality, factorial, binomial, modulo — checked exactly.
     Spec (any one): {"gcd": [12, 18], "claimed_gcd": 6} · {"lcm": [4, 6], "claimed_lcm": 12} ·
     {"is_prime": 17, "claimed_prime": true} · {"factorial": 5, "claimed_factorial": 120} ·
-    {"binomial": [5, 2], "claimed_binomial": 10} · {"modulo": [17, 5], "claimed_modulo": 2}."""
+    {"binomial": [5, 2], "claimed_binomial": 10} · {"modulo": [17, 5], "claimed_modulo": 2}.
+    Every value reads as the exact integer it writes, and a spec holds one claim. A spec holding generators or ring is a
+    polynomial claim: see polynomial_claim."""
     name = "mathematics.number_theory"
+    if "generators" in spec or "ring" in spec:
+        return polynomial_claim(spec)
     if not _ensure_sympy():
         return na(name, "requires the optional math extra (sympy)")
+    held = _claims_held(spec)
+    if len(held) > 1:
+        return _more_than_one_claim(name, held)
     from sympy import igcd, ilcm, isprime, factorial as _fact, binomial as _binom
     try:
         if "gcd" in spec and "claimed_gcd" in spec:
-            a = [int(x) for x in spec["gcd"]]
-            actual, claimed, label = igcd(*a), int(spec["claimed_gcd"]), f"gcd{tuple(a)}"
+            a = _exact_integers(spec["gcd"])
+            actual, claimed, label = igcd(*a), _claimed_integer(spec["claimed_gcd"]), f"gcd{tuple(a)}"
         elif "lcm" in spec and "claimed_lcm" in spec:
-            a = [int(x) for x in spec["lcm"]]
-            actual, claimed, label = ilcm(*a), int(spec["claimed_lcm"]), f"lcm{tuple(a)}"
+            a = _exact_integers(spec["lcm"])
+            actual, claimed, label = ilcm(*a), _claimed_integer(spec["claimed_lcm"]), f"lcm{tuple(a)}"
         elif "is_prime" in spec and "claimed_prime" in spec:
-            actual, claimed, label = bool(isprime(int(spec["is_prime"]))), bool(spec["claimed_prime"]), f"isprime({spec['is_prime']})"
+            n, claimed = _exact_integer(spec["is_prime"]), spec["claimed_prime"]
+            if not isinstance(claimed, bool):
+                raise TypeError(f"claimed_prime must be a real boolean, got {_brief(claimed)}")
+            actual, label = bool(isprime(n)), f"isprime({n})"
         elif "factorial" in spec and "claimed_factorial" in spec:
-            actual, claimed, label = int(_fact(int(spec["factorial"]))), int(spec["claimed_factorial"]), f"{spec['factorial']}!"
+            n = _exact_integer(spec["factorial"])
+            actual, claimed, label = int(_fact(n)), _claimed_integer(spec["claimed_factorial"]), f"{n}!"
         elif "binomial" in spec and "claimed_binomial" in spec:
-            n, k = int(spec["binomial"][0]), int(spec["binomial"][1])
-            actual, claimed, label = int(_binom(n, k)), int(spec["claimed_binomial"]), f"C({n},{k})"
+            n, k = _exact_integers(spec["binomial"], 2)
+            actual, claimed, label = int(_binom(n, k)), _claimed_integer(spec["claimed_binomial"]), f"C({n},{k})"
         elif "modulo" in spec and "claimed_modulo" in spec:
-            a, m = int(spec["modulo"][0]), int(spec["modulo"][1])
-            actual, claimed, label = a % m, int(spec["claimed_modulo"]), f"{a} mod {m}"
+            a, m = _exact_integers(spec["modulo"], 2)
+            actual, claimed, label = a % m, _claimed_integer(spec["claimed_modulo"]), f"{a} mod {m}"
         else:
             return na(name)
     except (TypeError, ValueError, IndexError) as e:
-        return error(name, f"malformed number-theory input: {e}")
+        return error(name, f"{_MALFORMED_NUMBER}: {e}")
     data = {"claim": label, "actual": actual, "claimed": claimed}
     if actual == claimed:
         return confirm(name, f"{label} = {actual}", data)
     return mismatch(name, f"{label} = {actual}, claimed {claimed}", data)
+
+
+_POLYNOMIAL_RINGS = ("ZZ", "QQ")
+
+
+def _polynomial_form(node, names) -> bool:
+    """THE LIST of a polynomial text, on its syntax tree: a named generator, a number, a sign on what is here, a sum and a
+    product of what is here, a division by what holds no generator, and a power to a whole number as written. It is a list
+    of what may stand, because Poly takes what is no polynomial and hands back one, and the value cannot say so afterwards.
+    A call is gone by then: Tuple(1, 2) would read as the coefficients of x + 2, Eq(x, 1) as x - 1, a matrix by its entries, and
+    N(sqrt(2)) as a nearby rational. A division that cancels is gone too, so x/x would read as 1 and take its pole with it."""
+    if isinstance(node, _ast.BinOp):
+        if isinstance(node.op, _ast.Pow):
+            return type(getattr(node.right, "value", None)) is int and _polynomial_form(node.left, names)
+        if type(node.op) not in _ARITHMETIC:
+            return False
+        return _polynomial_form(node.left, names) and _polynomial_form(node.right, () if isinstance(node.op, _ast.Div) else names)
+    if isinstance(node, _ast.UnaryOp):
+        return isinstance(node.op, (_ast.USub, _ast.UAdd)) and _polynomial_form(node.operand, names)
+    if isinstance(node, _ast.Name):
+        return node.id in names
+    return isinstance(node, _ast.Constant) and type(node.value) in (int, float)
+
+
+def _polynomial_in(text, names: list, ring: str):
+    """A text as a polynomial of the claim's ring in the claim's generators, or None where it is not one. The list is read
+    before the text is, so nothing off it ever runs, and a call that would outlast the window is refused at once. Every name
+    is a generator by then, so no symbol reaches a coefficient domain, and a fraction in ZZ is what Poly itself refuses."""
+    if not isinstance(text, str):
+        return None
+    source = _normalise_expression(text, True)
+    if len(source) > _MAX_EXPR_CHARS:
+        return None
+    try:
+        tree = _ast.parse(source, mode="eval")
+        _bound_tree(tree)
+        if not _polynomial_form(tree.body, names):
+            return None
+        return _sp.Poly(_parse(text, names, rational=True), *map(Symbol, names), domain=ring)
+    except Exception:       # a text no read could finish is no polynomial, whatever refused it
+        return None
+
+
+def _polynomial_fold(word: str, polys: list):
+    """The gcd or lcm of polynomials of one ring, by Poly's own two-argument function. sympy reaches an lcm by dividing by the
+    gcd, so an lcm with a zero polynomial is answered here, and it is zero."""
+    if word == "lcm":
+        for poly in polys:
+            if poly.is_zero:
+                return poly
+    return _functools.reduce(getattr(_sp.Poly, word), polys)
+
+
+def _one_answer(one, other, ring: str) -> bool:
+    """Whether two polynomials of one ring are the same answer: they differ by a unit, plus or minus one over ZZ and any
+    nonzero rational over QQ. Zero is no unit's multiple of anything else, so zero equals only zero. No term order or
+    generator order can move this, since both sides are read in the one order the claim stated."""
+    if one.is_zero or other.is_zero:
+        return one.is_zero and other.is_zero
+    return one.monic() == other.monic() if ring == "QQ" else one == other or one == -other
+
+
+def _all_generators(names: list) -> bool:
+    """Whether every name is an identifier the parser reads as that symbol and as nothing else, each once. So pi, I, oo, a
+    function's name and x + 1 name no generator, no claim can read a constant as an indeterminate, and no call runs here."""
+    try:
+        return (all(isinstance(n, str) and n.isidentifier() and _parse(n) == Symbol(n) for n in names)
+                and len(set(names)) == len(names))
+    except _PARSE_ERRORS:
+        return False
+
+
+def polynomial_claim(spec: Dict[str, Any]) -> VerifierResult:
+    """A gcd or lcm of polynomials, read only in the ring and generators the claim states, so no answer rests on a generator
+    order or a unit sympy picked. Spec: {"gcd": ["x**2 - 1", "x - 1"], "claimed_gcd": "x - 1", "generators": ["x"], "ring":
+    "QQ"}, or lcm and claimed_lcm the same way, where ring is ZZ or QQ. Named so tools/unreached.py does not count it: no
+    benchmark case reaches this mode. Everything it returns is plain data, so a cell sends no sympy value to the front."""
+    name = "mathematics.polynomial"
+
+    def refused(reason):
+        return _refused(name, reason, "polynomial claim")
+
+    if not _ensure_sympy():
+        return refused("requires the optional math extra (sympy)")
+    held = _claims_held(spec)
+    if len(held) > 1:
+        return _more_than_one_claim(name, held)
+    word = held[0][0] if held else None
+    if word not in ("gcd", "lcm"):
+        return refused("state gcd or lcm as a list of two or more polynomial texts, with claimed_gcd or claimed_lcm as a text")
+    texts, claimed = spec[word], spec[f"claimed_{word}"]
+    if not isinstance(texts, list) or len(texts) < 2:
+        return refused(f"state {word} as a list of two or more polynomial texts")
+    names, ring = spec.get("generators"), spec.get("ring")
+    if not isinstance(names, list) or not names or not _all_generators(names):
+        return refused("state generators as a list of names, each once, each read as a symbol and nothing else")
+    if not isinstance(ring, str) or ring not in _POLYNOMIAL_RINGS:
+        return refused(f"state ring as 'ZZ' or 'QQ', the two this mode reads{f', not {_brief(ring)}' if ring is not None else ''}")
+    over = f"{_brief(', '.join(names))} over {ring}"
+    polys = []
+    for text in (*texts, claimed):
+        poly = _polynomial_in(text, names, ring)
+        if poly is None:
+            return refused(f"{_brief(text)} is no polynomial in {over}. Write it with coefficients in the ring by sums, products, "
+                           f"powers to a whole number and division by a number, and name every symbol in generators")
+        polys.append(poly)
+    actual = _polynomial_fold(word, polys[:-1])
+    label = f"{word} in {ring}[{', '.join(names)}] of {'; '.join(texts)}"
+    data = {"claim": label, "actual": str(actual.as_expr()), "claimed": claimed, "ring": ring, "generators": list(names)}
+    if _one_answer(actual, polys[-1], ring):
+        return confirm(name, f"{label} = {data['actual']}, which the claim {claimed} is up to a unit of {ring}", data)
+    return mismatch(name, f"{label} = {data['actual']}, and the claim {claimed} differs from it by no unit of {ring}", data)
 
 
 def verify_system(spec: Dict[str, Any]) -> VerifierResult:

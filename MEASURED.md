@@ -342,6 +342,39 @@ Per domain, the benchmark cases each restatement was applied to; each declined t
   a broken claim. The gap is open and filed as its own run (this run's plan, in
   `docs/harness/runs/2026-11-03-restatement-audit.jsonl`); the test pins today's reading, so the run that fixes it
   updates the test.
+- **Mode number_theory, and the polynomial mode.** Run 2026-11-04-gcd-lcm-order's step number-theory measured mathematics'
+  mode number_theory: it read every value with int(), which drops a fraction and takes a bool for 1, walked a text digit by
+  digit, took claimed_prime by its truth and read one claim of two. So `{factorial: 5.9, claimed_factorial: 120}`,
+  `{gcd: '24', claimed_gcd: 2}`, `{is_prime: 17, claimed_prime: 'false'}` and
+  `{gcd: [12, 18], claimed_gcd: 6, lcm: [4, 6], claimed_lcm: 99}` each read HOLDS. Every value now goes through one helper
+  that accepts an int, a finite float with no fraction or a text of an integer, and refuses a bool, a fraction and anything
+  not finite. gcd and lcm must be lists, binomial and modulo lists of exactly two, claimed_prime must be a real boolean and
+  a spec holds one claim, and each breach reads SYSTEM_ERROR through the malformed path. A fraction in a claimed value is a
+  number the answer is not, so `{gcd: [12, 18], claimed_gcd: 6.9}` reads BROKEN with the computed value in the data, and a
+  fraction written as a text reads the same way. `tests/test_number_theory_mode.py` holds every row and the miss. Mode
+  number_theory is closed and the domain number_theory is not: `{gcd_a: 48.7, gcd_b: 36, claimed_gcd: 12}`,
+  `{gcd_a: 48, gcd_b: 36, claimed_gcd: 12.9}`, `{n_prime: 137.5, claimed_prime: true}`,
+  `{n_prime: 137, claimed_prime: 'false'}` and `{factorial_n: 5.9, claimed_factorial: 120}` still read HOLDS through
+  NUM_VERIFY. A request number read through int() across the verifier files is a run of its own. Mode polynomial is what the
+  refusal in the next paragraph points to: a polynomial gcd is defined up to a unit, so a claim that names its ring and
+  generators leaves nothing unbound. It states gcd or lcm as a list of two or more polynomial texts, the claimed value as a
+  text, generators as a list of names and ring as ZZ or QQ, and `polynomial_claim` reads it, from this mode, from mode
+  number_theory and from a MATH_VERIFY packet that holds generators or ring. Two polynomials are the same answer when they
+  differ by a unit: plus or minus one over ZZ, any nonzero rational over QQ, and zero equals only zero. So
+  `QQ [x] gcd [x**2 - 1, x - 1] = 2*x - 2`, `ZZ [x] gcd [2*x + 2, 4*x + 4] = -2*x - 2` and
+  `QQ [x, y] gcd [y - x, x - y] = x - y` read HOLDS, in either order of the generators and under every rename the test
+  applies, and `ZZ [x] gcd [2*x + 2, 4*x + 4] = x + 1` reads BROKEN. No symbol reaches a coefficient domain and nothing reads
+  sympy's order, since every symbol must be a named generator: each text reads through an allow-list on its syntax tree
+  before anything is evaluated, holding the generators, numbers, signs, sums, products, division by a number and powers to
+  a whole number. Poly takes what is no polynomial and hands back one: a Tuple as a coefficient list, an equation as its difference,
+  a matrix by its entries and a float as a nearby rational. And x/x evaluates to 1 with its pole gone. Anything else reads
+  INCOMPLETE through `_refused` and says what to state. That is the mode's named miss: a text whose value is a polynomial and
+  whose form is not reads INCOMPLETE, as `QQ [x] gcd [exp(0)*x, x] = x` and `QQ [x] gcd [x/x, x] = 1` do. Rings beyond ZZ and
+  QQ read INCOMPLETE too. A claim too heavy to finish inside the window sheds to an error, as it does in every mode, and with
+  cells on it costs one cell. What the mode returns is plain data, so sympy stays out of the front. Because `polynomial_claim`
+  is no verify_* function, `tools/unreached.py` does not see it, and no benchmark case reaches this mode, so the moat measures
+  nothing here: `tests/test_polynomial_mode.py` is what holds it. A benchmark golden pair waits for the next re-measurement,
+  since it moves the benchmark's count and every table quoting it.
 - **gcd and lcm, by symbol order.** checker-28 found it by probing R4 outside the population, and run
   2026-11-04-gcd-lcm-order measured what lay under it: a value nobody bound. sympy evaluates a gcd or lcm of expressions
   as polynomials before a binder or a substitution sees it, so the sum of gcd(k, 12) for k from 1 to 4, which is 10, came
@@ -361,7 +394,7 @@ Per domain, the benchmark cases each restatement was applied to; each declined t
   renamed by R4, INCOMPLETE; `lcm(y - x, x - y) = x - y` reads INCOMPLETE and, renamed, INCOMPLETE. Nothing the audit
   measures moves, since no benchmark case or tier row reaches gcd or lcm through an expression, so KNOWN does not list
   it. Three misses are named, and `tests/test_bound_values.py` holds each. A gcd or lcm with a non-rational argument reads
-  INCOMPLETE, the true ones with the false: `gcd(x**2 - 1, x - 1) = x - 1` read HOLDS and now reads INCOMPLETE. A claim
+  INCOMPLETE outside the polynomial mode, the true ones with the false: `gcd(x**2 - 1, x - 1) = x - 1` read HOLDS and now reads INCOMPLETE. A claim
   building a Poly on default generators reads INCOMPLETE even where nothing later reads their order, as
   `degree(Poly(x*y)) = 1` does. A degree or Poly with a free symbol inside a binder, or in modes system, limit and solve,
   reads INCOMPLETE even when nothing substitutes that symbol, as `Sum(degree(y**2 + 1), (k, 1, 3)) = 6` does: the reader

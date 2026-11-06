@@ -35,7 +35,7 @@ REGISTRY: List[ToolSpec] = [
                  "steps": {"type": "array", "items": {"type": "object"}},
                  "mode": {"type": "string", "enum": ["equality", "inequality", "derivative", "integral",
                                                       "limit", "solve", "numeric", "calc_chain", "system",
-                                                      "number_theory"]},
+                                                      "number_theory", "polynomial"]},
                  "params": {"type": "object"},
                  "claim": _S,
                  "document": {"type": "object"},

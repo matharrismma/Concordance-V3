@@ -116,6 +116,7 @@ test_no_other_route.py
 test_no_test_writes_the_stores.py
 test_nuclear_physics.py
 test_number_theory.py
+test_number_theory_mode.py
 test_nutrition.py
 test_oceanography.py
 test_operations_research.py
@@ -132,6 +133,7 @@ test_physics.py
 test_planck_units.py
 test_poles.py
 test_polynomial.py
+test_polynomial_mode.py
 test_pressure_fighting.py
 test_probability.py
 test_public_api.py

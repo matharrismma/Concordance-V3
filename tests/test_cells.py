@@ -335,6 +335,15 @@ def test_sympy_leaves_as_the_string_json_prints_for_it(cells):
     assert crossed(cells, lock_holder.sympy_key()).data == {"by_symbol": {"x": 1}}
 
 
+def test_a_polynomial_reading_leaves_as_plain_data_with_nothing_to_turn_to_a_string(cells):
+    pytest.importorskip("sympy")
+    for claimed, status in (("x - y", "CONFIRMED"), ("x + y", "MISMATCH"), ("sin(x)", "NOT_APPLICABLE")):
+        made = D._MATH_MODES["polynomial"]({"gcd": ["y - x", "x - y"], "claimed_gcd": claimed, "generators": ["x", "y"], "ring": "QQ"})
+        assert made.status == status
+        assert cells._plain(made.data) == made.data and json.loads(json.dumps(made.data)) == made.data
+        assert crossed(cells, made).data == made.data
+
+
 def test_numpy_and_plain_python_leave_as_they_are(cells):
     numpy = pytest.importorskip("numpy")
     got = crossed(cells, lock_holder.numpy_values()).data
@@ -644,6 +653,7 @@ def test_the_front_never_imports_sympy_on_any_public_route(tmp_path):
     assert not [r for r in seen["routes"] if r["sympy"]], "sympy entered the front"
     assert seen["sympy"] is False
     assert seen["verdicts"]["equality"] == "HOLDS"      # real reads ran, in cells: the wall was not vacuous
+    assert seen["verdicts"]["polynomial_mode"] == "HOLDS"
     assert seen["verdicts"]["steps"] == dict.fromkeys(("physics", "statistics", "formal_logic", "computer_science",
                                                        "polynomial"), "HOLDS")
     assert seen["verdicts"]["claim"] == "HOLDS"

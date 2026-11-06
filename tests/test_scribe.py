@@ -177,11 +177,13 @@ def test_one_unchecked_claim_keeps_the_writer_from_clean():
 
 
 def test_a_writer_is_judged_by_its_own_cells():
-    """Two values inside the spread tolerance whose recomputes part: one passes and one errors, so the pass stays open."""
-    drafts = [{"writer": "a", "claims": [{"id": "c", "value": -0.99999}]}, {"writer": "b", "claims": [{"id": "c", "value": -1.00001}]}]
-    for report in _reports({"c": [_math("s", {"MATH_VERIFY": {"factorial": "<value>", "claimed_factorial": 1}})]}, drafts):
+    """Two values inside the spread tolerance whose recomputes part: one passes and one errors, so the pass stays open.
+    5.0 is the integer 5, and 5.00001 is no integer, so its factorial is refused: neither value rides a dropped fraction."""
+    drafts = [{"writer": "a", "claims": [{"id": "c", "value": 5.0}]}, {"writer": "b", "claims": [{"id": "c", "value": 5.00001}]}]
+    for report in _reports({"c": [_math("s", {"MATH_VERIFY": {"factorial": "<value>", "claimed_factorial": 120}})]}, drafts):
         assert report["spectrum"]["spread"] <= scribe.core.SPREAD_TOL
         assert report["verdicts"]["a"]["c"]["verdict"] == "CONFIRMED" and report["verdicts"]["b"]["c"]["verdict"] == "UNCHECKED"
+        assert report["verdicts"]["b"]["c"]["composite"] == "SYSTEM_ERROR"
         assert report["clean_writers"] == ["a"] and report["center"] == "a" and report["status"] == "OPEN"
 
 
