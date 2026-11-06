@@ -101,7 +101,7 @@ def _call_with_timeout(fn, *args):
 # verification in a fresh worker pays that import INSIDE the wall-clock bound, it can — under
 # load — exceed it and turn a TRUE claim into a transient ERROR (errs SAFE, never a false HOLDS,
 # but a false negative all the same). warm() pre-pays it at BOOT, outside the timed path.
-_HEAVY_LIBS = ("sympy", "numpy", "scipy.stats", "scipy.optimize", "scipy.linalg", "scipy.special")
+_HEAVY_LIBS = ("sympy", "sympy.physics.units", "numpy", "scipy.stats", "scipy.optimize", "scipy.linalg", "scipy.special")
 
 
 def warm() -> None:
@@ -122,7 +122,7 @@ def warm() -> None:
 def cell_preload() -> Tuple[str, ...]:
     """What a cell has loaded before its first read, so no read pays for an import inside its window."""
     verifiers = sorted({path for path in _verifiers.VERIFIERS.values() if path.startswith(__package__ + ".")})
-    return (*_HEAVY_LIBS, "sympy.physics.units", __name__, *verifiers)
+    return (*_HEAVY_LIBS, __name__, *verifiers)
 
 
 def use_cells() -> None:

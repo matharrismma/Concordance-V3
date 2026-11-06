@@ -160,6 +160,14 @@ def test_a_domain_read_is_a_named_function_a_cell_can_be_told_to_run():
     assert all(pickle.loads(pickle.dumps(fn)) is fn for fn in D._MATH_MODES.values())
 
 
+def test_what_a_cell_preloads_is_named_only_at_the_site_the_guard_lists():
+    """tests/test_no_other_route.py is the guard, and its sweep is behind -m slow; this is the same scan of this one file."""
+    import test_no_other_route as guard
+    sites = guard.scan(Path(D.__file__).read_text(encoding="utf-8"), "src/concordance/derivation.py")
+    assert {where for where, what in sites if what == guard.IMPORT_SYMPY} == {"<module>"}
+    assert {"sympy", "sympy.physics.units", "numpy", "scipy.stats"} <= set(D.cell_preload())
+
+
 def test_a_raise_in_a_cell_reads_as_a_raise_in_process(cells, monkeypatch):
     monkeypatch.setitem(D._MATH_MODES, "raises", lock_holder.raises)
     here = step("raises")
