@@ -4,6 +4,7 @@ audit                                              3543  <- <entry>
 bucket                                              140  <- <entry>
 capabilities                                        109  <- <entry>
 cas                                                 305  <- <entry>
+cells                                               408  <- derivation
 chess                                               383  <- audit
 compose                                             111  <- <entry>
 compute                                             263  <- audit
@@ -53,4 +54,4 @@ verifiers.si_units                                  188  <- audit
 verifiers.spec                                      379  <- verifiers
 verifiers.thermal_scale                              51  <- verifiers.chemistry
 verifiers.wordcraft                                 889  <- audit
-# 55 modules, 16753 lines (lazy imports)
+# 56 modules, 17161 lines (lazy imports)

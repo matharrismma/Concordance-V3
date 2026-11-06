@@ -19,6 +19,7 @@ from typing import Any, Dict, Tuple
 from urllib.parse import parse_qs, urlsplit
 
 from .config import EngineConfig
+from .derivation import use_cells
 from .mcp import server as _mcp
 from .mcp.http import handle_http as _mcp_http
 
@@ -360,7 +361,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8000, background: bool = False):
+    """Serve with reads in cells (cells.py): what holds Python's global lock must not hold this process."""
     srv = ThreadingHTTPServer((host, port), Handler)
+    use_cells()
     if background:
         t = threading.Thread(target=srv.serve_forever, daemon=True)
         t.start()

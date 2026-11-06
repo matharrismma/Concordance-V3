@@ -369,3 +369,56 @@ status, a pointer, a check name, a band or a read. That is evidence about R1 for
 mathematics claims in the {mode, params} form only, and about R5 for the closure on the tier's fixtures. It says
 nothing about rescaled units, reordered terms inside domain packets, the MATH_VERIFY form or the numeric mode, which
 no restatement here reaches. Product line: finds verifier and closure defects before users do; never a verdict path.
+
+## A stuck read costs one cell: measurement 5 (2026-11-06, run 2026-11-06-killable-cells, on faf738c)
+
+A read the window could not stop no longer stops the engine. Verify work ran on threads in the HTTP process, and a read
+that holds Python's global lock stops every thread at once, so the window never woke, `/health` stopped answering and
+nothing restarted a process that had frozen rather than failed. No false verdict came of it; the engine just stopped.
+`serve()` now runs every read in a worker process the front can kill (`src/concordance/cells.py`). Library use of
+`derivation.verify` stays on its threads, and importing the engine starts no process. Product line: one bad read costs
+one cell, the rest of the engine keeps answering, and it comes back by itself.
+
+**The defect, with a stand-in.** The stand-in is a plain integer power in `tests/fixtures/lock_holder.py`, reached by
+no verifier and always bounded by a kill. Run on a thread with a 0.3 s window, a heartbeat beat 0 times once the read
+began and the window did not fire in six windows, until the test killed the process. Run in a cell over real HTTP with
+a 1.0 s window, the heartbeat beat 51 times during the read with a widest gap of 0.021 s, `/health` answered 19 of 19
+times with a worst answer of 0.025 s, the read shed at 1.02 s to the ERROR it always shed to, and the next claim read
+HOLDS. With as many stuck reads as cells, each is killed at its window, a further read gets today's busy ERROR at once,
+and the next read after them is answered by a new cell, with no restart.
+
+**Same readings.** The moat read through cells gives the same result on every case as in process, 1,796 of 1,796 with
+0 false positives and 0 false negatives, compared by the `repr` of the whole result, so every field and its type: 84
+reads still carry their numpy values. sympy never entered the front. In this run, on this laptop, the moat took 16.1 s
+in process and 17.4 s through cells. Across those 1,796 cases no result carried a sympy value at all; one that does
+leaves its cell as the string JSON prints for it.
+
+**Memory, Windows half.** Working set of each process on this laptop (Python 3.14, spawn, so nothing is shared), after
+90 of the moat's reads run four at a time. A `thread` row is one process; a `cells` row is the front plus four cells.
+
+| path | front, idle | front, after reads | each cell | every process |
+|---|---|---|---|---|
+| threads | 37 MB | 150 MB | none | 150 MB |
+| cells | 38 MB | 49 MB | 150 MB | about 650 MB |
+
+The front keeps numpy once a result has carried it, as the plan allows. A start here took 2.4 to 3.8 s, the imports
+paid before the cell says it is ready, so outside any window. These numbers say nothing about the box: on Linux cells
+fork from a forkserver that preloaded the libraries and share its pages, and the figure that decides is PSS on Linux,
+which `-m slow` prints in CI as `CELL MEMORY`, the forkserver's own share among them. So `CONCORDANCE_VERIFY_WORKERS`
+keeps its default of 4 for now, and that default is chosen from those Linux numbers, not these. One cell grew from
+149 MB to 160 MB over all 1,796 reads, about 6 kB a read, so `CONCORDANCE_CELL_READS` retires a cell at 1,000 reads.
+`CONCORDANCE_CELL_IDLE_S` is 120 s, a choice with no measure behind it yet.
+
+**Named misses and wants.** A cell bounds the damage of a stuck read; it does not stop a flood. Enough stuck reads shed
+everyone else to busy until their windows pass, and rate limits at the edge remain a want. Cells do not change what a
+verifier can compute inside its window. `/scribe`'s SVD runs in the front, on numpy. A cell stopped from outside partway
+through writing its answer is not bounded by the window, since the front is by then reading it; that wait ends only when
+the pipe dies. Wants for their own runs: a verifier handler that reads any exception as an answer, pvalue_calibration results
+that fail to seal, and prebuilding the compiled extension a verifier builds for itself.
+
+**Commands.**
+
+- The defect, the flood, the wall, the moat and the memory: `PYTHONPATH=src python -m pytest -m slow tests/test_cells.py`.
+- The memory rows: `PYTHONPATH=src python tests/fixtures/cell_probe.py memory thread`, then `memory cells`.
+- The growth: `PYTHONPATH=src python tests/fixtures/cell_probe.py growth`.
+- What a pool does, in the suite: `PYTHONPATH=src python -m pytest tests/test_cells.py`.
