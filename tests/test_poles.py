@@ -925,7 +925,7 @@ def test_the_claim_past_the_term_bound_reaches_no_multiplication(multiplied):
 def _bullet():
     text = (ROOT / "MEASURED.md").read_text(encoding="utf-8")
     start = text.index("- **Poles, as written.**")
-    return re.sub(r"\s+", " ", text[start:text.index("**Time.**", start)])
+    return re.sub(r"\s+", " ", text[start:text.index("- **Limits, by side.**", start)])
 
 
 def test_every_reading_the_record_quotes_is_a_row_here():
@@ -942,7 +942,8 @@ def test_the_record_says_what_was_found_what_the_rule_does_and_names_its_miss():
                   "per claim", "500 terms", "12 symbols", "every confirm reads this answer", "exact-decimal",
                   "stated-precision", "`tests/test_poles.py`", "by counts and never by timing", "sympy 1.14.0",
                   "the terms of what expand returns", "true ones with the false", "sympy's sparse polynomial ring",
-                  "up to a nonzero rational", "a check and not a search", "no degree budget exists", "no claim makes a factor_list call",
+                  "up to a nonzero rational", "a check and not a search", "no degree budget exists", "the pole compare makes no factor_list call",
+                  "simplify reaches factor_list on some claims, as it does at the base",
                   "no dense Poly multiplication runs in the compare",
                   "a float, a non-rational constant, a non-polynomial base, anything off the list, a claim past the term bound, "
                   "or a power's multiplicity the written factors drop",

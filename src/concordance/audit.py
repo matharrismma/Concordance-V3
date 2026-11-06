@@ -2430,17 +2430,36 @@ def _x_integral(text: str):
 def _x_limit(text: str):
     """"the limit of sin(x)/x as x approaches 0 is 1" -> mathematics.limit. The variable, the point, and
     the claimed value are all read from the phrasing ("infinity" -> oo); any side that will not normalize
-    extracts nothing."""
+    extracts nothing. HEAD: "right-hand" or "left-hand", with or without "side" after it, "right side" or "left side", and
+    "two-sided", are read only at the head of a claim, directly before "limit of" with at most "the" or "a" before them, so
+    nothing stands before them to change what they mean. The head is the start of the text the caller gave: extract hands over
+    all of it, a whole document if that is what it was given, so a side at the start of a later sentence or paragraph is not at
+    the head. A side read stays in the quote. Between those words stands any run of spaces, line breaks or dashes, so a side word
+    with any dash reads as its hyphen form. Any other word naming a side directly before "limit of", wherever it stands, extracts
+    nothing: "one-sided" names no side, and "right-sided", "right-handed" or "right" are not read as one. Nothing else is read as
+    a side, since prose can state one in words no list reaches. So where no side was read and no "two-sided" stands at the head,
+    direction is "unstated", and verify_limit reads a claim equal to one of two sides that disagree as not checkable."""
+    gap = "[\\-\u2010-\u2015\u2212\ufe58\ufe63\uff0d\\s]+"
+    head = r"\s*(?:(?:the|a)\s+)?"
     out = []
     for m in _LIMIT.finditer(text):
+        earlier = text[:m.start()]
+        side = re.fullmatch(rf"{head}((right|left)(?:{gap}hand(?:{gap}side)?|{gap}side))\s+", earlier, re.I)
+        if not side and re.search(rf"\b(?:one{gap}sided?|(?:right|left){gap}(?:hand{gap})?sided|(?:right|left){gap}handed|right|left)\s+$",
+                                  earlier, re.I):
+            continue
         f = _calc_normalize(m.group("f"))
         p = _calc_normalize(_CALC_INF.sub("oo", m.group("p")))
         g = _calc_normalize(_CALC_INF.sub("oo", m.group("g")))
         if f is None or p is None or g is None:
             continue
-        out.append((_calc_quote(m), "mathematics",
-                    {"mode": "limit",
-                     "params": {"function": f, "variable": m.group("v"), "point": p, "claimed_limit": g}}))
+        params = {"function": f, "variable": m.group("v"), "point": p, "claimed_limit": g}
+        if side:
+            params["direction"] = "+" if side.group(2).lower() == "right" else "-"
+        elif not re.fullmatch(rf"{head}two{gap}sided\s+", earlier, re.I):
+            params["direction"] = "unstated"
+        out.append((f"{side.group(1)} {_calc_quote(m)}"[:160] if side else _calc_quote(m), "mathematics",
+                    {"mode": "limit", "params": params}))
     return out
 
 

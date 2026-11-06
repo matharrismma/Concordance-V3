@@ -414,9 +414,199 @@ Per domain, the benchmark cases each restatement was applied to; each declined t
   worked detail skips its expand and its simplify for a value past the term bound and for a claim the proof lifted, and
   falls through to its plain detail. The guard used to answer before that ran, and simplify on a side has no bound a term
   count can give: ten fractions in ten symbols, 22 terms by the estimate, did not finish in 30 s. Cost is pinned by counts and
-  never by timing: spies prove no claim makes a factor_list call and no dense Poly multiplication runs in the compare, a spy
+  never by timing: spies prove the pole compare makes no factor_list call, though simplify reaches factor_list on some claims,
+  as it does at the base, and no dense Poly multiplication runs in the compare, a spy
   on expand reads the terms of what expand returns, a property test holds the estimate to them, and a claim with a non-zero
   difference reaches the proof only on the stated-precision path, where the term bound holds it to the same cost.
+- **Limits, by side.** Run 2026-11-04-gcd-lcm-order's step limits-head measured limit mode, each reading with sympy
+  1.14.0. sympy's `limit` answers from one side and calls that the limit, so `Abs(x)/x at 0 = 1` and `1/x at 0 = oo`
+  read HOLDS, and the verdict took oo from oo, which is nan, so the true `1/x**2 at 0 = oo` read BROKEN. A claim now
+  states a side in `direction`, '+', '-' or '+-', absent meaning both, 'unstated' being what prose writes and anything
+  else refused, and one helper, `_limit_answer`, answers for limit mode and for the functions limit and Limit. Sides
+  that disagree read BROKEN for every claimed value, with left and right in the data as the counterexample, and
+  `Abs(x)/x at 0 dir + = 1` reads HOLDS. A value compares by equality before any subtraction. A decimal reads as what
+  it writes, in limit mode and in the functions, because a float's rounding moves a jump or a pole off the point:
+  `sign(3*x - 0.3) at 0.1 = 1` read HOLDS and reads BROKEN, as `sign(3*x - 3/10) at 1/10 = 1` does. The functions
+  return the value or raise `UnboundRefused`, so `limit(Abs(x)/x, x, 0) = 1` reads INCOMPLETE and neither ever answers
+  from one side. The extractor carries right-hand and left-hand, with or without the hyphen and with or without side
+  after them, and right side and left side, with or without the hyphen, space between those words being any run of
+  spaces or line breaks. HEAD: a side, and two-sided, is read only at the head of a claim, the start of the text,
+  after at most the or a, so nothing stands before it to change what it means. The text is what the caller gave, a
+  whole document if it gave one. Anywhere else it reads no side, as in 'the right-hand and the left-hand limit' and
+  'Both the limit from above and the left-hand limit'. It takes nothing from one-sided, which names no side, or from
+  any other word naming a side directly before limit of, such as right-sided, right-handed or a right limit. UNREAD
+  SIDE: prose can state a side in words no list reaches, earlier in a sentence or in an earlier one, and no list of
+  phrases closed that: three reviews found another. A side nobody read matters only where the sides disagree. So the
+  extractor writes direction 'unstated' where it read no side and no two-sided stands at the head, `verify_limit`
+  reads that as both sides, and where the sides disagree a claim equal to one side reads INCOMPLETE, naming direction
+  as what would bind it, while a claim equal to neither reads BROKEN, since no side can save it. Where the sides agree
+  a side changes nothing. An infinite side compares by equality first, and a claim equal to one reads INCOMPLETE too:
+  it names direction in a rational function at a rational point, where a stated side confirms, and past there it takes
+  DECIDED's reason, since a stated side could not. An explicit '+-' or an absent direction still reads BROKEN for
+  every claimed value. A side word with any dash reads as its hyphen form. Both sides were not enough, because sympy's
+  sides can agree and be wrong: `1/(exp(acot(x)) - exp(pi/2))**2 at 0 = oo` read oo on each, and the left side runs to
+  0.0472. Each numeric test tried at runtime fell to a form built for it. A sample held against a finite side sees no
+  infinite one, a growth test on an infinite side fell to a slow term that dies at the point, as in `1/(exp(atan(1/x))
+  - exp(pi/2))**2 - 1/log(1/x**2) at 0 = oo`, and a sample of `exp(exp(1/x)) at 0 = oo` ran past the verify's window
+  and kept its pool slot. So the trust is structural. At a finite point sympy's sides are read only for a form on an
+  allow-list, `_on_the_list`, decided before any limit runs, and anything else reads INCOMPLETE in every direction,
+  whatever sympy would answer. A form is on it when it is built from sums, products, symbols, numbers, rational powers
+  of those, and sin, cos, tan, sinh, cosh, tanh, exp, log, atan, asin, acos, Abs and sign of a listed argument that is
+  finite at the point, the function finite there too. floor, ceiling, frac, Mod, Piecewise, Max, Min, acot, atan2,
+  erf, a variable exponent and a function of a diverging argument are off it. Review narrowed it on false readings. An
+  exp with a pole stands only as the whole function times a number or as 1/(number + that), since sympy loses that
+  jump under an Add, and `1/(1 + exp(1/x)) + 1 at 0 = 1` read HOLDS. Abs and sign stand only as a factor of the whole
+  product with no other symbol inside, since sympy reads them at the point and not beside it, and `sign(x**2 - a*x) at
+  0 = 1` read HOLDS. That is decided by each one's place in the form and never by its value, so a factor licenses no
+  other, and `Abs(x)/(Abs(x) + x) at 0 dir - = 0`, which divides by zero left of the limit, is off. A non-integer
+  power and log stand over a zero only as x - p, read by structure: nothing on the list expands, since expanding took
+  10.6 s on `sqrt((x - 1)**10000) at 1 = 0` before it refused, and `log(x*(x + 1/10**10)) at 0 dir - = -oo` read HOLDS
+  with its argument changing sign inside the read's distance. asin and acos are off at 1 and -1, where sympy ran
+  without end. PLAIN: every number is real and plain, so no zero or one can hide in it, a fraction with numerator and
+  denominator at most 10**6, or that fraction times pi, E or a rational power of a positive such fraction, or a flat
+  sum of these. The point is plain or a bare symbol other than the variable, and every part of the function free of
+  all symbols is plain. I is not plain, so `(1 + I)*x at 0 = 0` is off, and neither is a call such as log(2) or a
+  product of sums, since `1/(x + (1 + sqrt(2))*(1 - sqrt(2)) + 1) at 0 = oo` hides a zero. SETTLED: sympy's is_zero
+  and is_finite decide nothing on the list, because is_zero answers False for sin(cosh(1)**2 - sinh(1)**2 - 1), which
+  is sin(0), and its answer on a disguised 1 moved with the hash seed. A value at the point is settled when it is
+  exactly 0, or reads above 10**-30 at 40 digits, inner values first and inside the read's bound. The base of a
+  negative or non-integer power, the argument of log, Abs and sign, cos of tan's argument and asin's and acos's
+  argument less 1 and plus 1 must each be settled, and a base exactly 0 at the point must also read above that margin
+  at the read's distance, so `x/(x*(1 + sqrt(2)) + x*(1 - sqrt(2)) - 2*x) at 0 = 0`, whose denominator is 0
+  everywhere, is off. The argument of Abs and sign is held to that test too, as the sweep directed: `sign((x + 1)**2 -
+  x**2 - 2*x - 1)/(x - 1) at 1 dir - = -oo` read HOLDS for a function that is 0 everywhere. NO ZERO HIDES: sympy's
+  reading rests on a zero test it cannot make, so the list makes that test first, and only by whether a read kept its
+  digits. Every sum, every call and every non-integer power, every other symbol the fixed irrational, is read once,
+  bottom-up: at the point where it has a finite value, and at the read's distance where it is exactly 0 there or is a
+  sum with no finite value there. A value keeps its digits when it reads non-zero at 40 digits and at 80, the two
+  reads agree to 10 digits, and the read at 40 returns at least 100 bits. Neither test is enough alone:
+  log(cosh(54)**2 - sinh(54)**2) reads noise at full claimed precision, and tan(pi*(cosh(133) - sinh(133))*exp(133))
+  reads the same noise at both, at 1 bit. So a zero that is 0 everywhere is off the list wherever it stands, and so is
+  a disguised 1 read through a call. `(sin(x)**2 + cos(x)**2 - 1)/(x - 1)**2 at 1 = -oo` read HOLDS on the list before
+  this, for a function that is 0 everywhere, and so did `1/(x - 2)**2 - (sin(x)**2 + cos(x)**2 - 1)/(x - 2)**4 at 2 =
+  -oo`, which runs to oo, as sympy took the sign of the sum's rounding noise. Only exp stands past the read's bound,
+  since an exp is never 0: a product or a power past it marks nothing, but a sum or any other call past it, or holding
+  a part past it, settles nothing, and so does a part that needs the distance and stands past the bound there. Each
+  read is bound before it runs. An exact read works a power out in full, so each power, and exp of a multiple of a
+  log, is held to the parser's own bound first. And the form does not cancel far at the point: for every sum with a
+  finite non-zero value there, the digits between its largest term and the sum, read at 40 digits, times the powers it
+  stands under, are added across the whole form, and above 10 digits the form is off. A finite reading can still come
+  from a number sympy derives and misreads, as `acos((cosh(2*x/3) - 2*sinh(x/3)**2)/2) at 363 = -pi/3` did for a
+  function that is pi/3, and limit mode reads 363.0 as that same exact point. EXACT: a form with a pole at the point
+  has every other part holding the variable rational there, the variable alone aside, a part being a sum, a product, a
+  power or a call. A pole's reading rests on coefficients at the point: sympy decides their signs from a 2-digit read
+  and cannot test them for zero, so where they are irrational `(cosh(2*x/3) - 2*sinh(x/3)**2)/(x - 451)**2 at 451 =
+  -oo` read HOLDS for a function that runs to oo, and `((x - 2)*exp(x) - (x - 2)*cosh(x) - (x - 2)*sinh(x) + (x -
+  2)**3)/(x - 2)**3 at 2 = -oo` for a function that is 1. Where they are rational they are exact, so `1/x - 1/sin(x)
+  at 0 = 0` stands. EXACT reads nothing numeric. CUTS: log, a non-integer power, asin and acos hold no symbol but the
+  variable, so a symbol nobody bound never decides which side of a cut it reads. A cut holds no cut, and Abs and sign
+  hold none, so no side goes complex under a cut, as it did for `I*sin(sqrt(-1 - sqrt(x))) at 0 = -sinh(1)`, and for
+  what the build's sweep found on an earlier list, `sign((1 + I)*cos(x)**2) at pi/2 = 1` and `Abs(sqrt(x -
+  2)*cos(x)**2)/cos(x)**2 at pi/2 = -sqrt(2)*sqrt(4 - pi)/2`. A non-integer power of a power is off the list at any
+  finite point: sympy's leading term folds (g**n)**r to g**(n*r) and loses the branch, so under a sum that cancels at
+  a negative point sqrt(x**2) reads as x, as `sqrt(x**2) - 1 at -1 = -2` read HOLDS for a function that is 0 there,
+  and (x**4)**(1/4) and (3*x**2)**(1/3) read the same way, the number splitting off first. Limit took that fold too,
+  as `Limit(1/(sqrt(x**2) + x + (x + 1)**2), x, -1) = -1/2` read HOLDS for a function that runs to oo on the left. An
+  exp with a pole holds no log and no non-integer power, since where sympy's sides agree the read refuses nothing, and
+  on the left of `exp(-log(x)/x**2) at 0 = oo` the modulus grows while the phase spins. And every cut holding the
+  variable must still stand once each other symbol is the fixed irrational, so the read's one value never hides a
+  side: `a*log(x) - b*log(x) + 1/x**2 at 0 dir - = oo` read HOLDS with its log gone from the read. At oo or -oo
+  direction changes nothing, the list does not apply and nothing is read, so an infinite reading there never confirms:
+  sympy answers oo for `(cosh(x)**2 - sinh(x)**2 - 2)*x at oo = oo`, which is -x, and for `log(x) at -oo = oo`, which
+  is off the reals. A claim equal to one reads INCOMPLETE, true ones with the false, and limit and Limit refuse one.
+  DECIDED: an infinite reading confirms only where zero is decidable, in a rational function of the variable, built
+  from the variable, rational numbers, sums, products and integer powers and nothing else, at a rational point. There
+  every coefficient is an exact rational, no digit is read and no branch is taken, so sympy's order and sign are
+  facts: `1/x**2 at 0 = oo`, `1/(x - 1/3)**2 at 1/3 = oo` and `-3/(x**2*(x - 1)**2) at 0 = -oo` stand. Anywhere else,
+  at any point, oo and -oo and a reading holding a symbol included, a claim equal to an infinite reading reads
+  INCOMPLETE, true ones with the false, and limit and Limit refuse one. DECIDED stands in two places and nowhere else:
+  where a limit-mode reading equals the claim, and inside limit and Limit, wherever they are written, a limit-mode
+  field among them. This is the one reading this run newly gives: the base read every infinite claim BROKEN, since oo
+  less oo is nan, so binding it binds what fixing that compare exposed. Past that place zero is undecidable in
+  general, by Richardson's theorem, and every test of the parts tried here was beaten by a form built for it:
+  `(sqrt(x**2) - 2)**2/(x + 2)**2 at -2 = oo` read HOLDS for a function that is 1, since sympy's leading term reads
+  sqrt(x**2) as x there, with every part rational at the point and nothing cancelling, and a sum running to 1/2 + (1 -
+  sqrt(2))**70 through sqrt(2)*sin(x)/x, a part with no finite value at 0 that EXACT counts as the pole, read -oo for
+  a function that runs to oo. DECIDED reads nothing numeric and only ever refuses. EXACT, NO ZERO HIDES and the count
+  stand as written, for what a finite reading rests on. A finite reading at an infinity stands as at the base, and it
+  can be false: sympy reads 1/(x*cosh(x)**2 - x*sinh(x)**2 - x + 1) at oo as 0 and the function is 1, and
+  exp(sqrt(x**2 + x) - x) at oo as 1 and it runs to exp(1/2), and each false claim reads HOLDS here as there, in limit
+  mode and lowercase limit. The capital Limit reads the function simplified at oo and -oo, as the base's compare did,
+  so `Limit(1/(x*cosh(x)**2 - x*sinh(x)**2 - x + 1), x, oo) = 0` reads BROKEN as there. A claimed value outside an
+  AccumBounds reads BROKEN, as `sin(x) at oo = 5` does, one inside it reads INCOMPLETE, and one held inside a call
+  reads INCOMPLETE. One more numeric read stays at runtime, and it only ever refuses: at sqrt(2)/10**7 from the point,
+  every other symbol one fixed irrational, the same for each so no rename can move it, it asks whether the function
+  has left the reals on a side where a direction is stated or sympy's sides disagree. So `sqrt(x) at 0 dir - = 0` and
+  `log(x)/x at 0 = -oo` read INCOMPLETE, and the reason names direction as what would bind them. Where the sides agree
+  it refuses nothing, so `sqrt(x) at 0 = 0` stands as it did. It reads inner values first, and a call or power
+  argument past 1e21 leaves that part unread, marking nothing, since an exp of 10**21 read at once and of 10**100000
+  did not finish in 35 s. An imaginary part is read before that bound, since a function off the reals is off them
+  however large it is, and `exp(-1/x**1000) at 0 dir - = 0`, whose argument is real, stands. Apart from SETTLED and NO
+  ZERO HIDES, no other numeric test runs at runtime, and DECIDED and EXACT read structure. These reads stop at the
+  bound, and they are not all a claim costs: sympy's own limit can run past verify's window, and a nest of tan or tanh
+  can outrun it in the list's reads, each shed to an error and never to a verdict. Reading both sides doubles a
+  limit's cost, so a form on the list whose one side takes more than half of verify's window sheds to an error where
+  the base answered from one side. The list is measured, not proved. The numeric test of what sympy answers lives in
+  the sweep in `tests/test_limits.py` behind `-m slow`, where a hang costs nothing, and it read 17,534 forms at the
+  finite points, a decimal and large points such as 54 and 451 and negative ones among them, and at oo and -oo, plain
+  and non-plain numbers and symbol factors such as a - b among their parts. Disguised zeros and ones stand at the
+  finite points alone: bare over a pole, beside one in a sum, split across terms, as 1s through log, sin, tan and
+  sqrt, as coefficients under factors of x - p, in sums that cancel far and over a part past the read's bound. Roots
+  of a power, a bare variable, a sum and a product stand under sums that cancel at negative points. Disguises stay out
+  at oo and -oo, where known wrong readings stand as at the base. 4,255 answered, about 14,000 values a claim can
+  confirm compared with samples at two distances on each side, so an infinite reading past DECIDED is not compared, a
+  finite side's gap shrinking and an infinite side's magnitude growing, a side off the reals excused only where
+  sympy's sides agree and no direction is stated, 2 contradicted, exp(sqrt(x**2 + x) - x) and that form times 0.1 at
+  oo, named by exact text and point with their count pinned, each a finite reading the base reads too, and 1
+  unfinished, the parser's read of one text before the list, which a verify sheds to an error and never to a verdict.
+  Beside that, 656 off-list compositions were refused by structure, no limit run. A second sweep is DECIDED's
+  evidence: 10,000 rational functions with a pole at a rational point, unexpanded, nested and cancelling, with the
+  truth from Fraction polynomial arithmetic and no sympy in it, and oo and -oo stated on each side and on both: 60,000
+  claims, 25,419 HOLDS, 33,915 BROKEN, 666 INCOMPLETE, 0 refuted by that truth. Every read in the tests of a row that
+  runs past verify's window at the base goes through a child that can be killed, so no stuck verify stays in the
+  session, and the rows stay rows. That is evidence, and only that: a form no sweep has written can still be wrong on
+  the list, so HOLDS there means the claim survived, nothing more, and what a contradiction finds comes off it. Twelve
+  misses are named, and that file holds each. A one-sided limit cannot be written in the expression form: limit mode
+  is the way to state a side. A function that leaves the reals on one side, where sympy's sides disagree, reads
+  INCOMPLETE until the claim states a side, as `Abs(x)*(1 + sqrt(x))/x at 0 dir + = 1` does. A limit at a finite point
+  off the list reads INCOMPLETE, true ones with the false and even with a stated side: `x*sin(1/x) at 0 = 0` and `x**x
+  at 0 = 1` read HOLDS before this rule, and `tan(x) at pi/2 = oo`, `floor(x) at 1 = 1` and `sin(1/x) at 0 = 5` lose
+  their readings. A claimed limit inside an AccumBounds reads INCOMPLETE, so true identities sympy cannot reduce at oo
+  do too, as `sin(x)**2 + cos(x)**2 at oo = 1` does. And a limit at a finite point over a number that is not plain
+  reads INCOMPLETE, the true ones with the false: `x + log(2) at 0 = log(2)`, `x at 10000000 = 10000000` and `x at
+  exp(exp(exp(exp(3)))) dir + = exp(exp(exp(exp(3))))` read HOLDS before this rule. So does anything holding I, a
+  value at the point that reads under the margin, as `sign(exp(-x)) at 100 = 1`, a pole's base too small to read above
+  it at the read's distance, as `1/(x**5 + x**6) at 0 dir + = oo`, a cut inside a cut, as `sqrt(sqrt(x) + 1) at 0 =
+  1`, a form with a symbol inside a cut, as `sqrt(x + a) at 1 = sqrt(1 + a)`, and a cut the fixed irrational removes,
+  as `(a - b)*sqrt(x) at 0 dir + = 0`. A claim equal to an infinite reading reads INCOMPLETE anywhere but a rational
+  function with rational coefficients at a rational point, true ones with the false, and each read BROKEN at the base:
+  `log(x) at 0 dir + = -oo`, `1/sqrt(x) at 0 dir + = oo`, `exp(1/x**1000) at 0 dir - = oo`, `1/x**2 + sin(x) at 0 =
+  oo`, `1/(x - sqrt(2))**2 at sqrt(2) = oo`, `a/x**2 at 0 = oo*sign(a)` and `x at oo = oo` do. A limit-mode claim that
+  spells neither limit nor Limit moves by DECIDED only where a reading equals it, so a wrong infinite reading can keep
+  the base's false BROKEN on a true claim: `(cosh(x)**2 - sinh(x)**2 - 1)*x at oo = 0` does. Limit refuses an infinite
+  reading at any point, and limit where the claim wrote the infinity, so a false claim through them moves from BROKEN
+  to INCOMPLETE, as `Limit(log(x), x, 0) = 5`, `limit(x, x, oo) = 5` and `x at limit(x, x, oo) = 5` do, and a true one
+  from HOLDS to INCOMPLETE, as `1/x at limit(x, x, oo) = 0` does. sympy's own limit on a denominator that is zero
+  everywhere, as 1/(x*(sin(x)**2 + cos(x)**2 - 1)) at 0, runs past verify's window at the base, and here reads
+  INCOMPLETE at once. A form with a pole at the point and another part whose finite value there is not rational reads
+  INCOMPLETE, true ones with the false: `exp(x)/(x - 1)**2 at 1 = oo` and `(exp(x) - E)/(x - 1) at 1 = E` do, and so
+  does a form whose pole only the fixed irrational makes, as `sin(x)/(x - a) at b = sin(b)/(b - a)` does. A value too
+  small for the read's digits at the read's distance reads INCOMPLETE, as `log(1 + x**7)/x**7 at 0 = 1` does, and so
+  does a call other than exp past the read's bound, as `sin(x**70) at 2 = sin(2**70)` does, a sum holding a part past
+  it, as `x + exp(exp(x)) at 50 = 50 + exp(exp(50))` does, a form that cancels more than 10 digits at the point, as
+  `cosh(2*x/3) - 2*sinh(x/3)**2 at 451 = 1` and `cosh(x) - sinh(x) at 100 = exp(-100)` do, and a power past the
+  parser's bound at the point or at the read's distance, as `((x**1000 + 1)**1000 + 1)**1000 at 7 = 1` does, true ones
+  with the false. A finite reading at oo or -oo stands as at the base, wrong ones included: `exp(sqrt(x**2 + x) - x)
+  at oo = 1` and, in limit mode and lowercase limit, `1/(x*cosh(x)**2 - x*sinh(x)**2 - x + 1) at oo = 0` read HOLDS,
+  as they do at the base. A non-integer power of a power reads INCOMPLETE at any finite point, true ones with the
+  false: `sqrt(x**2) at -2 = 2` does, which reads HOLDS at the base. A prose limit with no side read, where the sides
+  disagree, reads INCOMPLETE when the claim equals one side, true ones with the false: 'the limit of e^(-1/x) as x
+  approaches 0 is 0', 'for positive x, the limit of e^(-1/x) as x approaches 0 is 0' and 'Indeed, the right-hand limit
+  of e^(-1/x) as x approaches 0 is 0' do, a stated side anywhere but the start of the text being unread, a later
+  sentence's among them. The base read one side, so the first was a false HOLDS there and the second a true one. And
+  reading both sides doubles a limit's cost, as said above. Nothing the audit measures moves: no benchmark case or
+  tier row carries direction, every limit row among them reads as it did, and tools/restate.py's one new entry reads
+  direction as naming no symbol.
 
 **Time.** In this run the benchmark took 21.5 s and the tier 3.0 s, on this laptop with another heavy Python process
 running throughout; the same audit on the same laptop took between 18.8 s and 36.3 s for the benchmark today. Times

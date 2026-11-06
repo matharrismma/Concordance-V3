@@ -109,6 +109,22 @@ _MAX_POLE_TERMS = 500       # every written factor of one claim, each side's pro
 _MAX_POLE_WEIGHT = 64       # one written factor's degree and coefficient bits, read without expanding: see _weight
 _MAX_POLE_SYMBOLS = 12      # the symbols of one claim, which every Poly is dense in
 
+# What a limit claim can state, and what may stand in a form whose sides are read at a finite point: see _on_the_list.
+_UNSTATED = "unstated"      # what prose writes where it read no side: see verify_limit
+_DIRECTIONS = ("+", "-", "+-", _UNSTATED)
+_LISTED_CALLS = frozenset({"sin", "cos", "tan", "sinh", "cosh", "tanh", "exp", "log", "atan", "asin", "acos", "Abs", "sign"})
+# How far a number on the list may reach: see _plain. What a value must read to count as settled: see _reads_above_the_margin.
+# What a read must keep, and how far a form may cancel at the point: see _kept_its_digits and _digits_cancelled.
+_MAX_PLAIN = 10**6
+_MARGIN = 10**30            # a value at the point reads above 1/_MARGIN, or it is no value to rest on
+_KEPT_BITS = 100
+_AGREEING = 10**10          # the reads at 40 digits and at 80 agree to 10 digits
+_MAX_CANCELLED = 10
+# The numeric reads at runtime: see _inner_reads. Past this bound on any argument they stop, measured with sympy 1.14.0: an
+# exp of 10**21 reads at once, and 10**100000 did not finish in 35 s.
+_READ_DIGITS = 40
+_READ_BOUND = 10**21
+
 # SECURITY (red team 2026-08-06, CRITICAL; replaced 2026-11-04): sympy.sympify() EVALUATES arbitrary
 # Python, and an expr that named its way out of it was an unauthenticated RCE reachable from public
 # POST /verify. A guard in front of it was tried and is withdrawn: a check on a text that something
@@ -178,6 +194,11 @@ _GENERATOR_READERS = frozenset({"Poly", "degree"})
 # one of these it answers for the symbol and never for the value. diff and an indefinite integrate substitute nothing.
 _BINDERS = frozenset({"Sum", "summation", "Product", "product", "Subs", "limit", "Limit", "solve", "solveset"})
 _BINDERS_BY_LIMITS = frozenset({"integrate", "Integral"})
+# What a refusal under _never_confirms says, true of every form it reaches.
+_WHERE_INFINITY_CONFIRMS = "An infinite reading confirms only in a rational function with rational coefficients at a rational point"
+# The two spellings of a limit, which answer through _limit_answer. Each call here reads its arguments by value: see _call.
+_LIMIT_CALLS = frozenset({"limit", "Limit"})
+_READ_BY_VALUE = _GCD_LCM | _GENERATOR_READERS | _LIMIT_CALLS
 
 _ARITHMETIC = {_ast.Add: _operator.add, _ast.Sub: _operator.sub, _ast.Mult: _operator.mul,
                _ast.Div: _operator.truediv}
@@ -197,8 +218,8 @@ class NoMeaningRefused(ExpressionRefused):
 
 
 class UnboundRefused(NoMeaningRefused):
-    """A value the claim never bound, refused before the call runs: see _gcd_or_lcm and _require_generators. Its own
-    kind, because every mode reads it as not checkable, where some read other refusals as errors."""
+    """A value the claim never bound, refused before the call runs: see _gcd_or_lcm, _require_generators and _limit_answer.
+    Its own kind, because every mode reads it as not checkable, where some read other refusals as errors."""
 
 
 class PowerRefused(ExpressionRefused):
@@ -421,6 +442,426 @@ def _require_generators(name: str, args: list, binders: int) -> None:
                              f"and generators")
 
 
+def _diverges(value) -> bool:
+    """Whether a value read at a limit's point holds an infinity, zoo or nan."""
+    return _holds(value, oo, -oo, _sp.zoo, _sp.nan)
+
+
+def _fraction(value) -> bool:
+    return bool(value.is_Rational) and abs(value.p) <= _MAX_PLAIN and value.q <= _MAX_PLAIN
+
+
+def _root(value) -> bool:
+    """A rational power of a positive fraction, in the form sympy leaves one: (2/3)**(1/3) is 2**(1/3)*3**(2/3)/3."""
+    if value.is_Mul:
+        return all(map(_root, value.args))
+    return bool(value.is_Pow and _fraction(value.base) and value.base > 0 and _fraction(value.exp))
+
+
+def _plain(value) -> bool:
+    """PLAIN: a real number no zero or one can hide in. A flat sum of fractions, each alone or times pi, E or a root. A product
+    of sums and a root of a sum are not plain, since (1 + sqrt(2))*(1 - sqrt(2)) + 1 is 0, and I is not, so the list reads a
+    real function of a real variable at a real point."""
+    for term in _sp.Add.make_args(value):
+        number, rest = term.as_coeff_Mul()
+        if not (_fraction(number) and (rest in (_sp.S.One, _sp.pi, _sp.E) or _root(rest))):
+            return False
+    return True
+
+
+def _hold_to_the_power_bound(function, values: dict) -> None:
+    """An exact read works a power out in full, and ((x**1000 + 1)**1000 + 1)**1000 at 7 has no symbol left to stop it, so each
+    power is held to the parser's own bound before anything reads it, inner ones first. exp of a multiple of a log is another
+    spelling of one, and sympy works it out the same way. Raises PowerRefused."""
+    for node in _sp.postorder_traversal(function):
+        if node.is_Pow:
+            _bound_power(node.base.subs(values), node.exp)
+        elif isinstance(node, _sp.exp):
+            argument = node.args[0].subs(values)
+            logs = [part for part in _sp.Mul.make_args(argument) if isinstance(part, _sp.log)]
+            if len(logs) == 1:
+                _bound_power(logs[0].args[0], argument / logs[0])
+
+
+def _with_symbols_fixed(value, variable, point) -> tuple:
+    """A value and a point with every symbol but the variable the one fixed irrational, the same for each, for one read alone:
+    no renaming can move what it reads."""
+    fixed = dict.fromkeys((value.free_symbols | point.free_symbols) - {variable}, _sp.sqrt(3))
+    if fixed:
+        _hold_to_the_power_bound(value, fixed)
+    return value.subs(fixed), point.subs(fixed)
+
+
+def _reads_above_the_margin(value, variable, point) -> bool:
+    """SETTLED, for a value not exactly 0: it reads above the margin at 40 digits, inner values first and inside the read's
+    bound. sympy's is_zero and is_finite decide nothing here: is_zero answers False for sin(cosh(1)**2 - sinh(1)**2 - 1), which
+    is sin(0), and its answer on a disguised 1 moved with the hash seed. Whether a sum kept its digits is _no_zero_hides's."""
+    value, point = _with_symbols_fixed(value, variable, point)
+    _hold_to_the_power_bound(value, {variable: point})
+    if _inner_reads(value, variable, point)[1]:
+        return False
+    read = value.subs(variable, point).evalf(_READ_DIGITS)
+    return bool(read.is_number and abs(read) * _MARGIN > 1)
+
+
+def _vanishes(value, variable, point) -> bool:
+    """Whether a value is exactly 0 at the point. A zero subs does not reduce is no exact 0, and reads under the margin."""
+    value, point = _with_symbols_fixed(value, variable, point)
+    return value.subs(variable, point) == 0
+
+
+def _settled_beside_a_zero(value, variable, point) -> bool:
+    """A value that may be exactly 0 at the point: there it must also read above the margin at the read's distance, so one that
+    is 0 everywhere is off the list. Elsewhere it reads above the margin at the point."""
+    if _vanishes(value, variable, point):
+        return _reads_above_the_margin(value, variable, point + _sp.sqrt(2) / 10**7)
+    return _reads_above_the_margin(value, variable, point)
+
+
+def _power_stands(power, variable, point) -> bool:
+    """The base of a negative or non-integer power, settled, and a non-integer power over a zero stands only over x - p."""
+    base = power.base
+    if _diverges(base.subs(variable, point)):
+        return power.exp.is_Integer     # the 1/(number + exp) _on_the_list places
+    if not power.exp.is_Integer and base != variable - point and _vanishes(base, variable, point):
+        return False
+    return _settled_beside_a_zero(base, variable, point)
+
+
+def _built_from_the_list(value, variable, point) -> bool:
+    """The list's first sentence and its numbers, node by node: a symbol, a sum, a product, a rational power of these, and a
+    call on _LISTED_CALLS whose argument is all of this and finite at the point, the function finite there too. Every part free
+    of all symbols is plain. An exp with a pole passes here for _on_the_list to place, and nothing else takes an argument that
+    diverges, so a function of one is off the list. Each value a pole or a jump turns on must be settled."""
+    if not value.free_symbols:
+        return _plain(value)
+    if value.is_Symbol:
+        return True
+    if value.is_Add or value.is_Mul:
+        free, held = value.as_independent(*value.free_symbols, as_Add=value.is_Add)
+        return _plain(free) and all(_built_from_the_list(part, variable, point) for part in value.func.make_args(held))
+    if value.is_Pow:
+        if not _fraction(value.exp) or not _built_from_the_list(value.base, variable, point):
+            return False
+        return (value.exp.is_Integer and value.exp >= 0) or _power_stands(value, variable, point)
+    if value.func.__name__ not in _LISTED_CALLS or not _built_from_the_list(value.args[0], variable, point):
+        return False
+    inner = value.args[0]
+    argument = inner.subs(variable, point)
+    if _diverges(argument):
+        return isinstance(value, _sp.exp)
+    if isinstance(value, _sp.log) and _vanishes(inner, variable, point):
+        return inner == variable - point
+    if isinstance(value, _sp.log):
+        return _reads_above_the_margin(inner, variable, point)
+    if isinstance(value, (_sp.Abs, _sp.sign)):
+        return _settled_beside_a_zero(inner, variable, point)
+    if isinstance(value, _sp.tan):
+        return _reads_above_the_margin(_sp.cos(inner), variable, point)
+    if isinstance(value, (_sp.asin, _sp.acos)):
+        return all(_reads_above_the_margin(inner + edge, variable, point) for edge in (-1, 1))
+    return not _diverges(value.func(argument))
+
+
+def _is_cut(node) -> bool:
+    return (node.is_Pow and not node.exp.is_Integer) or isinstance(node, (_sp.log, _sp.asin, _sp.acos))
+
+
+def _exact(function, variable, point) -> bool:
+    """EXACT: a form with a pole at the point, any part holding the variable with no finite value there, has every other part
+    holding the variable rational at the point, the variable alone aside. A part is a sum, a product, a power or a call. A
+    pole's reading rests on coefficients at the point: sympy decides their signs from a 2-digit read and cannot test them for
+    zero, and where they are irrational a sum can cancel past what it reads and a coefficient can be 0 everywhere at any order,
+    so no test of the form's parts reaches them. Where those values are rational the coefficients are exact. This reads
+    nothing numeric: it is sympy's own evaluation at the point."""
+    function, point = _with_symbols_fixed(function, variable, point)
+    pole = inexact = False
+    for node in _sp.preorder_traversal(function):
+        if node.is_Atom or not node.has(variable):
+            continue
+        value = node.subs(variable, point)
+        if _diverges(value):
+            pole = True
+        elif not value.is_Rational:
+            inexact = True
+    return not (pole and inexact)
+
+
+def _kept_its_digits(value) -> bool:
+    """Whether a number kept its digits: non-zero at 40 digits and at 80, the two reads agreeing to 10 digits, and the read at 40
+    returning at least 100 bits. Neither test is enough alone: sympy's log and tan claim digits they lost, so
+    log(cosh(54)**2 - sinh(54)**2) reads noise at full claimed precision, and its retry can land on one working precision, so
+    tan(pi*(cosh(x) - sinh(x))*exp(x)) at 133 reads the same noise at both, at 1 bit."""
+    once, twice = value.evalf(_READ_DIGITS), value.evalf(2 * _READ_DIGITS)
+    if once == 0 or twice == 0 or not (once.is_number and twice.is_number):
+        return False
+    if not all(part == 0 or part._prec >= _KEPT_BITS for part in once.as_real_imag()):
+        return False
+    return bool(abs(once - twice) * _AGREEING <= abs(twice))
+
+
+def _past_the_bound(node, variable, point) -> bool:
+    """Whether a power or a call, its parts read, stands past the read's bound at the point: the power by its size, the call by
+    its argument, as _inner_reads measures them. No value at the point is no read here."""
+    if node.is_Pow:
+        base = node.base.subs(variable, point)
+        if _diverges(base):
+            return False
+        read = base.evalf(_READ_DIGITS)
+        return bool(read != 0 and abs((node.exp * _sp.log(abs(read))).evalf(_READ_DIGITS)) > _READ_BOUND)
+    if isinstance(node, _sp.Function):
+        argument = node.args[0].subs(variable, point)
+        return bool(not _diverges(argument) and abs(argument.evalf(_READ_DIGITS)) > _READ_BOUND)
+    return False
+
+
+def _no_zero_hides(function, variable, point) -> bool:
+    """NO ZERO HIDES: sympy's reading rests on a zero test it cannot make, so the list makes that test first, and only by whether
+    a read kept its digits. Every sum, every call and every non-integer power, with every other symbol the fixed irrational, is
+    read once, bottom-up: at the point where it has a finite value, and at the read's distance where it is exactly 0 there or
+    is a sum with no finite value there. So a zero that is 0 everywhere is off the list wherever it stands, and so is a disguised
+    1 read through a call. Only exp stands past the read's bound, since an exp is never 0: a product or a power past it is
+    unread and marks nothing, but a sum or any other call past it, or holding a part past it, settles nothing, and so does a
+    part that needs the distance and stands past the bound there. Each read is bound before it runs, so none can hang."""
+    function, point = _with_symbols_fixed(function, variable, point)
+    near = point + _sp.sqrt(2) / 10**7
+    past, seen = set(), set()
+    for node in _sp.postorder_traversal(function):
+        if node in seen:
+            continue
+        seen.add(node)
+        if past.intersection(node.args) or _past_the_bound(node, variable, point):
+            if node.is_Add or (isinstance(node, _sp.Function) and not isinstance(node, _sp.exp)):
+                return False
+            past.add(node)
+            continue
+        if not (node.is_Add or isinstance(node, _sp.Function) or (node.is_Pow and not node.exp.is_Integer)):
+            continue
+        value, at = node.subs(variable, point), point
+        if _diverges(value):
+            if not node.is_Add:
+                continue
+            at = near
+        elif value == 0:
+            at = near
+        if at is near:
+            _hold_to_the_power_bound(node, {variable: near})
+            if _inner_reads(node, variable, near)[1]:
+                return False
+        if not _kept_its_digits(node.subs(variable, at)):
+            return False
+    return True
+
+
+def _digits_cancelled(node, variable, point, power=1):
+    """How far a form cancels at the point: for every sum with a finite non-zero value there, the digits between its largest
+    term and the sum, read at 40 digits, times the powers it stands under, added across the whole form. A finite reading can
+    still come from a number sympy derives and misreads, as 1 - x0**2 for acos and subs moving a log to another branch:
+    acos((cosh(2*x/3) - 2*sinh(x/3)**2)/2) at 363 reads -pi/3 for a function that is pi/3. A sum exactly 0 at the point, or with
+    no finite value there, counts nothing, so no margin applies and x**5 + x**7 at 0 stays on the list."""
+    if node.is_Atom or not node.free_symbols:
+        return 0
+    digits = 0
+    if node.is_Add:
+        value = node.subs(variable, point)
+        if value != 0 and not _diverges(value):
+            whole = abs(value.evalf(_READ_DIGITS))
+            largest = max(abs(term.subs(variable, point).evalf(_READ_DIGITS)) for term in node.args)
+            digits = power * max(0, float(_sp.log(largest / whole, 10).evalf(10)))
+    if node.is_Pow:
+        return digits + _digits_cancelled(node.base, variable, point, power * abs(node.exp))
+    return digits + sum(_digits_cancelled(part, variable, point, power) for part in node.args)
+
+
+def _on_the_list(function, variable, point) -> bool:
+    """THE LIST: the forms whose sides sympy is trusted for at a finite point, decided before any limit runs. Past it sympy's
+    sides can agree and be wrong, as they are for 1/(exp(acot(x)) - exp(pi/2))**2 at 0, and no sample reaches every such form:
+    each numeric test tried at runtime was beaten by a form built for it. So the trust is in what the function is built from,
+    the list is measured by a slow sweep and not proved, and HOLDS on it means the claim survived. Each rule answers a false
+    reading review or that sweep found. The point is plain or a bare symbol other than the variable. sympy loses the jump of an
+    exp with a pole under an Add, so one stands only as the whole function times a number or as 1/(number + that), and holds no
+    log and no non-integer power, where the modulus can grow while the phase spins. It reads Abs and sign at the point and not
+    beside it, so each stands only as a factor of the whole product, with no other symbol inside, and that is counted by place
+    and never by value: a factor does not license the same Abs elsewhere, as in Abs(x)/(Abs(x) + x). CUTS: log, a non-integer
+    power, asin and acos hold no symbol but the variable, so a symbol nobody bound never decides which side of a cut it reads,
+    and none of them, nor Abs nor sign, holds a cut, so no side goes complex under one. A non-integer power of a power is off,
+    since sympy's leading term folds (g**n)**r to g**(n*r) and loses the branch: sqrt(x**2) - 1 at -1 reads -2. And each cut that
+    holds the variable must still stand once each other symbol is the one fixed irrational, as it does not in (a - b)*log(x), so
+    the read's one value never hides a side. Then _exact, _no_zero_hides and the digits a form may cancel. Every read is bound before it runs, an
+    exact one by _hold_to_the_power_bound. Anything that fails to answer here is off the list."""
+    try:
+        if not (_plain(point) if not point.free_symbols else point.is_Symbol and point != variable):
+            return False
+        fixed, fixed_point = _with_symbols_fixed(function, variable, point)
+        _hold_to_the_power_bound(fixed, {variable: fixed_point})
+        if not _built_from_the_list(function, variable, point):
+            return False
+        kept = set(_sp.preorder_traversal(fixed))
+        whole = function
+        if function.is_Pow and function.exp == -1 and function.base.is_Add and len(function.base.args) == 2:
+            whole = function.base.as_coeff_Add()[1]
+        whole = whole.as_coeff_Mul()[1]
+        unplaced = sum(isinstance(factor, (_sp.Abs, _sp.sign)) for factor in _sp.Mul.make_args(function))
+        for node in _sp.preorder_traversal(function):
+            if isinstance(node, _sp.exp) and _diverges(node.args[0].subs(variable, point)) and (node != whole or any(
+                    isinstance(part, _sp.log) or (part.is_Pow and not part.exp.is_Integer)
+                    for part in _sp.preorder_traversal(node.args[0]))):
+                return False
+            if isinstance(node, (_sp.Abs, _sp.sign)):
+                unplaced -= 1
+                if unplaced < 0 or node.free_symbols - {variable}:
+                    return False
+            if _is_cut(node) and (node.free_symbols - {variable} or (node.has(variable) and node not in kept)):
+                return False
+            if node.is_Pow and not node.exp.is_Integer and node.base.is_Pow:
+                return False
+            if (_is_cut(node) or isinstance(node, (_sp.Abs, _sp.sign))) and any(map(_is_cut, _sp.preorder_traversal(node.args[0]))):
+                return False
+        if not (_exact(function, variable, point) and _no_zero_hides(function, variable, point)):
+            return False
+        return _digits_cancelled(fixed, variable, fixed_point) <= _MAX_CANCELLED
+    except Exception:
+        return False
+
+
+def _imaginary(value) -> bool:
+    """Whether a read value is a finite number with a non-zero imaginary part."""
+    return bool(value.is_number and value.is_finite and value.as_real_imag()[1] != 0)
+
+
+def _inner_reads(function, variable, at) -> tuple:
+    """Reads a function at a number, inner values first, so nothing past the bound reaches a call that would run without end
+    on it. Returns whether any call or power argument, a power's base, or the value of a call or power inside the bound has
+    a non-zero imaginary part, and whether the whole stands past the bound. What holds a value past the bound is unread and
+    marks nothing, and the imaginary part is read before the bound: a function that has left the reals has left them however
+    large it is, and a branch past the bound hides no other branch."""
+    past, left = set(), False
+    for node in _sp.postorder_traversal(function):
+        if past.intersection(node.args):
+            past.add(node)
+            continue
+        if isinstance(node, _sp.Pow):
+            read = node.base.subs(variable, at).evalf(_READ_DIGITS)
+            size = 0 if read == 0 else (node.exp * _sp.log(abs(read))).evalf(_READ_DIGITS)
+        elif isinstance(node, _sp.Function):
+            read = size = node.args[0].subs(variable, at).evalf(_READ_DIGITS)
+        else:
+            continue
+        left = left or _imaginary(read)
+        if abs(size) > _READ_BOUND:
+            past.add(node)
+        else:
+            left = left or _imaginary(node.subs(variable, at).evalf(_READ_DIGITS))
+    return left, function in past
+
+
+def _off_the_reals(function, variable, at) -> bool:
+    """Whether the function has left the reals at a number. What cannot be read marks nothing, so a failure here is a no."""
+    try:
+        left, unread = _inner_reads(function, variable, at)
+        if left or unread:
+            return left
+        return _imaginary(function.subs(variable, at).evalf(_READ_DIGITS))
+    except Exception:
+        return False
+
+
+def _leaves_the_reals(function, variable, point, sides):
+    """The side of these, if any, where the function has left the reals: one read at sqrt(2)/10**7 from the point, irrational
+    so no exponent lands on an integer. For the read alone every other symbol is one fixed irrational, the same for each, in
+    the function and the point alike, so no rename can move it. It only ever refuses: it never confirms a claim and never
+    breaks one. Apart from SETTLED and NO ZERO HIDES, no other numeric test runs. The distance is a number and no exact value,
+    since sympy turns exp(n*log(d)) into d**n with n as large as the bound, and works that out in full."""
+    function, point = _with_symbols_fixed(function, variable, point)
+    near = _sp.sqrt(2) / 10**7
+    for side in sides:
+        if _off_the_reals(function, variable, (point + near if side == "+" else point - near).evalf(2 * _READ_DIGITS)):
+            return side
+    return None
+
+
+def _limit_answer(function, variable, point, direction: str = "+-"):
+    """THE RULE for a limit, for limit mode and for the functions limit and Limit. sympy reads one side and calls it the
+    limit, and its sides can agree and be wrong, so a verdict rests on what is read here, in this order. Anything that gives
+    no reading raises UnboundRefused. Otherwise it returns the value, an AccumBounds that only encloses one, or None where
+    the sides disagree, and the sides themselves.
+    (1) At a finite point sympy's sides are read only for a form on the list. (2) At oo or -oo direction changes nothing,
+    nothing is sampled and no form is listed. What an infinite reading confirms, here or anywhere, is _never_confirms's. (3)
+    '+-' reads both sides and a stated direction one, and a failure, an unevaluated Limit, a nan and a zoo give no reading. (4) A function
+    that leaves the reals on a side, where a direction is stated or the sides disagree, gives none. Where sympy's sides agree
+    that refuses nothing, so sqrt(x) at 0 = 0 stands. (5) An AccumBounds is an enclosure, and one held inside a call encloses
+    nothing that can be read. (6) Sides that agree give the value, compared by equality before any subtraction at a finite
+    point, since oo less oo is nan."""
+    infinite = point in (oo, -oo)
+    if not infinite and not _on_the_list(function, variable, point):
+        raise UnboundRefused(f"{_brief(function)} at {_brief(point)} is off the list of forms whose sides are read at a finite "
+                             f"point, where sympy's sides can agree and be wrong. Write it from plain numbers, sums, products, "
+                             f"rational powers and sin, cos, tan, sinh, cosh, tanh, exp, log, atan, asin, acos, Abs and sign")
+    sides = {}
+    for side in "+" if infinite else direction:
+        try:
+            sides[side] = limit(function, variable, point, side)
+        except Exception as e:
+            raise UnboundRefused(f"sympy could not read the {side} side of {_brief(function)} at {_brief(point)}: "
+                                 f"{type(e).__name__}. A verdict needs that side") from None
+        if sides[side].has(_sp.Limit, _sp.nan, _sp.zoo):
+            raise UnboundRefused(f"sympy's {side} side of {_brief(function)} at {_brief(point)} reads {_brief(sides[side])}, "
+                                 f"which is no value. A verdict needs that side")
+    first, last = list(sides.values())[0], list(sides.values())[-1]
+    enclosed = _holds([first, last], _sp.AccumBounds)
+    agree = first == last or (not enclosed and simplify(first - last) == 0)
+    if not infinite and (direction != "+-" or not agree):
+        left = _leaves_the_reals(function, variable, point, sides)
+        if left:
+            raise UnboundRefused(f"{_brief(function)} leaves the reals on the {left} side of {_brief(point)}, so sympy's side "
+                                 f"is a branch the claim never named. State a direction on a side where it stays real")
+    if enclosed and not (agree and isinstance(first, _sp.AccumBounds)):
+        raise UnboundRefused(f"sympy's reading of {_brief(function)} at {_brief(point)} holds an enclosure inside a call, "
+                             f"{_brief(first)}, so it gives no value to compare")
+    return (first if agree else None), sides
+
+
+def _rational_function(form, variable) -> bool:
+    """Whether a form is built from the variable, rational numbers, sums, products and integer powers, and nothing else."""
+    if form.is_Add or form.is_Mul:
+        return all(_rational_function(part, variable) for part in form.args)
+    if form.is_Pow:
+        return bool(form.exp.is_Integer) and _rational_function(form.base, variable)
+    return form == variable or bool(form.is_Rational)
+
+
+def _never_confirms(value, function, variable, point) -> bool:
+    """DECIDED: an infinite reading confirms only where zero is decidable, in a rational function of the variable at a rational
+    point. There every coefficient is an exact rational, no digit is read and no branch is taken, so sympy's order and sign are
+    facts. Anywhere else a claim equal to one reads not checkable, true ones with the false: oo and -oo fall outside it, where
+    sympy answers oo for (cosh(x)**2 - sinh(x)**2 - 2)*x, which is -x, and so does a reading holding a symbol, since
+    sign((a + 1)**2 - a**2 - 2*a - 1) is sign(0). Past that place zero is undecidable in general, by Richardson's theorem, and
+    every test of a form's parts tried here was beaten by a form built for it: (sqrt(x**2) - 2)**2/(x + 2)**2 at -2 reads oo
+    for a function that is 1. This reads nothing numeric and only ever refuses."""
+    return _diverges(value) and not (point.is_Rational and _rational_function(function, variable))
+
+
+def _limit_call(name: str, args: list):
+    """The functions limit and Limit: the value when _limit_answer has one, and for anything else UnboundRefused, so neither
+    ever answers from one side. A fourth argument, the only way these could state a side, stays refused: limit mode states
+    one. Limit reads the function simplified at oo and -oo, as the base's compare did, so a finite reading there stands as at
+    the base in every spelling."""
+    if len(args) != 3:
+        raise ExpressionRefused(f"{name} takes a function, a variable and a point. Limit mode states a side")
+    if name == "Limit" and args[2] in (oo, -oo):
+        args = [simplify(args[0]), *args[1:]]
+    value, sides = _limit_answer(*args)
+    if value is None:
+        raise UnboundRefused(f"{name} of {_brief(args[0])} at {_brief(args[2])} has no one value: sympy reads "
+                             f"{', '.join(map(_brief, sides.values()))}. Use limit mode, where direction states a side")
+    if isinstance(value, _sp.AccumBounds):
+        raise UnboundRefused(f"{name} of {_brief(args[0])} at {_brief(args[2])} has no one value to rest on: sympy reads it "
+                             f"only as enclosed by {_brief(value)}")
+    if _never_confirms(value, *args):
+        raise UnboundRefused(f"{name} of {_brief(args[0])} at {_brief(args[2])} reads {_brief(value)}. {_WHERE_INFINITY_CONFIRMS}")
+    return value
+
+
 class _Reader:
     """Builds sympy objects from a bounded tree. A node it does not name is refused."""
 
@@ -559,10 +1000,13 @@ class _Reader:
         binds = name in _BINDERS or (name in _BINDERS_BY_LIMITS
                                      and not all(isinstance(arg, _ast.Name) for arg in node.args[1:]))
         self.binders += binds
+        # A limit reads a decimal as what it writes: a float's rounding moves a jump or a pole off the point.
+        rational, self.rational = self.rational, self.rational or name in _LIMIT_CALLS
         # The rule reads values, so it reads evaluated arguments even here in an unevaluated read, as % does: there
         # 2*3 is a product written out, and it is still the number 6.
-        reader = self._evaluating() if name in _GCD_LCM or name in _GENERATOR_READERS else self
+        reader = self._evaluating() if name in _READ_BY_VALUE else self
         args = [reader.read(arg, in_call=True) for arg in node.args]
+        self.rational = rational
         self.binders -= binds
         if name == "Pow" and len(args) >= 2:
             _bound_power(args[0], args[1])
@@ -572,6 +1016,8 @@ class _Reader:
         function = _sp.Rational if self.rational and name == "Float" else _FUNCTIONS[name]
         if name in _GCD_LCM:
             value = _gcd_or_lcm(function, name, args)
+        elif name in _LIMIT_CALLS:
+            value = _limit_call(name, args)
         elif not self.evaluate and name in _UNEVALUATED_FUNCS:
             value = function(*args, evaluate=False)
         else:
@@ -961,24 +1407,58 @@ def verify_integral(spec: Dict[str, Any]) -> VerifierResult:
         return error("mathematics.integral", f"computation failure: {e}")
 
 
+def _equals(reading, claimed) -> bool:
+    """Whether a reading is the claimed value, by equality before any subtraction, since oo less oo is nan."""
+    return reading == claimed or simplify(reading - claimed) == 0
+
+
 def verify_limit(spec: Dict[str, Any]) -> VerifierResult:
+    """UNREAD SIDE: prose can state a side in words no list reaches, and a side nobody read matters only where the sides
+    disagree. direction 'unstated' reads as both sides, and there a claim equal to one side reads not checkable, naming direction
+    as what would bind it, while a claim equal to neither reads BROKEN, since no side can save it. Past DECIDED an infinite side
+    takes DECIDED's reason instead, since a stated side could not confirm it. '+-' and an absent direction read BROKEN for every
+    claimed value."""
     _ensure_sympy()
     f = spec.get("function")
     var = spec.get("variable", "x")
     point = spec.get("point")
     claimed = spec.get("claimed_limit")
+    direction = spec.get("direction", "+-")
     if f is None or point is None or claimed is None:
         return na("mathematics.limit")
+    if direction not in _DIRECTIONS:
+        return _refused("mathematics.limit", f"{_brief(direction)} names no side: state '+', '-' or '+-'", "direction")
     try:
         x = Symbol(var)
-        ef = _parse(f, [var], binders=1)
-        ep = _parse(str(point), [var], binders=1)
-        ec = _parse(str(claimed), [var], binders=1)
-        actual = limit(ef, x, ep)
-        if simplify(actual - ec) == 0:
-            return confirm("mathematics.limit", f"lim_{{{var}->{point}}} {f} = {actual}, matches {claimed}")
-        return mismatch("mathematics.limit",
-                        f"lim_{{{var}->{point}}} {f} = {actual}, claimed {claimed}",
+        ef = _parse(f, [var], rational=True, binders=1)     # exactly, as equality reads a decimal: a float's rounding moves
+        ep = _parse(str(point), [var], rational=True, binders=1)    # a jump or a pole off the point
+        ec = _parse(str(claimed), [var], rational=True, binders=1)
+        reads = "+-" if direction == _UNSTATED else direction
+        actual, sides = _limit_answer(ef, x, ep, reads)
+        written = f"lim_{{{var}->{point}{'' if reads == '+-' else reads}}} {f}"
+        if actual is None:
+            one_side = [side for side in sides.values() if _equals(side, ec)] if direction == _UNSTATED else []
+            if one_side and _never_confirms(one_side[0], ef, x, ep):
+                raise UnboundRefused(f"sympy reads {_brief(f)} as {_brief(one_side[0])} on one side, so a claim equal to it is not "
+                                     f"read. {_WHERE_INFINITY_CONFIRMS}")
+            if one_side:
+                raise UnboundRefused(f"{written} has no one value, left {sides['-']} and right {sides['+']}, and {_brief(claimed)} "
+                                     f"is one side, which nothing here read. State a direction")
+            return mismatch("mathematics.limit", f"{written} has no one value: left {sides['-']}, right {sides['+']}, "
+                                                 f"claimed {claimed}",
+                            {"left": str(sides["-"]), "right": str(sides["+"]), "claimed": str(ec)})
+        if isinstance(actual, _sp.AccumBounds):
+            if (ec < actual.min) is _sp.true or (ec > actual.max) is _sp.true:
+                return mismatch("mathematics.limit", f"{written} lies in {actual}, claimed {claimed}",
+                                {"computed": str(actual), "claimed": str(ec)})
+            raise UnboundRefused(f"sympy reads {_brief(f)} only as enclosed by {actual}, and {_brief(claimed)} is not outside "
+                                 f"it, so a value inside proves nothing. State a function sympy can reduce")
+        if _equals(actual, ec):
+            if _never_confirms(actual, ef, x, ep):
+                raise UnboundRefused(f"sympy reads {_brief(f)} as {_brief(actual)}, so a claim equal to it is not read. "
+                                     f"{_WHERE_INFINITY_CONFIRMS}")
+            return confirm("mathematics.limit", f"{written} = {actual}, matches {claimed}")
+        return mismatch("mathematics.limit", f"{written} = {actual}, claimed {claimed}",
                         {"computed": str(actual), "claimed": str(ec)})
     except _PARSE_ERRORS as e:
         return _refused("mathematics.limit", e)

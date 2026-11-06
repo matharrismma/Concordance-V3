@@ -180,7 +180,7 @@ def test_an_answer_built_from_a_written_bound_stays_legal():
     assert read("limit(1/x,x,oo)") == 0 and read("integrate(exp(-x),(x,0,oo))") == 1
 
 
-@pytest.mark.parametrize("text", ["limit(1/x,x,0)", "solve(x>0,x)"])
+@pytest.mark.parametrize("text", ["limit(1/x**2,x,0)", "solve(x>0,x)"])
 def test_an_answer_holding_an_oo_nobody_wrote_is_refused(text):
     with pytest.raises(M.ExpressionRefused, match="nobody wrote"):
         read(text)
@@ -511,12 +511,19 @@ def test_a_stated_window_never_certifies_what_exact_arithmetic_refuses():
 # ── a deferred object: named by the goal, filed as a want, pinned here at the parser and in no mode ──────────────
 @pytest.mark.parametrize("text, kind", [
     ("Sum(1/k,(k,0,3))", sympy.Sum), ("Product(1/k,(k,0,3))", sympy.Product), ("Integral(1/x,(x,0,1))", sympy.Integral),
-    ("Limit(1/x,x,0)", sympy.Limit), ("Subs(1/x,x,0)", sympy.Subs),
+    ("Subs(1/x,x,0)", sympy.Subs),
 ])
 def test_a_deferred_object_is_read_and_left_unevaluated(text, kind):
     """Its undefined step is not built yet, and reading it costs an unbounded evaluation. A later fix moves this on purpose."""
     value = read(text)
     assert isinstance(value, kind) and not value.has(sympy.zoo, sympy.nan)
+
+
+def test_a_limit_is_no_longer_deferred():
+    """Moved on purpose, as the test above says one would be: Limit answers through the two-sided helper, and the sides of 1/x
+    at 0 disagree, so there is no value to read."""
+    with pytest.raises(M.UnboundRefused):
+        read("Limit(1/x,x,0)")
 
 
 # ── a sweep against an exact oracle: Fractions and plain Python, no sympy ───────────────────────────────────────

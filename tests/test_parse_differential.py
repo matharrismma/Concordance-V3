@@ -280,6 +280,9 @@ TYPICAL = {
 # The five whose plain int or bool the parser converts: equal in value to what sympify returned, not in type.
 CONVERTED = ("igcd(4,6)", "ilcm(4,6)", "nextprime(7)", "prevprime(7)", "isprime(7)", "isprime(8)")
 
+# Limit answers through the two-sided helper, where sympify leaves it standing: the same value once sympy's doit runs it.
+ANSWERED = ("Limit(x,x,0)",)
+
 # Two reads of Dummy() are two Dummies by design: a Dummy equals only itself.
 SAME_KIND_ONLY = ("Dummy()",)
 
@@ -384,7 +387,8 @@ REFUSED = {
     "sin(oo)": "answered with AccumBounds, which a later node can collapse",
     "oo-oo": "no meaning: answered with nan, from a written oo",
     "0*oo": "no meaning: answered with nan, from a written oo",
-    "limit(1/x,x,0)": "a divergent answer: an oo nobody wrote",
+    "limit(1/x,x,0)": "two sides that disagree: limit answers through the two-sided helper, and sympy read one side",
+    "limit(1/x**2,x,0)": "a divergent answer: an oo nobody wrote",
     "solve(x>0,x)": "an answer holding an oo nobody wrote",
     "Float((1,2))": "a Float made from a raw tuple: sympy cannot test what such a value holds, so it fails the rule's test",
 }
@@ -431,7 +435,7 @@ def _table_rows(kw: dict) -> List[Tuple[str, str, dict, dict]]:
     names = _names("math", ())
     functions = [TYPICAL.get(n, f"{n}(1)") for n in sorted(M._ALLOWED_FUNCS)]
     texts = [t for t in FORMS + CONSTANTS + functions
-             if t not in CONVERTED and t not in SAME_KIND_ONLY and t not in REFUSED]
+             if t not in CONVERTED and t not in SAME_KIND_ONLY and t not in REFUSED and t not in ANSWERED]
     return [("form", t, names, dict(kw, word_mod=True)) for t in texts]
 
 
@@ -440,7 +444,7 @@ def test_every_allowlisted_function_has_a_row():
     assert set(TYPICAL) <= M._ALLOWED_FUNCS
     functions = {TYPICAL.get(n, f"{n}(1)"): n for n in M._ALLOWED_FUNCS}
     assert len(functions) == len(M._ALLOWED_FUNCS)
-    read = [t for t in functions if t not in REFUSED and t not in CONVERTED and t not in SAME_KIND_ONLY]
+    read = [t for t in functions if t not in REFUSED and t not in CONVERTED and t not in SAME_KIND_ONLY and t not in ANSWERED]
     assert len(read) > 120
 
 
@@ -463,6 +467,14 @@ def test_the_five_converted_functions_are_equal_in_value(text):
     want, _ = _oracle(text, names)
     assert why is None and isinstance(got, (sympy.Basic,)) and not isinstance(want, sympy.Basic)
     assert got == want if isinstance(want, int) and not isinstance(want, bool) else bool(got) is want
+
+
+@pytest.mark.parametrize("text", ANSWERED)
+def test_a_limit_answers_what_sympify_left_standing(text):
+    names = _names("math", ())
+    got, why = _parser(text, names)
+    want, _ = _oracle(text, names)
+    assert why is None and isinstance(want, sympy.Limit) and got == want.doit()
 
 
 def test_a_dummy_is_the_same_kind_on_both_sides():

@@ -592,7 +592,7 @@ def test_the_changelog_says_which_claims_moved():
 
 
 # ── the allowlist ────────────────────────────────────────────────────────────────────────────────────────────────────
-GUARDED = frozenset({"gcd", "lcm", "Poly", "degree"})
+GUARDED = frozenset({"gcd", "lcm", "Poly", "degree", "limit", "Limit"})
 UNGUARDED = frozenset({
     "sin", "cos", "tan", "cot", "sec", "csc", "sinc", "asin", "acos", "atan", "acot", "asec", "acsc", "atan2", "sinh", "cosh",
     "tanh", "coth", "sech", "csch", "asinh", "acosh", "atanh", "acoth", "deg", "rad",
@@ -605,7 +605,7 @@ UNGUARDED = frozenset({
     "Rational", "Integer", "Float", "Number", "Symbol", "symbols", "Dummy",
     "Eq", "Ne", "Lt", "Le", "Gt", "Ge", "Equality", "Unequality", "StrictLessThan", "LessThan", "StrictGreaterThan",
     "GreaterThan", "Relational", "And", "Or", "Not", "Xor", "Nand", "Nor", "Implies", "Equivalent", "ITE", "Piecewise",
-    "diff", "Derivative", "integrate", "Integral", "limit", "Limit", "Sum", "summation", "Product", "product", "Subs",
+    "diff", "Derivative", "integrate", "Integral", "Sum", "summation", "Product", "product", "Subs",
     "simplify", "expand", "factor", "cancel", "together", "apart", "collect", "trigsimp", "radsimp", "N", "evalf",
     "solve", "solveset", "roots",
     "Matrix", "ImmutableMatrix", "eye", "zeros", "ones", "diag", "Transpose", "det", "trace", "Determinant", "Trace",
@@ -703,11 +703,12 @@ class Trials:
     """One child interpreter takes trials a line at a time, so a trial past its bound is killed and reported and the next
     runs in a new child: a verify past its window leaves a thread running, which only ending the process stops."""
 
-    def __init__(self):
+    def __init__(self, worker=WORKER, *paths):
+        self.worker, self.paths = worker, [str(path) for path in paths]
         self.child = self.lines = None
 
     def _start(self):
-        self.child = subprocess.Popen([sys.executable, "-c", WORKER, str(ROOT / "src")], stdin=subprocess.PIPE,
+        self.child = subprocess.Popen([sys.executable, "-c", self.worker, str(ROOT / "src"), *self.paths], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
         self.lines = queue.Queue()
         threading.Thread(target=lambda c=self.child, q=self.lines: [q.put(line) for line in c.stdout],

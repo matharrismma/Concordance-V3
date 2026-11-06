@@ -87,6 +87,7 @@ test_integrations.py
 test_isolation.py
 test_labor.py
 test_law.py
+test_limits.py
 test_linear_algebra.py
 test_linguistics.py
 test_loan_payment.py

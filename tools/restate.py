@@ -78,7 +78,7 @@ MODES: Mapping[str, Mapping[str, str]] = MappingProxyType({
         "equality": {"expr_a": EXPR, "expr_b": EXPR, "variables": NAMES, "claimed_literal": OTHER, "hedged": OTHER},
         "derivative": {"function": EXPR, "variable": VARIABLE, "claimed_derivative": EXPR},
         "integral": {"integrand": EXPR, "variable": VARIABLE, "claimed_antiderivative": EXPR},
-        "limit": {"function": EXPR, "variable": VARIABLE, "point": EXPR, "claimed_limit": EXPR},
+        "limit": {"function": EXPR, "variable": VARIABLE, "point": EXPR, "claimed_limit": EXPR, "direction": OTHER},
         "solve": {"equation": EQUATION, "variable": VARIABLE, "claimed_solutions": EXPR_LIST},
         # verify_inequality never reads variables; every benchmark inequality carries "variables": {}
         "inequality": {"lhs": EXPR, "rhs": EXPR, "op": OTHER, "variable": VARIABLE, "domain": OTHER,
