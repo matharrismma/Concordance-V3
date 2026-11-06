@@ -27,6 +27,7 @@ test_calendar_time.py
 test_canonical.py
 test_capabilities_benchmark.py
 test_cas.py
+test_cells.py
 test_check_gates.py
 test_chemistry.py
 test_chess.py
@@ -82,6 +83,7 @@ test_halt_telemetry.py
 test_history_chronology.py
 test_hydrology.py
 test_inequality.py
+test_install_rollback.py
 test_information_theory.py
 test_integrations.py
 test_isolation.py
@@ -179,4 +181,5 @@ test_verify_architecture.py
 test_verify_construction.py
 test_verify_history_chronology.py
 test_verify_quantum_computing.py
+test_watchdog.py
 test_wordcraft.py

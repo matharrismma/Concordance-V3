@@ -20,6 +20,18 @@ ExecStart=/home/nh/concordance-3/.venv/bin/python -m concordance serve --host 12
 LimitNOFILE=65536
 Restart=on-failure
 RestartSec=3
+# A frozen process is restarted, whatever froze it. The serve process reads its own /health every 37.5 s and says
+# WATCHDOG=1 only if that answers within 30 s. Two failed reads survive: the third starts at 112.5 s and ends by 142.5 s.
+# A third failed read does not. A busy process answers late, 18.8 s with 32 busy threads, and must not be killed for it,
+# so a frozen one waits up to 150 s. The read's 30 s stays under the 37.5 s beat, a quarter of this window.
+WatchdogSec=150
+NotifyAccess=main
+# The memory wall stands outside the cells. Measured on Linux by PSS: the front 29 MB, the forkserver 83 MB, four cells at
+# 97 MB, the most any reached, so 500 MB with everything at its worst at once. 1G is twice that, for a read's own peak
+# and the page cache this cgroup is charged for. Past it the kernel ends a cell, which raised its own oom_score_adj; the
+# front reads a dead pipe as ERROR and the service keeps running, which is what continue says.
+MemoryMax=1G
+OOMPolicy=continue
 
 [Install]
 WantedBy=multi-user.target

@@ -3,7 +3,7 @@
 setuptools deprecated the `project.license` TOML table (`license = {text = "MIT"}`) and the
 `License ::` trove classifiers in favour of PEP 639: an SPDX expression in `project.license` and the
 files it covers in `project.license-files`. Its warning gives the table's end as 2027-02-18; after
-that the editable install in deploy/install.sh:29 (under `set -euo pipefail`, :10) fails. Four
+that the editable install in deploy/install.sh:127 (under `set -euo pipefail`, :10) fails. Four
 facts keep it building:
 
   1. `project.license` is the SPDX string "MIT", not a table;
