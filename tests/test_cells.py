@@ -138,7 +138,7 @@ def test_a_stuck_read_costs_its_cell_and_nothing_else(cells_on, monkeypatch):
     assert 0.3 <= got["ended"] - got["began"] < 5
     assert len([b for b in beats if got["began"] <= b <= got["ended"]]) >= 5        # the front never stopped
     assert not alive(first)                             # no slot outlives its cell: it was gone before the slot came back
-    assert cells_on.status()["ended"].get("stuck") == 1
+    assert cells_on.status()["ended"] == {"stuck": 1}   # one end, counted once
     assert cells_on.status()["taken"] == 0 and cells_on.status()["live"] == 0
     assert step("pid")["data"]["pid"] != first          # and it came back by itself
 
@@ -176,6 +176,8 @@ def test_serve_turns_cells_on_and_importing_does_not(cells, monkeypatch):
     called = []
 
     class Server:
+        server_address = ("127.0.0.1", 0)
+
         def __init__(self, *_a):
             pass
 
@@ -246,6 +248,56 @@ def test_a_cell_that_cannot_start_is_error(cells, pool_of, monkeypatch):
     with pytest.raises(cells.CellFailed, match="could not start"):
         gone.call(lock_holder.quick, ({},), 5)
     assert gone.status()["taken"] == 0 and gone.status()["live"] == 0
+
+
+class Broken:
+    """A pipe that passes an idle check and then fails on the read, in a way that is no EOFError and no OSError."""
+
+    def __init__(self, conn, failure):
+        self.conn, self.failure = conn, failure
+
+    def poll(self, *window):
+        if window:
+            raise self.failure
+        return False
+
+    def send_bytes(self, data):
+        self.conn.send_bytes(data)
+
+    def close(self):
+        self.conn.close()
+
+
+def test_any_failure_on_the_pipe_ends_the_cell_and_reads_as_error(cells, pool_of):
+    pool = pool_of()
+    first = pid_of(pool)
+    pool._idle[0].conn = Broken(pool._idle[0].conn, ValueError("not a pipe problem"))
+    with pytest.raises(cells.CellFailed, match="ended before it answered"):
+        pool.call(lock_holder.quick, ({},), 30)
+    assert not alive(first)                             # no cell left alive with nobody holding it
+    assert pool.status()["ended"].get("dead") == 1
+    assert pool.status()["live"] == 0 and pool.status()["taken"] == 0
+    assert pid_of(pool) != first
+
+
+def test_a_failure_past_exception_still_ends_the_cell(pool_of):
+    class Stop(BaseException):
+        pass
+
+    pool = pool_of()
+    first = pid_of(pool)
+    pool._idle[0].conn = Broken(pool._idle[0].conn, Stop())
+    with pytest.raises(Stop):
+        pool.call(lock_holder.quick, ({},), 30)
+    assert not alive(first)
+    assert pool.status()["live"] == 0 and pool.status()["taken"] == 0
+
+
+def test_a_failure_on_the_pipe_reaches_verify_step_as_error(cells_on):
+    step("quick")
+    cells_on._idle[0].conn = Broken(cells_on._idle[0].conn, ValueError("not a pipe problem"))
+    out = step("quick")
+    assert out["status"] == "ERROR" and "verifier raised: CellFailed" in out["detail"]
 
 
 def test_a_failed_cell_reaches_the_trail_as_error(cells, cells_on, monkeypatch):
@@ -328,6 +380,70 @@ def test_a_cell_that_died_while_idle_costs_no_read(pool_of):
     assert pool.status()["ended"].get("dead") == 1
 
 
+def test_an_idle_cell_with_something_on_its_pipe_is_not_asked(pool_of):
+    """An idle cell has nothing to say, so anything waiting on its pipe is an answer to no read, and the next read must
+    not take it for its own."""
+    class Stale:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def poll(self, *_window):
+            return True
+
+        def close(self):
+            self.conn.close()
+
+    pool = pool_of()
+    first = pid_of(pool)
+    pool._idle[0].conn = Stale(pool._idle[0].conn)
+    assert pid_of(pool) != first                        # a new cell answered
+    assert pool.status()["ended"].get("dead") == 1 and not alive(first)
+
+
+def test_waiting_means_alive_with_nothing_on_the_pipe(cells):
+    class Proc:
+        def __init__(self, up):
+            self.up = up
+
+        def is_alive(self):
+            return self.up
+
+    class Conn:
+        def __init__(self, polled):
+            self.polled = polled
+
+        def poll(self):
+            if isinstance(self.polled, Exception):
+                raise self.polled
+            return self.polled
+
+    assert cells._Cell(Proc(True), Conn(False)).waiting() is True
+    assert cells._Cell(Proc(True), Conn(True)).waiting() is False
+    assert cells._Cell(Proc(False), Conn(False)).waiting() is False
+    assert cells._Cell(Proc(True), Conn(BrokenPipeError())).waiting() is False
+    assert cells._Cell(Proc(True), Conn(EOFError())).waiting() is False
+
+
+def test_a_retiring_cell_holds_its_slot_until_it_is_gone(cells, pool_of, monkeypatch):
+    pool = pool_of(idle_s=3600)
+    first = pid_of(pool)
+    pool._idle[0].since -= 7200
+    seen, end = {}, pool._end
+
+    def watched(cell, why):
+        seen["during"] = pool.status()
+        with pytest.raises(cells.Saturated):            # the process is still there, so the slot is not free
+            pool.call(lock_holder.quick, ({},), 30)
+        end(cell, why)
+        seen["after"] = pool.status()
+
+    monkeypatch.setattr(pool, "_end", watched)
+    pool._retire_idle()
+    assert seen["during"]["taken"] == 1 and seen["during"]["live"] == 1 and seen["during"]["idle"] == 0
+    assert seen["after"]["live"] == 0 and seen["after"]["ended"].get("idle") == 1
+    assert pool.status()["taken"] == 0 and not alive(first)
+
+
 def test_the_count_of_live_cells_never_passes_the_size(pool_of):
     size = 2
     pool = pool_of(size, reads=2)
@@ -371,6 +487,58 @@ def test_no_in_process_memory_limit_is_set(cells, pool_of):
     source = Path(cells.__file__).read_text(encoding="utf-8")
     assert "setrlimit" not in source and "RLIMIT" not in source
     assert pool_of().call(lock_holder.limits, ({},), 30).data == lock_holder.limits().data
+
+
+def test_a_cell_asks_the_kernel_to_end_it_with_its_parent(cells, monkeypatch):
+    """Once the forkserver has died multiprocessing cannot kill a cell, so the kernel does. On Linux only: elsewhere
+    the front is the parent and its kill works."""
+    asked = []
+
+    class Libc:
+        def prctl(self, *args):
+            asked.append(args)
+            return 0
+
+    monkeypatch.setattr(cells.sys, "platform", "linux")
+    cells._end_with_parent(Libc())
+    assert asked == [(1, 9)]                            # PR_SET_PDEATHSIG, SIGKILL
+    monkeypatch.setattr(cells.sys, "platform", "win32")
+    cells._end_with_parent(Libc())
+    assert len(asked) == 1
+
+
+def test_a_cell_puts_up_its_walls_before_it_loads_anything(cells, monkeypatch):
+    """The real effects are Linux's, and CI's to prove. That a cell asks for them, first, is true everywhere."""
+    order = []
+
+    class Pipe:
+        def send_bytes(self, _data):
+            order.append("ready")
+
+        def recv_bytes(self):
+            raise EOFError
+
+    monkeypatch.setattr(cells, "_raise_oom_score", lambda: order.append("oom"))
+    monkeypatch.setattr(cells, "_end_with_parent", lambda: order.append("parent"))
+    monkeypatch.setattr(cells.signal, "signal", lambda *_a: None)
+    monkeypatch.setattr(cells.importlib, "import_module", lambda name: order.append(name))
+    cells._cell_main(Pipe(), ("heavy",))
+    assert order == ["oom", "parent", "heavy", "ready"]
+
+
+def test_a_cell_whose_parent_has_already_gone_ends_itself(cells, monkeypatch):
+    monkeypatch.setattr(cells.sys, "platform", "linux")
+    ppids = iter((10, 1))
+    monkeypatch.setattr(cells.os, "getppid", lambda: next(ppids))
+
+    class Libc:
+        def prctl(self, *_args):
+            return 0
+
+    ended = []
+    monkeypatch.setattr(cells.os, "_exit", ended.append)
+    cells._end_with_parent(Libc())
+    assert ended == [1]
 
 
 def test_each_cell_raises_its_own_oom_score(cells, pool_of, tmp_path):
@@ -435,6 +603,16 @@ def test_as_many_stuck_reads_as_cells_shed_alone_and_the_service_comes_back(tmp_
     assert seen["during"]["ended"].get("stuck") == 2
     assert seen["after"]["status"] == "CONFIRMED"       # no restart: a new cell filled the space
     assert seen["status"]["live"] == 1 and seen["status"]["taken"] == 0
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no forkserver: a cell's parent is the front, whose kill works")
+def test_a_stuck_cell_ends_with_its_forkserver_and_the_service_comes_back(tmp_path):
+    seen = probe("orphan", tmp_path=tmp_path)
+    assert seen["out"]["status"] == "ERROR" and "CellFailed" in seen["out"]["detail"]
+    assert seen["secs"] < seen["window"] / 2            # the kernel ended it long before its window
+    assert seen["gone"] is True                         # the stuck cell is not running
+    assert seen["after"]["status"] == "CONFIRMED"       # a new forkserver and a new cell
 
 
 @pytest.mark.slow

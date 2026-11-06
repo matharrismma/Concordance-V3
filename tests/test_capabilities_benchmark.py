@@ -7,7 +7,7 @@ as the LIST of cases. Read with the --record keys only, the --json file gave a l
 version null, cases null, false_positives [] and trust unavailable.
 
 The --record shape is pinned by the tracked file itself: its COMMITTED bytes (git show HEAD:), read and
-never rewritten. Not the working copy: install.sh:40 rewrites the working copy in the --json shape on
+never rewritten. Not the working copy: install.sh:133 rewrites the working copy in the --json shape on
 every install, so in the box's checkout it is not the tracked bytes, and the gate-hygiene ship's on-box
 suite failed on exactly that. The --json shape is built through benchmark.emit_json on a small result set,
 so a change to the emitter reaches this test; the benchmark is never re-run here (tests/test_benchmark.py
@@ -93,7 +93,7 @@ def test_record_shape_is_read_from_the_tracked_file(tmp_path, monkeypatch):
 
 
 def test_a_working_copy_rewritten_by_install_does_not_move_the_record_pin(tmp_path, monkeypatch):
-    """The box: install.sh:40 has left the working copy of data/benchmark_last.json in the --json shape
+    """The box: install.sh:133 has left the working copy of data/benchmark_last.json in the --json shape
     (here a file emit_json wrote stands in for it, through the paths, so the real data/ is never written).
     Capabilities reads it as the --json run it is, and the --record pin still holds, from the committed bytes."""
     _, rewritten = _emit_json_file(tmp_path, [_row("a truth held", True, "HOLDS")], [], [], BANDED)
@@ -121,7 +121,7 @@ def test_json_shape_is_read_from_a_file_emit_json_wrote(tmp_path, monkeypatch):
 
 
 def test_the_file_install_writes_makes_trust_available(tmp_path, monkeypatch):
-    """install.sh:40 writes `benchmark.py --json`; from that file /capabilities reports a version and cases,
+    """install.sh:133 writes `benchmark.py --json`; from that file /capabilities reports a version and cases,
     trust is available, and a HOLDS carries it."""
     rows = [_row(f"case {i}", i % 2 == 0, "HOLDS" if i % 2 == 0 else "BROKEN") for i in range(10)]
     B, p = _emit_json_file(tmp_path, rows, [], [], BANDED)

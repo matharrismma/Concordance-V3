@@ -393,32 +393,83 @@ reads still carry their numpy values. sympy never entered the front. In this run
 in process and 17.4 s through cells. Across those 1,796 cases no result carried a sympy value at all; one that does
 leaves its cell as the string JSON prints for it.
 
-**Memory, Windows half.** Working set of each process on this laptop (Python 3.14, spawn, so nothing is shared), after
-90 of the moat's reads run four at a time. A `thread` row is one process; a `cells` row is the front plus four cells.
+**Memory.** What each process holds after 90 of the moat's reads run four at a time. On Linux that is PSS, where a page
+shared with others counts by its share, from CI's `slow` job on 5cf4d2c (Python 3.12, forkserver). On this laptop it is
+working set (Python 3.14, spawn), where nothing is shared. A `threads` row is one process; a `cells` row is the front,
+the forkserver where there is one, and four cells.
 
-| path | front, idle | front, after reads | each cell | every process |
-|---|---|---|---|---|
-| threads | 37 MB | 150 MB | none | 150 MB |
-| cells | 38 MB | 49 MB | 150 MB | about 650 MB |
+| where | path | front, idle | front, after reads | forkserver | each cell | every process |
+|---|---|---|---|---|---|---|
+| Linux | threads | 20 MB | 133 MB | none | none | 133 MB |
+| Linux | cells | 20 MB | 28 MB | 59 MB | 36 to 38 MB | 237 MB |
+| Windows | threads | 37 MB | 150 MB | none | none | 150 MB |
+| Windows | cells | 38 MB | 49 MB | none | 150 MB | about 650 MB |
 
-The front keeps numpy once a result has carried it, as the plan allows. A start here took 2.4 to 3.8 s, the imports
-paid before the cell says it is ready, so outside any window. These numbers say nothing about the box: on Linux cells
-fork from a forkserver that preloaded the libraries and share its pages, and the figure that decides is PSS on Linux,
-which `-m slow` prints in CI as `CELL MEMORY`, the forkserver's own share among them. So `CONCORDANCE_VERIFY_WORKERS`
-keeps its default of 4 for now, and that default is chosen from those Linux numbers, not these. One cell grew from
-149 MB to 160 MB over all 1,796 reads, about 6 kB a read, so `CONCORDANCE_CELL_READS` retires a cell at 1,000 reads.
-`CONCORDANCE_CELL_IDLE_S` is 120 s, a choice with no measure behind it yet.
+The front keeps numpy once a result has carried it, as the plan allows. A cell on Linux inherits numpy, scipy and sympy
+from the forkserver before it imports anything. The first start there took 1.39 s, the forkserver's imports among it,
+and the next 0.027 s; on Windows every start took 2.4 to 3.8 s. Either way the imports are paid before a cell says it is
+ready, so outside any window. Alone with its forkserver a cell's share is 55 MB and the forkserver's is 83 MB. A cell's
+share grows as it reads: 55 MB to 97 MB over all 1,796 reads on Linux, about 23 kB a read, so `CONCORDANCE_CELL_READS`
+retires it at 1,000 reads, near 78 MB. `CONCORDANCE_CELL_IDLE_S` is 120 s, a choice with no measure behind it yet.
+
+**The bound.** The most these numbers ever add up to is the front at 29 MB, the forkserver at 83 MB and four cells at
+97 MB: 500 MB. `MemoryMax=1G` is twice that, for a read's own peak and the page cache the cgroup is also charged for.
+`CONCORDANCE_VERIFY_WORKERS` keeps its default of 4 on the same numbers: 237 MB in ordinary use against 133 MB on
+threads, and 500 MB at worst. Past the bound the kernel ends a cell, which raised its own `oom_score_adj`; with
+`OOMPolicy=continue` the service keeps running and the front reads a dead pipe as ERROR. These are CI's numbers, not the
+live host's, so before the ship the lead reads its free memory and confirms its systemd and cgroups honour the bound, or
+that is a named miss. Where a host has swap, `MemoryMax` bounds what is resident and a read can spill first.
+
+**The watchdog.** A second, independent way to stay alive, for whatever froze the process that nobody thought of. The
+serve process reads its own `/health` every 37.5 s and says `WATCHDOG=1` by the plain `NOTIFY_SOCKET` protocol only if
+that read answers within 30 s, and `WatchdogSec=150` with `NotifyAccess=main` restarts it when it goes quiet. Reads start
+on the beat, so after a notify the third read starts at 112.5 s and ends by 142.5 s: two failed reads survive, however
+they fail, and a third does not. Those are the gaps the real loop produces, not arithmetic about it. The numbers are long
+because a busy process answers late and must not be killed for it: on this laptop the self-read took up to 2.4 s with 8
+busy threads, 5.2 s with 16 and 18.8 s with 32, and with 64 it did not finish six reads in the time allowed. The 30 s read
+covers 32 busy threads with room; past that a read fails, and a process failing three in a row is restarted. CI prints the
+same read on Linux as `SELF READ WITH 32 BUSY THREADS`. So a frozen engine waits up to 150 s. With the stand-in on a
+thread the notifies stop; with it in a cell they carry on. That systemd then restarts the process is proved by the lead
+once on the box, with SIGSTOP on the main process; no test here reaches past the datagram.
+
+**The rollback.** `deploy/install.sh` records the previous commit and unit beside the checkout and keeps that record until
+the service has held for WatchdogSec plus 15 s with MainPID and NRestarts unchanged and `/health` still answering. Every
+way out that did not finish, each `set -e` exit among them, runs `git checkout --force` to the recorded commit in place,
+restores the unit, reinstalls if the dependencies moved, restarts, and reads `/health` and reports it. Nothing moves or
+deletes data/ or .env: the rollback that moved them could fail halfway, so it is gone. Seals are ignored by git and .env is
+untracked, so no checkout reaches them, even a forced one, even killed partway. Of the 58 files git tracks under data/,
+the only one anything writes is `data/benchmark_last.json`, and the writer is the install's own last gate, not the
+runtime. It would block the next checkout and a forced one would drop it, so its bytes go in the record and come back by
+a rename, and the gate writes a temporary name and renames on success, so a failed gate leaves it as it was. One window is
+left: a rollback killed between its checkout and that rename leaves git's copy of that one file, valid, until the next
+run. Any other tracked file under data/ that differs from its commit stops the ship before anything moves, since a forced
+checkout would overwrite it. A rollback that cannot finish exits 3 and keeps the record, and the next run goes back to
+what it says, not to whatever HEAD is by then. Dry runs of the real script with real git, and stubs for pip, sudo,
+systemctl, curl and sleep, pin each path, each run twice, and every byte of data/ and .env after each. The box's own
+systemd is not in them.
+
+**A cell cannot be left behind.** Any failure on a cell's pipe ends that cell and reads as ERROR, so no cell stays alive
+with nobody holding it. Once a forkserver has died, multiprocessing reads its cells as ended and its kill does nothing,
+so each cell asks the kernel to kill it when its parent dies (`PR_SET_PDEATHSIG`). That was the simpler of two ways: it
+needs no detection in the front and no restart, and costs the reads in flight, which read as ERROR. The next read starts
+a new forkserver. It is Linux's alone, so only CI proves it.
 
 **Named misses and wants.** A cell bounds the damage of a stuck read; it does not stop a flood. Enough stuck reads shed
 everyone else to busy until their windows pass, and rate limits at the edge remain a want. Cells do not change what a
 verifier can compute inside its window. `/scribe`'s SVD runs in the front, on numpy. A cell stopped from outside partway
 through writing its answer is not bounded by the window, since the front is by then reading it; that wait ends only when
-the pipe dies. Wants for their own runs: a verifier handler that reads any exception as an answer, pvalue_calibration results
-that fail to seal, and prebuilding the compiled extension a verifier builds for itself.
+the pipe dies. Library use keeps its old limit: under load a cold import can pass the window on a thread, so with 16 busy
+processes the moat's first statistics read went to `verification timed out` at 8.1 s, a true claim read as SYSTEM_ERROR,
+never a false verdict. Through a cell the same read held at 18.1 s, its imports paid before the window. Read from git objects at d8d11d4, with no pytest and no POST: concordance-2's engine has the same thread
+path (`src/concordance/derivation.py:74`, `:82`) and no `WatchdogSec` in any unit, so it can freeze the same way; that is
+a want for its own run. Wants for their own runs: a verifier handler that reads any exception as an answer,
+pvalue_calibration results that fail to seal, and prebuilding the compiled extension a verifier builds for itself.
 
 **Commands.**
 
 - The defect, the flood, the wall, the moat and the memory: `PYTHONPATH=src python -m pytest -m slow tests/test_cells.py`.
-- The memory rows: `PYTHONPATH=src python tests/fixtures/cell_probe.py memory thread`, then `memory cells`.
+- The memory rows: `PYTHONPATH=src python tests/fixtures/cell_probe.py memory thread`, then `memory cells`; on Linux
+  the `slow` job prints them as `CELL MEMORY`.
 - The growth: `PYTHONPATH=src python tests/fixtures/cell_probe.py growth`.
-- What a pool does, in the suite: `PYTHONPATH=src python -m pytest tests/test_cells.py`.
+- What a pool does, the notify and every rollback path, in the suite:
+  `PYTHONPATH=src python -m pytest tests/test_cells.py tests/test_watchdog.py tests/test_install_rollback.py`.

@@ -11,11 +11,15 @@
 """
 from __future__ import annotations
 
+import http.client
 import json
+import os
 import re
+import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlsplit
 
 from .config import EngineConfig
@@ -24,6 +28,9 @@ from .mcp import server as _mcp
 from .mcp.http import handle_http as _mcp_http
 
 MAX_BODY = 256 * 1024
+# How long the watchdog waits for its own /health. A process busy on many threads answers late, not never: measured at
+# 18.8 s with 32 busy threads, so a slow read must not count as a frozen process. It stays under a beat (_beats_every).
+SELF_READ_S = 30.0
 _CONFIG = EngineConfig()
 
 
@@ -360,10 +367,75 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+# ── the watchdog ─────────────────────────────────────────────────────────────────────────────────────
+# A second, independent way to stay alive. systemd restarts a process that stops saying WATCHDOG=1, and this one says it
+# only after its own read of /health answers, so a process that cannot serve goes quiet, whatever froze it. Cells stop a
+# stuck read from freezing this process; this is for what nobody thought of. Plain NOTIFY_SOCKET datagrams, no dependency.
+def _notify(message: bytes) -> bool:
+    """One datagram to systemd. With no socket named it does nothing, and a socket that fails is a beat that did not
+    reach it: systemd restarts on that, which is the right way for it to fail."""
+    path = os.environ.get("NOTIFY_SOCKET", "")
+    if not path:
+        return False
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+            sock.sendto(message, "\0" + path[1:] if path.startswith("@") else path)
+    except OSError:
+        return False
+    return True
+
+
+def _self_read(address: Tuple[str, int], timeout: Optional[float] = None) -> bool:
+    """Does this process's own /health answer, within its own short timeout? Through the socket, as anyone would ask."""
+    conn = http.client.HTTPConnection(address[0], address[1], timeout=SELF_READ_S if timeout is None else timeout)
+    try:
+        conn.request("GET", "/health")
+        answer = conn.getresponse()
+        return answer.status == 200 and json.loads(answer.read()).get("ok") is True
+    except (OSError, ValueError, http.client.HTTPException):
+        return False
+    finally:
+        conn.close()
+
+
+def _beat(address: Tuple[str, int]) -> bool:
+    return _self_read(address) and _notify(b"WATCHDOG=1")
+
+
+def _beats_every(usec: int) -> float:
+    """A quarter of the window systemd gives. Reads start on the beat, so after a notify the third read starts three
+    beats on and ends at most SELF_READ_S later, inside the window while SELF_READ_S is under a beat: two failed reads
+    survive. A third failed read is four beats, the whole window, and does not."""
+    return usec / 10 ** 6 / 4
+
+
+def _watchdog(address: Tuple[str, int], every: float, stop: threading.Event) -> None:
+    """Read on a steady beat, counted from when each read starts, so a slow read does not push the next one out."""
+    while True:
+        began = time.monotonic()
+        _beat(address)
+        if stop.wait(max(0.0, every - (time.monotonic() - began))):
+            return
+
+
+def _start_watchdog(address: Tuple[str, int]) -> Optional[threading.Thread]:
+    """Beat when systemd asks for it, which it does by naming a socket and a window. Otherwise nothing starts."""
+    usec = os.environ.get("WATCHDOG_USEC", "")
+    if not os.environ.get("NOTIFY_SOCKET") or not usec.isdigit() or not int(usec):
+        return None
+    stop = threading.Event()
+    thread = threading.Thread(target=_watchdog, args=(address, _beats_every(int(usec)), stop), name="watchdog", daemon=True)
+    thread.stop = stop                  # type: ignore[attr-defined]
+    thread.start()
+    return thread
+
+
 def serve(host: str = "127.0.0.1", port: int = 8000, background: bool = False):
     """Serve with reads in cells (cells.py): what holds Python's global lock must not hold this process."""
     srv = ThreadingHTTPServer((host, port), Handler)
     use_cells()
+    bound, bound_port = srv.server_address[:2]
+    _start_watchdog(("127.0.0.1" if bound in ("", "0.0.0.0") else bound, bound_port))
     if background:
         t = threading.Thread(target=srv.serve_forever, daemon=True)
         t.start()

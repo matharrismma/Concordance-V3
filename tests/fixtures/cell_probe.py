@@ -5,6 +5,9 @@ line of JSON on stdout, except `thread`, which never ends by itself and streams 
     python tests/fixtures/cell_probe.py thread              a held lock on a thread, as library use still runs it
     python tests/fixtures/cell_probe.py cells               a held lock in a cell, read over real HTTP
     python tests/fixtures/cell_probe.py flood               as many held locks as there are cells
+    python tests/fixtures/cell_probe.py orphan              a held lock in a cell whose forkserver is killed (Linux)
+    python tests/fixtures/cell_probe.py freeze              a held lock on a thread, with the watchdog on
+    python tests/fixtures/cell_probe.py stuck               a held lock in a cell, with the watchdog on
     python tests/fixtures/cell_probe.py wall                every public route, then what entered the front
     python tests/fixtures/cell_probe.py library             what importing and verifying starts
     python tests/fixtures/cell_probe.py moat cells|process  the whole moat, one digest per case
@@ -143,6 +146,69 @@ def flood_mode() -> None:
     after = D.verify_step("mathematics", QUICK)
     _say({"stuck": got, "busy": busy, "busy_secs": busy_secs, "during": during, "after": after,
           "status": pool.status(), "window": WINDOW_S})
+
+
+def orphan_mode() -> None:
+    os.environ["CELL_PROBE_WINDOW_S"] = "30"
+    global WINDOW_S
+    WINDOW_S = 30.0
+    D = _stand_ins()
+    import signal
+    from multiprocessing import forkserver
+    from concordance import cells
+    pool = cells.enable(1, preload=("lock_holder",))
+    D.verify_step("mathematics", QUICK)
+    cell = pool.status()["pids"][0]
+    got = {}
+
+    def read():
+        began = time.monotonic()
+        got["out"] = D.verify_step("mathematics", HOLD)
+        got["secs"] = time.monotonic() - began
+
+    reader = threading.Thread(target=read)
+    reader.start()
+    while pool.status()["taken"] < 1:
+        time.sleep(0.005)
+    time.sleep(0.2)
+    os.kill(forkserver._forkserver._forkserver_pid, signal.SIGKILL)
+    reader.join()
+    end = time.monotonic() + 5
+    while time.monotonic() < end and _running(cell):
+        time.sleep(0.02)
+    _say({**got, "gone": not _running(cell), "after": D.verify_step("mathematics", QUICK), "window": WINDOW_S})
+
+
+def _running(pid: int) -> bool:
+    """Is it running? A zombie is not: it holds no memory and is only waiting for init to read it."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii") as fh:
+            return fh.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except OSError:
+        return False
+
+
+def _beating(cells_on: bool) -> None:
+    """A real server and a real watchdog beating fast, with the notify printed instead of sent, then a held lock."""
+    os.environ.update(NOTIFY_SOCKET="/run/not/used", WATCHDOG_USEC="200000")
+    D = _stand_ins()
+    from concordance import cells, http_api
+
+    def told(message):
+        print("notify", time.monotonic(), flush=True)
+        return True
+
+    http_api._notify = told
+    if cells_on:
+        cells.enable(1, preload=("lock_holder",))
+        D.verify_step("mathematics", QUICK)
+    else:
+        http_api.use_cells = lambda: None               # as library use runs a read: on a thread
+    http_api.serve("127.0.0.1", 0, background=True)
+    time.sleep(0.5)
+    print("read", time.monotonic(), flush=True)
+    D.verify_step("mathematics", HOLD)
+    time.sleep(60)                                      # the parent ends this
 
 
 # ── the wall ─────────────────────────────────────────────────────────────────────────────────────────
@@ -316,7 +382,7 @@ def memory_mode(how: str) -> None:
     if pool:
         report["cells_busy"] = [_held_kb(p) for p in pool.status()["pids"]]
         report["forkserver_busy"] = _forkserver_kb()
-        report["cell_inherited"] = pool.status()["cell_inherited"]
+        report["cell_inherited"] = [n for n in pool.status()["cell_inherited"] if n in ("numpy", "scipy.stats", "sympy")]
         spare = cells.Cells(1, preload=pool._preload)           # a start on what is already warm
         spare.call(D._read_domain, ("real_estate", {}), 60)
         report["next_start_s"] = spare.status()["last_start_s"]
@@ -358,4 +424,5 @@ if __name__ == "__main__":
         memory_mode(sys.argv[2])
     else:
         {"thread": thread_mode, "cells": cells_mode, "flood": flood_mode, "wall": wall_mode, "library": library_mode,
-         "growth": growth_mode}[mode]()
+         "growth": growth_mode, "orphan": orphan_mode, "freeze": lambda: _beating(False),
+         "stuck": lambda: _beating(True)}[mode]()

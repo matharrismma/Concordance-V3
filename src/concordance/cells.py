@@ -21,7 +21,8 @@ a sympy value leaves as the string JSON prints for it and sympy never enters the
 
 The memory wall stands outside the cell, in the unit, and each cell raises its own oom_score_adj so the kernel ends the
 cell first and the front reads a dead pipe. No limit is set in process: that raises a MemoryError, which verifier code
-can catch and read as an answer.
+can catch and read as an answer. A cell also asks the kernel to end it with its parent: once a forkserver has died,
+multiprocessing reads its cells as ended and its kill does nothing, so a stuck one could never be stopped.
 
 Nothing here spawns on import. serve() turns cells on through derivation.use_cells(); library use stays on its threads.
 On Linux cells fork from a forkserver that preloaded the heavy libraries, so they share its pages and start in
@@ -52,6 +53,7 @@ _IDLE_S = float(os.environ.get("CONCORDANCE_CELL_IDLE_S", "120") or 120)
 _START_S = float(os.environ.get("CONCORDANCE_CELL_START_S", "60") or 60)
 _GONE_S = 5.0                                   # how long a killed cell is given to be gone
 _OOM_SCORE_ADJ = "/proc/self/oom_score_adj"
+_PR_SET_PDEATHSIG, _SIGKILL = 1, 9
 _NAME = "concordance-cell"
 
 
@@ -131,6 +133,21 @@ def _raise_oom_score(path: str = _OOM_SCORE_ADJ) -> None:
         pass
 
 
+def _end_with_parent(libc: Any = None) -> None:
+    """Have the kernel kill this cell the moment its parent dies, whatever the cell is doing. On Linux a cell's parent is
+    the forkserver, and the signal needs no lock and no thread here. Where the front is the parent its kill works. If
+    the parent went before the kernel was asked, nothing will come, so the cell goes now."""
+    if sys.platform != "linux":
+        return
+    parent = os.getppid()
+    if libc is None:
+        import ctypes
+        libc = ctypes.CDLL(None)
+    libc.prctl(_PR_SET_PDEATHSIG, _SIGKILL)
+    if os.getppid() != parent:
+        os._exit(1)
+
+
 def _answer(job: bytes) -> bytes:
     """One read. A raise is the verifier's own answer, told as the front would have seen it in process; a result that
     cannot be written is not an answer at all."""
@@ -145,25 +162,22 @@ def _answer(job: bytes) -> bytes:
         return pickle.dumps(("unreadable", type(exc).__name__))
 
 
-def _heavy_loaded() -> List[str]:
-    return sorted(n for n in ("numpy", "scipy", "sympy") if n in sys.modules)
-
-
 def _cell_main(conn: Any, preload: Sequence[str]) -> None:
     """A cell's whole life: load what it needs, say it is ready, then answer until the front closes the pipe or kills
     it. It runs on a process's main thread, and nothing here touches a store. What it says is measured from inside,
     since multiprocessing tells a child the default start method and not the one that started it: `parent` shows who
     made it, and `inherited` what it had before it imported anything, which is what it shares with a forkserver."""
     _raise_oom_score()
+    _end_with_parent()
     signal.signal(signal.SIGINT, signal.SIG_IGN)     # the front decides when a cell ends
-    inherited = _heavy_loaded()
+    inherited = [name for name in preload if name in sys.modules]
     for name in preload:
         try:
             importlib.import_module(name)
         except Exception:  # noqa: BLE001 — a sovereign install without a library still starts
             pass
     conn.send_bytes(pickle.dumps({"pid": os.getpid(), "parent": os.getppid(), "inherited": inherited,
-                                  "loaded": _heavy_loaded()}))
+                                  "loaded": [name for name in preload if name in sys.modules]}))
     while True:
         try:
             conn.send_bytes(_answer(conn.recv_bytes()))
@@ -173,10 +187,10 @@ def _cell_main(conn: Any, preload: Sequence[str]) -> None:
 
 # ── the pool, in the front ───────────────────────────────────────────────────────────────────────────
 class _Cell:
-    __slots__ = ("proc", "conn", "reads", "since")
+    __slots__ = ("proc", "conn", "reads", "since", "gone")
 
     def __init__(self, proc: Any, conn: Any) -> None:
-        self.proc, self.conn, self.reads, self.since = proc, conn, 0, time.monotonic()
+        self.proc, self.conn, self.reads, self.since, self.gone = proc, conn, 0, time.monotonic(), False
 
     def waiting(self) -> bool:
         """Is it alive, with nothing on the pipe? A closed pipe polls readable, and an idle cell has nothing to say."""
@@ -218,23 +232,29 @@ class Cells:
     def call(self, fn: Callable[..., Any], args: tuple, window: float) -> Any:
         """Run fn(*args) in a cell. Busy raises Saturated at once; past `window` the cell is killed and TimeoutError
         raised; a cell that fails raises CellFailed; a raise inside raises Raised. The window starts when the cell
-        has the read, so a start is never charged to it."""
+        has the read, so a start is never charged to it. Whatever else goes wrong, the cell this read holds is ended
+        before the read gives up its slot: no cell stays alive with nobody holding it."""
         job = pickle.dumps((fn, args), protocol=pickle.HIGHEST_PROTOCOL)
         with self._lock:
             if self._closed or self._taken >= self._size:
                 raise Saturated()
             self._taken += 1
             cell = self._idle.pop() if self._idle else None     # newest first, so the others can go idle
+        rested = False
         try:
             if cell is not None and not cell.waiting():
                 self._end(cell, "dead")
                 cell = None
             cell = cell or self._start()
-            raw = self._ask(cell, job, window)
-            answer = self._take_answer(cell, raw)
+            answer = self._take_answer(cell, self._ask(cell, job, window))
             self._rest(cell)
+            rested = True
         finally:
-            self._free()
+            try:
+                if cell is not None and not rested:
+                    self._end(cell, "dead")
+            finally:
+                self._free()
         if answer[0] == "value":
             return answer[1]
         if answer[0] == "raised":
@@ -246,8 +266,7 @@ class Cells:
             cell.conn.send_bytes(job)
             if cell.conn.poll(window):
                 return cell.conn.recv_bytes()
-        except (EOFError, OSError) as exc:
-            self._end(cell, "dead")
+        except Exception as exc:  # noqa: BLE001 — whatever failed, this read has no answer, and call() ends the cell
             raise CellFailed("the cell ended before it answered") from exc
         self._end(cell, "stuck")
         raise _futures.TimeoutError()           # outside the try: on 3.11+ this is an OSError
@@ -257,8 +276,7 @@ class Cells:
             answer = _read(raw)
             if not isinstance(answer, tuple) or answer[0] not in ("value", "raised", "unreadable"):
                 raise pickle.UnpicklingError("not an answer")
-        except Exception as exc:  # noqa: BLE001 — anything unreadable is ERROR
-            self._end(cell, "dead")
+        except Exception as exc:  # noqa: BLE001 — anything unreadable is ERROR, and call() ends the cell
             raise CellFailed("the answer from a cell could not be read") from exc
         cell.reads += 1
         return answer
@@ -312,8 +330,11 @@ class Cells:
         return cell
 
     def _end(self, cell: _Cell, why: str) -> None:
-        """The only way out for a cell, and it is gone before this returns. It holds nothing worth saving, so every
-        end is a kill: a cell that has answered has nothing left to do, and a stuck one can do nothing else."""
+        """The only way out for a cell, once, and it is gone before this returns. It holds nothing worth saving, so
+        every end is a kill: a cell that has answered has nothing left to do, and a stuck one can do nothing else."""
+        if cell.gone:
+            return
+        cell.gone = True
         try:
             cell.proc.kill()
             cell.proc.join(_GONE_S)
