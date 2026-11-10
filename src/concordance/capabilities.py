@@ -168,11 +168,21 @@ def _transparency() -> Dict[str, Any]:
         return {"issuer_key_configured": False, "means": "transparency module not importable (install the signing extra)"}
 
 
+def _notary_entry() -> Dict[str, Any]:
+    """The routes that keep another log's chain heads and the kid that signs their receipts (docs/NOTARY.md); no
+    store is named here."""
+    try:
+        from . import notary as N
+        return N.capability()
+    except Exception:  # noqa: BLE001
+        return {"routes": None, "kid": None, "means": "module not importable in this process"}
+
+
 def statement(surface: str = "secular") -> Dict[str, Any]:
     from . import __version__
     return {"engine": "concordance", "version": __version__, "note": NOTE,
             "verifiers": _verifiers(), "tools": _tools(), "benchmark": _benchmark(), "ledger": _ledger(),
-            "transparency": _transparency(), "bucket": _bucket(), "trust": trust(),
+            "transparency": _transparency(), "notary": _notary_entry(), "bucket": _bucket(), "trust": trust(),
             "limits": ["verifies arithmetic and formula application only — never clinical, legal, or "
                        "financial suitability",
                        "a plain-text claim is checked only where an extractor recognised a tight span; "

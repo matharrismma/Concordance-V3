@@ -8,6 +8,8 @@
     GET  /schema/<domain>, GET /find?q=..., GET /capabilities, GET /ledger/verify, GET /health
     GET  /seal?hash=<hash>, GET /seals?limit=N        v2-compatible aliases used by the .org app
     POST|GET|DELETE /mcp   Streamable-HTTP MCP transport
+    POST /notary        {store, seq, head, at, sig}             -> a receipt signed by the issuer key (docs/NOTARY.md)
+    GET  /notary/key, GET /notary/stores/<store>, /notary/stores/<store>/<seq>, ?after=<n>&limit=<1..500>
 """
 from __future__ import annotations
 
@@ -20,8 +22,9 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional, Tuple
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
+from . import notary as _notary
 from .config import EngineConfig
 from .derivation import use_cells
 from .mcp import server as _mcp
@@ -276,12 +279,20 @@ document.getElementById('recheck').addEventListener('click', async () => {{
 </script></html>""".encode()
 
 
-def route(method: str, path: str, query: Dict[str, Any], body: Dict[str, Any], headers: Any, raw: bytes):
+def _notary_path(path: str) -> bool:
+    return path == _notary.PREFIX or path.startswith(_notary.PREFIX + "/")
+
+
+def route(method: str, path: str, query: Dict[str, Any], body: Dict[str, Any], headers: Any, raw: bytes,
+          raw_query: Optional[str] = None):
     seal_on = str(query.get("seal", ["1"])[0]) not in ("0", "false")
     if path == "/health":
         return _json(200, {"ok": True})
     if path.startswith("/mcp"):
         return _mcp_http(method, headers, raw, _CONFIG)
+    if _notary_path(path):
+        # its own routes, bytes and rules (docs/NOTARY.md); the query as sent, so a blank value is refused, not dropped
+        return _notary.route(method, path, urlencode(query, doseq=True) if raw_query is None else raw_query, raw)
     if method == "GET":
         if path == "/capabilities":
             return _json(200, _mcp._call_tool("capabilities", {}, _CONFIG))
@@ -341,12 +352,14 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(min(n, MAX_BODY)) if n else b""
         try:
-            body = json.loads(raw or b"{}") if method == "POST" and not u.path.startswith("/mcp") else {}
+            # /mcp and /notary read the raw bytes themselves; /notary refuses a deep or broken body by its own rules
+            parse = method == "POST" and not u.path.startswith("/mcp") and not _notary_path(u.path)
+            body = json.loads(raw or b"{}") if parse else {}
             if not isinstance(body, dict):
                 body = {}
         except ValueError:
             body = {}
-        status, hdrs, out = route(method, u.path, parse_qs(u.query), body, self.headers, raw)
+        status, hdrs, out = route(method, u.path, parse_qs(u.query), body, self.headers, raw, u.query)
         self.send_response(status)
         for k, v in hdrs.items():
             self.send_header(k, v)
@@ -431,7 +444,12 @@ def _start_watchdog(address: Tuple[str, int]) -> Optional[threading.Thread]:
 
 
 def serve(host: str = "127.0.0.1", port: int = 8000, background: bool = False):
-    """Serve with reads in cells (cells.py): what holds Python's global lock must not hold this process."""
+    """Serve with reads in cells (cells.py): what holds Python's global lock must not hold this process. Before it
+    binds, the one read-write open of the store file rolls back a write a crash interrupted (notary.recover); with
+    no file it opens nothing."""
+    note = _notary.recover()
+    if note:
+        print(note, flush=True)
     srv = ThreadingHTTPServer((host, port), Handler)
     use_cells()
     bound, bound_port = srv.server_address[:2]

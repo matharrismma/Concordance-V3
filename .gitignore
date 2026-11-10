@@ -8,6 +8,7 @@ dist/
 # runtime state written by the engine — never source
 data/cas/
 data/ledger/
+data/notary/
 data/receipt_cards.jsonl
 data/.cache/
 # CI artifacts

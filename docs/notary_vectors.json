@@ -1,0 +1,120 @@
+{
+  "about": "Test vectors for docs/NOTARY.md: the exact bytes a store signs, the exact bytes V3 signs, in hex, and the Ed25519 signatures over them. Ed25519 is deterministic, so an implementation that builds the same bytes with these keys reproduces every signature here.",
+  "keys_are_test_keys": "RFC 8032 section 7.1 TEST 1 (the store) and TEST 2 (V3's issuer key): keys published in the RFC for testing. Never use them for anything real.",
+  "keys": {
+    "store": {
+      "rfc8032": "section 7.1, TEST 1",
+      "private_seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "public_key": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "storekey": "ed25519:21fe31dfa154a261"
+    },
+    "issuer": {
+      "rfc8032": "section 7.1, TEST 2",
+      "private_seed_hex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+      "public_key_hex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "public_key": "PUAXw-hDiVqStwqnTRt-vJyYLM8uxJaMwM1V8Sr0Zgw",
+      "kid": "ed25519:39f713d0a644253f"
+    }
+  },
+  "rfc8032_signatures": [
+    {
+      "key": "store",
+      "rfc8032": "section 7.1, TEST 1",
+      "message_hex": "",
+      "signature_hex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+    },
+    {
+      "key": "issuer",
+      "rfc8032": "section 7.1, TEST 2",
+      "message_hex": "72",
+      "signature_hex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00"
+    }
+  ],
+  "cases": [
+    {
+      "name": "the store's first checkpoint: prev is genesis",
+      "head_is": "the SHA-256 of the UTF-8 text 'example chain, record 1', a made-up head",
+      "request": {
+        "store": "example-store-01",
+        "seq": 1,
+        "head": "d0d61f74f66139b8a7892486c70bc89f8cdb0cee03ef45030be1f9a312cdbdc8",
+        "at": "2026-11-09T12:00:00Z",
+        "sig": "c5ooGN0rHfQ3m5x8-UfQ7Qg5B-hoK6B_uEoUCRk4AEaPvSTM6j-igJCUECI2cE02tcPyjr6BHz55U2OnNWv0Cg"
+      },
+      "request_bytes_hex": "636f6e636f7264616e63652d6e6f746172792d726571756573742f76310a6578616d706c652d73746f72652d30310a310a643064363166373466363631333962386137383932343836633730626338396638636462306365653033656634353033306265316639613331326364626463380a323032362d31312d30395431323a30303a30305a0a",
+      "witnessed_at": "2026-11-09T12:00:02Z",
+      "receipt_bytes_hex": "636f6e636f7264616e63652d6e6f746172792f76310a656432353531393a333966373133643061363434323533660a6578616d706c652d73746f72652d30310a656432353531393a323166653331646661313534613236310a310a643064363166373466363631333962386137383932343836633730626338396638636462306365653033656634353033306265316639613331326364626463380a323032362d31312d30395431323a30303a30305a0a323032362d31312d30395431323a30303a30325a0a67656e657369730a",
+      "receipt": {
+        "format": "concordance-notary/v1",
+        "kid": "ed25519:39f713d0a644253f",
+        "store": "example-store-01",
+        "storekey": "ed25519:21fe31dfa154a261",
+        "seq": 1,
+        "head": "d0d61f74f66139b8a7892486c70bc89f8cdb0cee03ef45030be1f9a312cdbdc8",
+        "at": "2026-11-09T12:00:00Z",
+        "witnessed_at": "2026-11-09T12:00:02Z",
+        "prev": "genesis",
+        "hash": "152eab9acae8d294ab0bf9b60d04d21795dcaa3045c7eb243a869c737c8d5ed1",
+        "sig": "bxrDih7ccsBzOaF3JPgqnvg3n9nsf_hr2nvmuYbV6gXDpiqd7uIVDy9SJchJMbDzkvFgPrxE1dAmLuemdLt8DQ",
+        "store_sig": "c5ooGN0rHfQ3m5x8-UfQ7Qg5B-hoK6B_uEoUCRk4AEaPvSTM6j-igJCUECI2cE02tcPyjr6BHz55U2OnNWv0Cg"
+      }
+    },
+    {
+      "name": "a second checkpoint at a higher seq, a minute later: prev is the first receipt's hash",
+      "head_is": "the SHA-256 of the UTF-8 text 'example chain, record 7', a made-up head",
+      "request": {
+        "store": "example-store-01",
+        "seq": 7,
+        "head": "720fe13acea4dd17e569c090a1989f1046bbfd51104a4985a1046a51e38eda46",
+        "at": "2026-11-09T12:01:00Z",
+        "sig": "g84c0YbvTOpJKsms9gD6sIHuYT9K9CGJX1fdl3ndde1ddDSAPME3UYmcKt0He8ryNI3P-RQiDl3A9wfOxwmXDg"
+      },
+      "request_bytes_hex": "636f6e636f7264616e63652d6e6f746172792d726571756573742f76310a6578616d706c652d73746f72652d30310a370a373230666531336163656134646431376535363963303930613139383966313034366262666435313130346134393835613130343661353165333865646134360a323032362d31312d30395431323a30313a30305a0a",
+      "witnessed_at": "2026-11-09T12:01:03Z",
+      "receipt_bytes_hex": "636f6e636f7264616e63652d6e6f746172792f76310a656432353531393a333966373133643061363434323533660a6578616d706c652d73746f72652d30310a656432353531393a323166653331646661313534613236310a370a373230666531336163656134646431376535363963303930613139383966313034366262666435313130346134393835613130343661353165333865646134360a323032362d31312d30395431323a30313a30305a0a323032362d31312d30395431323a30313a30335a0a313532656162396163616538643239346162306266396236306430346432313739356463616133303435633765623234336138363963373337633864356564310a",
+      "receipt": {
+        "format": "concordance-notary/v1",
+        "kid": "ed25519:39f713d0a644253f",
+        "store": "example-store-01",
+        "storekey": "ed25519:21fe31dfa154a261",
+        "seq": 7,
+        "head": "720fe13acea4dd17e569c090a1989f1046bbfd51104a4985a1046a51e38eda46",
+        "at": "2026-11-09T12:01:00Z",
+        "witnessed_at": "2026-11-09T12:01:03Z",
+        "prev": "152eab9acae8d294ab0bf9b60d04d21795dcaa3045c7eb243a869c737c8d5ed1",
+        "hash": "9da71c84a48c780b4e6b5f8d20b718fe454c633a5763d1cf27edf914f3103c10",
+        "sig": "qQ3W-zk7lZ17iL9H5_fMrn4fkqh3QDYtpnuFRVagy6zB-zghUIJmvFe3YjSyMhwZdtyqTEKBOt2039Wz9i6XAg",
+        "store_sig": "g84c0YbvTOpJKsms9gD6sIHuYT9K9CGJX1fdl3ndde1ddDSAPME3UYmcKt0He8ryNI3P-RQiDl3A9wfOxwmXDg"
+      }
+    },
+    {
+      "name": "an older seq sent after a newer one is witnessed in the order it arrives: prev is the second receipt's hash",
+      "head_is": "the SHA-256 of the UTF-8 text 'example chain, record 4', a made-up head",
+      "request": {
+        "store": "example-store-01",
+        "seq": 4,
+        "head": "cf2097a3c6dd5736ee239a7851d071c0fd65456d1b1adcb5e17b156d2a0e939c",
+        "at": "2026-11-09T12:00:30Z",
+        "sig": "9uINcgICOyh2eh_dksnnaTHUO7_rkR-GJJ3qDPnWDqorVWN79SgkxytfYPqsvCMV9qIIfNanHKjnaeud83tEBw"
+      },
+      "request_bytes_hex": "636f6e636f7264616e63652d6e6f746172792d726571756573742f76310a6578616d706c652d73746f72652d30310a340a636632303937613363366464353733366565323339613738353164303731633066643635343536643162316164636235653137623135366432613065393339630a323032362d31312d30395431323a30303a33305a0a",
+      "witnessed_at": "2026-11-09T12:02:05Z",
+      "receipt_bytes_hex": "636f6e636f7264616e63652d6e6f746172792f76310a656432353531393a333966373133643061363434323533660a6578616d706c652d73746f72652d30310a656432353531393a323166653331646661313534613236310a340a636632303937613363366464353733366565323339613738353164303731633066643635343536643162316164636235653137623135366432613065393339630a323032362d31312d30395431323a30303a33305a0a323032362d31312d30395431323a30323a30355a0a396461373163383461343863373830623465366235663864323062373138666534353463363333613537363364316366323765646639313466333130336331300a",
+      "receipt": {
+        "format": "concordance-notary/v1",
+        "kid": "ed25519:39f713d0a644253f",
+        "store": "example-store-01",
+        "storekey": "ed25519:21fe31dfa154a261",
+        "seq": 4,
+        "head": "cf2097a3c6dd5736ee239a7851d071c0fd65456d1b1adcb5e17b156d2a0e939c",
+        "at": "2026-11-09T12:00:30Z",
+        "witnessed_at": "2026-11-09T12:02:05Z",
+        "prev": "9da71c84a48c780b4e6b5f8d20b718fe454c633a5763d1cf27edf914f3103c10",
+        "hash": "2e6626a021458059c8a2505725476e87128e7ee1269a1dab6f83629f7b9737f3",
+        "sig": "EN_Ef7WhOLUNJjTeRnqlBaZHrv5M7jaSTge_jg4YdPR9-4cnZwd7jPTYwlsv0acoCDYPXM_5gLswE9nDCI8gCg",
+        "store_sig": "9uINcgICOyh2eh_dksnnaTHUO7_rkR-GJJ3qDPnWDqorVWN79SgkxytfYPqsvCMV9qIIfNanHKjnaeud83tEBw"
+      }
+    }
+  ]
+}

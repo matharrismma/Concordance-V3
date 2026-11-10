@@ -114,6 +114,9 @@ test_new_domain_verifiers.py
 test_no_llm_in_the_loop.py
 test_no_other_route.py
 test_no_test_writes_the_stores.py
+test_notary.py
+test_notary_cli.py
+test_notary_vectors.py
 test_nuclear_physics.py
 test_number_theory.py
 test_number_theory_mode.py

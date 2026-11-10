@@ -23,6 +23,7 @@ layers                                                9  <- config
 ledger                                              512  <- <entry>
 mcp.http                                            171  <- http_api
 mcp.server                                          315  <- <entry>
+notary                                              749  <- capabilities
 packet                                               38  <- receipts
 receipts                                            212  <- <entry>
 record                                              253  <- receipts
@@ -54,4 +55,4 @@ verifiers.si_units                                  188  <- audit
 verifiers.spec                                      379  <- verifiers
 verifiers.thermal_scale                              51  <- verifiers.chemistry
 verifiers.wordcraft                                 889  <- audit
-# 56 modules, 17182 lines (lazy imports)
+# 57 modules, 17931 lines (lazy imports)

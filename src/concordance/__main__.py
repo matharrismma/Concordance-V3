@@ -5,6 +5,11 @@
     python -m concordance mcp --list-tools
     python -m concordance verify '<json: {steps|mode,params|claim}>'
     python -m concordance keygen                          print a fresh issuer key (CONCORDANCE_ISSUER_KEY) + kid
+    python -m concordance notary register <store> <public_key> [--data-dir D]    bind a store's name to its key
+    python -m concordance notary retire <store> [--data-dir D]                   no new checkpoints; the name stays used
+    python -m concordance notary list [--data-dir D]
+    python -m concordance notary verify <store> [--key <V3 public key>] [--data-dir D]
+                                                          (docs/NOTARY.md; --data-dir defaults to CONCORDANCE_DATA_DIR)
 """
 from __future__ import annotations
 
@@ -45,6 +50,9 @@ def main(argv=None) -> int:
         print(f"# kid: ed25519:{hashlib.sha256(signing._b64u_decode(pub)).hexdigest()[:16]}")
         print("# keep the private line in the service's EnvironmentFile (mode 0600); publish the public key beside your receipts")
         return 0
+    if argv[0] == "notary":
+        from .notary import cli
+        return cli(argv[1:])
     if argv[0] == "verify" and len(argv) > 1:
         from .config import EngineConfig
         from .mcp.server import _call_tool
