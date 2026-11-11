@@ -85,6 +85,8 @@ test_hydrology.py
 test_inequality.py
 test_install_rollback.py
 test_information_theory.py
+test_integer_probe.py
+test_integer_walk.py
 test_integrations.py
 test_isolation.py
 test_labor.py

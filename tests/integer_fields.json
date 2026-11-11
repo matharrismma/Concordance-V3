@@ -1,0 +1,4 @@
+{
+ "about": "Run 2026-11-11-exact-integers, THE PROBE and THE WALK (tools/integer_probe.py): a call that floors or rounds a real value on purpose, as the check's own definition. Each entry is {\"site\": <a site key, as tools/integer_probe.py writes one>, \"why\": <why the check's own definition floors or rounds there>, \"test\": \"tests/<file>.py::<function>\", a test whose fractional input reads as the check should}. Neither measure counts a finding at a named site. No site the probe finds receiving an injected value itself may be named here: such a site reads through THE RULE. Empty at the base (step measure).",
+ "fields": []
+}
