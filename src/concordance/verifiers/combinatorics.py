@@ -20,6 +20,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, confirm, error, mismatch, na
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _derangements(n: int) -> int:
@@ -41,10 +42,11 @@ def verify_permutations(spec: Dict[str, Any]) -> VerifierResult:
     n, k, claimed = spec.get("perm_n"), spec.get("perm_k"), spec.get("claimed_permutations")
     if n is None or k is None or claimed is None:
         return na(name)
-    try:
-        nf, kf, c = int(n), int(k), int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "permutation inputs must be integers")
+    try:                                   # n and k are inputs; the count is a claimed result (THE RULE)
+        nf, kf = _exact_integer(n, "perm_n"), _exact_integer(k, "perm_k")
+        c = _claimed_integer(claimed, "claimed_permutations")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if nf < 0 or kf < 0:
         return error(name, "n and k must be non-negative")
     if kf > nf:
@@ -61,10 +63,11 @@ def verify_combinations(spec: Dict[str, Any]) -> VerifierResult:
     n, k, claimed = spec.get("comb_n"), spec.get("comb_k"), spec.get("claimed_combinations")
     if n is None or k is None or claimed is None:
         return na(name)
-    try:
-        nf, kf, c = int(n), int(k), int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "combination inputs must be integers")
+    try:                                   # n and k are inputs; the count is a claimed result (THE RULE)
+        nf, kf = _exact_integer(n, "comb_n"), _exact_integer(k, "comb_k")
+        c = _claimed_integer(claimed, "claimed_combinations")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if nf < 0 or kf < 0:
         return error(name, "n and k must be non-negative")
     if kf > nf:
@@ -81,10 +84,10 @@ def verify_derangements(spec: Dict[str, Any]) -> VerifierResult:
     n, claimed = spec.get("derangement_n"), spec.get("claimed_derangements")
     if n is None or claimed is None:
         return na(name)
-    try:
-        nf, c = int(n), int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "derangement inputs must be integers")
+    try:                                   # n is an input; the count is a claimed result (THE RULE)
+        nf, c = _exact_integer(n, "derangement_n"), _claimed_integer(claimed, "claimed_derangements")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if nf < 0:
         return error(name, f"n must be non-negative, got {nf}")
     if nf > 1000:
@@ -103,11 +106,11 @@ def verify_multinomial(spec: Dict[str, Any]) -> VerifierResult:
         return na(name)
     if not isinstance(groups, list) or len(groups) == 0:
         return error(name, "multinomial_groups must be a non-empty list")
-    try:
-        gs = [int(g) for g in groups]
-        c = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "all group sizes and claimed value must be integers")
+    try:                                   # the group sizes are inputs; the count is a claimed result (THE RULE)
+        gs = [_exact_integer(g, "multinomial_groups") for g in groups]
+        c = _claimed_integer(claimed, "claimed_multinomial")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if any(g < 0 for g in gs):
         return error(name, "group sizes must be non-negative")
     n = sum(gs)

@@ -19,10 +19,12 @@ NUM_VERIFY shape (any subset):
 """
 from __future__ import annotations
 import math
+import operator
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _is_prime(n: int) -> bool:
@@ -32,7 +34,7 @@ def _is_prime(n: int) -> bool:
         return True
     if n % 2 == 0:
         return False
-    r = int(math.isqrt(n))
+    r = math.isqrt(n)
     for i in range(3, r + 1, 2):
         if n % i == 0:
             return False
@@ -45,10 +47,10 @@ def verify_primality(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_prime")
     if n is None or claimed is None:
         return na(name)
-    try:
-        nf = int(n)
-    except (TypeError, ValueError):
-        return error(name, f"n_prime must be an integer, got {n!r}")
+    try:                                   # an input (THE RULE)
+        nf = _exact_integer(n, "n_prime")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if nf < 0:
         return error(name, "primality is defined for non-negative integers")
     actual = _is_prime(nf)
@@ -66,10 +68,11 @@ def verify_gcd(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_gcd")
     if a is None or b is None or claimed is None:
         return na(name)
-    try:
-        af, bf, c = int(a), int(b), int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "gcd inputs must be integers")
+    try:                                   # a and b are inputs; the gcd is a claimed result (THE RULE)
+        af, bf = _exact_integer(a, "gcd_a"), _exact_integer(b, "gcd_b")
+        c = _claimed_integer(claimed, "claimed_gcd")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     actual = math.gcd(af, bf)
     data = {"a": af, "b": bf, "actual_gcd": actual, "claimed_gcd": c,
             "rule": "Euclidean algorithm (math.gcd)"}
@@ -84,11 +87,11 @@ def verify_factorial(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_factorial")
     if n is None or claimed is None:
         return na(name)
-    try:
-        nf = int(n)
-        c = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "factorial inputs must be integers")
+    try:                                   # n is an input; n! is a claimed result (THE RULE)
+        nf = _exact_integer(n, "factorial_n")
+        c = _claimed_integer(claimed, "claimed_factorial")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if nf < 0:
         return error(name, f"factorial undefined for negative n, got {nf}")
     if nf > 1000:
@@ -108,18 +111,23 @@ def verify_modular_inverse(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_inverse")
     if a is None or m is None or claimed is None:
         return na(name)
-    try:
-        af, mf, c = int(a), int(m), int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "modular inverse inputs must be integers")
+    try:                                   # a and m are inputs; the inverse is a claimed result (THE RULE)
+        af, mf = _exact_integer(a, "mod_a"), _exact_integer(m, "mod_m")
+        c = _claimed_integer(claimed, "claimed_inverse", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if mf <= 1:
         return error(name, f"modulus must be >= 2, got {mf}")
     if math.gcd(af, mf) != 1:
         return mismatch(name,
                         f"gcd({af}, {mf}) = {math.gcd(af, mf)} ≠ 1; modular inverse does not exist",
                         {"a": af, "m": mf, "gcd": math.gcd(af, mf)})
-    product_mod = (af * c) % mf
     actual_inverse = pow(af, -1, mf)
+    if not isinstance(c, int):             # a claim with a fraction is no residue: 2 · 0.5 is 1, and still no inverse
+        return mismatch(name, f"a modular inverse is a whole number; claimed {c}, correct inverse is {actual_inverse}",
+                        {"a": af, "m": mf, "claimed_inverse": c, "actual_inverse": actual_inverse,
+                         "rule": "a · inv ≡ 1 (mod m)"})
+    product_mod = (af * c) % mf
     data = {"a": af, "m": mf, "claimed_inverse": c,
             "actual_inverse": actual_inverse,
             "a_times_claimed_mod_m": product_mod,
@@ -177,7 +185,7 @@ def _is_perfect_number(n: int) -> bool:
     if n < 2:
         return False
     total = 1
-    r = int(math.isqrt(n))
+    r = math.isqrt(n)
     for i in range(2, r + 1):
         if n % i == 0:
             total += i
@@ -205,10 +213,10 @@ def verify_sequence_term(spec: Dict[str, Any]) -> VerifierResult:
     entry = _SEQUENCES.get(seq_name)
     if not entry:
         return na(name)
-    try:
-        ni = int(n); ct = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "sequence_index and claimed_term must be integers")
+    try:                                   # the index is an input; the term is a claimed result (THE RULE)
+        ni = _exact_integer(n, "sequence_index"); ct = _claimed_integer(claimed, "claimed_term")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if ni < 0 or ni > 2000:
         return error(name, f"sequence_index out of supported range [0, 2000]: {ni}")
     try:
@@ -243,10 +251,10 @@ def verify_perfect_number(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_perfect")
     if n is None or claimed is None:
         return na(name)
-    try:
-        nf = int(n)
-    except (TypeError, ValueError):
-        return error(name, "n_perfect must be integer")
+    try:                                   # an input (THE RULE)
+        nf = _exact_integer(n, "n_perfect")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if nf < 1 or nf > 10_000_000:
         return error(name, "n_perfect out of supported range")
     actual = _is_perfect_number(nf)
@@ -269,15 +277,14 @@ def verify_prime_counting(spec: Dict[str, Any]) -> VerifierResult:
     """
     import math
     name = "number_theory.prime_counting"
-    x = spec.get("limit")
-    claimed = spec.get("claimed_prime_count")
-    if x is None or claimed is None:
+    given, given_claim = spec.get("limit"), spec.get("claimed_prime_count")
+    if given is None or given_claim is None:
         return na(name)
-    try:
-        x = int(x)
-        claimed = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "limit and claimed_prime_count must be integers")
+    try:                                   # the limit is an input; the count is a claimed result (THE RULE)
+        x = _exact_integer(given, "limit")
+        claimed = _claimed_integer(given_claim, "claimed_prime_count")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if x < 2:
         actual = 0
     elif x > 20_000_000:
@@ -314,10 +321,10 @@ def verify_divisor_count(spec):
     Exact and deterministic (2026-10-03; the reason 12 and 60 organize wholes: the most divisors for their
     size). Optionally the divisors themselves (claimed_divisors) are compared as a set."""
     name = "number_theory.divisor_count"
-    try:
-        n = int(spec.get("divisors_of"))
-    except (TypeError, ValueError):
-        return error(name, "divisors_of must be an integer")
+    try:                                   # an input (THE RULE)
+        n = _exact_integer(spec.get("divisors_of"), "divisors_of")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if n < 1 or n > 10**12:
         return error(name, f"divisors_of {n} out of range (1..1e12)")
     actual = _divisors(n)
@@ -326,21 +333,21 @@ def verify_divisor_count(spec):
     claimed_set = spec.get("claimed_divisors")
     problems = []
     if claimed_count is not None:
-        try:
-            cc = int(claimed_count)
-            data["claimed_divisor_count"] = cc
-            if cc != len(actual):
-                problems.append(f"{n} has {len(actual)} divisors, not {cc}")
-        except (TypeError, ValueError):
-            return error(name, "claimed_divisor_count must be an integer")
+        try:                               # a claimed result (THE RULE)
+            cc = _claimed_integer(claimed_count, "claimed_divisor_count")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        data["claimed_divisor_count"] = cc
+        if cc != len(actual):
+            problems.append(f"{n} has {len(actual)} divisors, not {cc}")
     if claimed_set is not None:
-        try:
-            cs = sorted(int(x) for x in claimed_set)
-            data["claimed_divisors"] = cs
-            if cs != actual:
-                problems.append(f"divisors of {n} are {actual}, not {cs}")
-        except (TypeError, ValueError):
-            return error(name, "claimed_divisors must be integers")
+        try:                               # each claimed divisor is a claimed result (THE RULE)
+            cs = sorted(_claimed_integer(x, "claimed_divisors", as_number=True) for x in claimed_set)
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        data["claimed_divisors"] = cs
+        if cs != actual:
+            problems.append(f"divisors of {n} are {actual}, not {cs}")
     if claimed_count is None and claimed_set is None:
         return na(name)
     if problems:
@@ -376,7 +383,7 @@ def _rs_z(t: float) -> float:
     (error ~ t^(-3/4)). A hundred times faster than mpmath; wherever |Z| is small the exact function decides."""
     import math
     a = math.sqrt(t / _TWO_PI)
-    m = int(a)
+    m = int(a)                             # N = floor(sqrt(t / 2 pi)), the formula's own (tests/integer_fields.json)
     th = _theta(t)
     acc = 0.0
     for n in range(1, m + 1):
@@ -461,7 +468,7 @@ def _count_above_np(start: float, b: float, h: float, carry_t, carry_v, block: i
     from . import riemann_accel
     np = riemann_accel._numpy()
     count = 0
-    n_total = int(math.ceil((b - start) / h)) + 1
+    n_total = math.ceil((b - start) / h) + 1     # the grid's own point count (tests/integer_fields.json)
     done = 0
     while done < n_total:
         k = min(block, n_total - done)
@@ -584,7 +591,7 @@ def _zeros_on_line_checked(T: float):
     import math
     n_strip, S = _zeros_in_strip(T)
     on_line = _zeros_on_line(T)
-    want = int(round(n_strip))
+    want = round(n_strip)                  # N(T) lands on an integer: its own rounding (tests/integer_fields.json)
     rescans = 0
     if on_line < want:
         spacing = _TWO_PI / math.log(max(T, 20.0) / _TWO_PI)
@@ -600,7 +607,7 @@ def _zeros_on_line_checked(T: float):
 
         def localise(a: float, b: float, na: float, nb: float) -> int:
             have = seg(a, b)
-            need = int(round(nb - na))
+            need = round(nb - na)          # the strip counts' own rounding (tests/integer_fields.json)
             if have >= need or budget[0] <= 0:
                 return have
             if b - a <= 6 * h:
@@ -626,7 +633,7 @@ def _zeros_in_strip(T: float, sigma_steps: int = 0):
     The step count grows with T; if N(T) does not land on an integer the steps are doubled once."""
     import math
     import mpmath as mp
-    steps = sigma_steps or min(2000, 120 + int(T / 400))
+    steps = sigma_steps or min(2000, 120 + int(T / 400))   # the step schedule's own floor (tests/integer_fields.json)
     th = mp.siegeltheta(T)
     for attempt in range(2):
         prev = mp.arg(mp.zeta(mp.mpc(2.0, T)))
@@ -643,7 +650,7 @@ def _zeros_in_strip(T: float, sigma_steps: int = 0):
             prev = a
         S = float(total / math.pi)
         N = float(th / math.pi + 1 + S)
-        if abs(N - round(N)) < 0.05:
+        if abs(N - round(N)) < 0.05:       # N(T) lands on an integer: its own rounding (tests/integer_fields.json)
             break
         steps *= 2
     return N, S
@@ -658,10 +665,13 @@ def verify_critical_line(spec):
       NUM_VERIFY: {"critical_line_height": 100, "claimed_zeros_on_line": 29}      (T ≤ 2000 here)"""
     name = "number_theory.critical_line"
     try:
-        T = float(spec.get("critical_line_height"))
-        claimed = int(spec.get("claimed_zeros_on_line"))
+        T = float(spec.get("critical_line_height"))                 # a real height
     except (TypeError, ValueError):
         return error(name, "critical_line_height (a number) and claimed_zeros_on_line (an integer) are required")
+    try:                                   # the count is a claimed result (THE RULE)
+        claimed = _claimed_integer(spec.get("claimed_zeros_on_line"), "claimed_zeros_on_line")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     import os as _os
     # The cap protects the public /verify path (which sheds at 8 s but whose worker thread keeps computing):
     # a stranger cannot make the box sweep to T=1e9. The trusted operator's tool (tools/tick.py) lifts it by
@@ -677,9 +687,9 @@ def verify_critical_line(spec):
         on_line, n_strip, S, rescans = _zeros_on_line_checked(T)
     except Exception as e:  # noqa: BLE001 — a computation that fails is an error, never a verdict
         return error(name, f"computation failed: {type(e).__name__}: {e}")
-    if abs(n_strip - round(n_strip)) > 0.05:
+    if abs(n_strip - round(n_strip)) > 0.05:   # N(T) lands on an integer: its own rounding (tests/integer_fields.json)
         return error(name, f"the strip count did not land on an integer (N(T) = {n_strip:.4f}); refine and retry")
-    n_strip_i = int(round(n_strip))
+    n_strip_i = round(n_strip)
     data = {"height": T, "zeros_on_line": on_line, "zeros_in_strip": n_strip_i, "S_T": round(S, 4), "claimed": claimed,
             "localised_rescans": rescans,
             "method": ("sign changes of Hardy's Z on the line (Riemann–Siegel in floats above t = 300, exact where |Z| dips, "
@@ -706,10 +716,10 @@ def verify_robin(spec):
       NUM_VERIFY: {"robin_to": 1000000, "claimed_robin_holds": true, "claimed_closest_approach_n": 10080}  (N <= 2e7)"""
     import math
     name = "number_theory.robin"
-    try:
-        N = int(spec.get("robin_to"))
-    except (TypeError, ValueError):
-        return error(name, "robin_to must be an integer (the height N to eliminate below)")
+    try:                                   # an input (THE RULE)
+        N = _exact_integer(spec.get("robin_to"), "robin_to")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if N <= 5040:
         return error(name, "robin_to must exceed 5040 (Robin's inequality is for n > 5040; n <= 5040 has known exceptions)")
     if N > 20_000_000:
@@ -744,11 +754,12 @@ def verify_robin(spec):
     if claimed_holds is not None and bool(claimed_holds) != holds:
         problems.append(f"Robin holds to {N} is {holds}, claimed {bool(claimed_holds)}")
     if claimed_n is not None:
-        try:
-            if int(claimed_n) != closest_n:
-                problems.append(f"closest approach in (5040,{N}] is n={closest_n}, claimed {int(claimed_n)}")
-        except (TypeError, ValueError):
-            return error(name, "claimed_closest_approach_n must be an integer")
+        try:                               # a claimed result (THE RULE)
+            cn = _claimed_integer(claimed_n, "claimed_closest_approach_n")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        if cn != closest_n:
+            problems.append(f"closest approach in (5040,{N}] is n={closest_n}, claimed {cn}")
     if problems:
         return mismatch(name, "; ".join(problems), data)
     return confirm(name, f"Robin holds for every n in (5040, {N}] (closest approach n={closest_n}, "
@@ -771,10 +782,10 @@ def verify_schoenfeld(spec):
       NUM_VERIFY: {"schoenfeld_to": 1000000, "claimed_schoenfeld_holds": true, "claimed_closest_approach_n": 2658}  (X <= 2e7)"""
     import math
     name = "number_theory.schoenfeld"
-    try:
-        X = int(spec.get("schoenfeld_to"))
-    except (TypeError, ValueError):
-        return error(name, "schoenfeld_to must be an integer (the height X to eliminate below)")
+    try:                                   # an input (THE RULE)
+        X = _exact_integer(spec.get("schoenfeld_to"), "schoenfeld_to")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if X <= 2657:
         return error(name, "schoenfeld_to must exceed 2657 (Schoenfeld's inequality is stated for x >= 2657)")
     if X > 20_000_000:
@@ -830,11 +841,12 @@ def verify_schoenfeld(spec):
     if claimed_holds is not None and bool(claimed_holds) != holds:
         problems.append(f"Schoenfeld holds to {X} is {holds}, claimed {bool(claimed_holds)}")
     if claimed_n is not None:
-        try:
-            if int(claimed_n) != worst_n:
-                problems.append(f"closest approach in [2657,{X}] is x={worst_n}, claimed {int(claimed_n)}")
-        except (TypeError, ValueError):
-            return error(name, "claimed_closest_approach_n must be an integer")
+        try:                               # a claimed result (THE RULE)
+            cn = _claimed_integer(claimed_n, "claimed_closest_approach_n")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        if cn != worst_n:
+            problems.append(f"closest approach in [2657,{X}] is x={worst_n}, claimed {cn}")
     if problems:
         return mismatch(name, "; ".join(problems), data)
     return confirm(name, f"Schoenfeld's bound holds for every x in [2657, {X}] (closest approach x={worst_n}, "
@@ -850,10 +862,10 @@ def verify_lagarias(spec):
       NUM_VERIFY: {"lagarias_to": 100000, "claimed_lagarias_holds": true, "claimed_closest_approach_n": 3}  (N <= 2e7)"""
     import math
     name = "number_theory.lagarias"
-    try:
-        N = int(spec.get("lagarias_to"))
-    except (TypeError, ValueError):
-        return error(name, "lagarias_to must be an integer (the height N to eliminate below)")
+    try:                                   # an input (THE RULE)
+        N = _exact_integer(spec.get("lagarias_to"), "lagarias_to")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if N < 2:
         return error(name, "lagarias_to must be at least 2")
     if N > 20_000_000:
@@ -892,11 +904,12 @@ def verify_lagarias(spec):
     if claimed_holds is not None and bool(claimed_holds) != holds:
         problems.append(f"Lagarias holds to {N} is {holds}, claimed {bool(claimed_holds)}")
     if claimed_n is not None:
-        try:
-            if int(claimed_n) != closest_n:
-                problems.append(f"closest approach in [2,{N}] is n={closest_n}, claimed {int(claimed_n)}")
-        except (TypeError, ValueError):
-            return error(name, "claimed_closest_approach_n must be an integer")
+        try:                               # a claimed result (THE RULE)
+            cn = _claimed_integer(claimed_n, "claimed_closest_approach_n")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        if cn != closest_n:
+            problems.append(f"closest approach in [2,{N}] is n={closest_n}, claimed {cn}")
     if problems:
         return mismatch(name, "; ".join(problems), data)
     return confirm(name, f"Lagarias holds for every n in [1, {N}] (tightest n>=2 at n={closest_n}, "
@@ -912,10 +925,10 @@ def verify_nicolas(spec):
       NUM_VERIFY: {"nicolas_primes_to": 100000, "claimed_nicolas_holds": true, "claimed_closest_prime": 99991}  (P <= 1e7)"""
     import math
     name = "number_theory.nicolas"
-    try:
-        P = int(spec.get("nicolas_primes_to"))
-    except (TypeError, ValueError):
-        return error(name, "nicolas_primes_to must be an integer (the prime bound P)")
+    try:                                   # an input (THE RULE)
+        P = _exact_integer(spec.get("nicolas_primes_to"), "nicolas_primes_to")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if P < 3:
         return error(name, "nicolas_primes_to must be at least 3 (the first meaningful primorial is 6)")
     if P > 10_000_000:
@@ -959,11 +972,12 @@ def verify_nicolas(spec):
     if claimed_holds is not None and bool(claimed_holds) != holds:
         problems.append(f"Nicolas holds to {P} is {holds}, claimed {bool(claimed_holds)}")
     if claimed_prime is not None:
-        try:
-            if int(claimed_prime) != min_prime:
-                problems.append(f"closest approach among primes <= {P} is p={min_prime}, claimed {int(claimed_prime)}")
-        except (TypeError, ValueError):
-            return error(name, "claimed_closest_prime must be an integer")
+        try:                               # a claimed result (THE RULE)
+            cp = _claimed_integer(claimed_prime, "claimed_closest_prime")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        if cp != min_prime:
+            problems.append(f"closest approach among primes <= {P} is p={min_prime}, claimed {cp}")
     if problems:
         return mismatch(name, "; ".join(problems), data)
     return confirm(name, f"Nicolas holds for every primorial of a prime <= {P} (closest at p={min_prime}, "
@@ -990,10 +1004,10 @@ def verify_li_criterion(spec):
     a first RH failure by this route must lie beyond N. The surviving window is pushed past N.
       NUM_VERIFY: {"li_to": 30, "claimed_li_positive": true}      (N <= 60 here; lambda_n are also returned, 12 digits)"""
     name = "number_theory.li_criterion"
-    try:
-        N = int(spec.get("li_to"))
-    except (TypeError, ValueError):
-        return error(name, "li_to must be an integer (the index N to check lambda_n > 0 up to)")
+    try:                                   # an input (THE RULE)
+        N = _exact_integer(spec.get("li_to"), "li_to")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if N < 1:
         return error(name, "li_to must be at least 1")
     if N > 25:
@@ -1062,7 +1076,7 @@ def verify_zero_count(spec):
     try:
         import mpmath as mp
         with mp.workdps(30):
-            n_turing = int(mp.nzeros(T))                       # Turing's method: the certified count in (0, T]
+            n_turing = operator.index(mp.nzeros(T))            # Turing's method: the certified count in (0, T], exact
         main = float(_theta(T) / math.pi + 1.0)                # Riemann-von Mangoldt smooth term
         S = n_turing - main                                    # the implied S(T)
         bound = _s_bound(T)
@@ -1082,10 +1096,10 @@ def verify_zero_count(spec):
     claimed = spec.get("claimed_zero_count")
     if claimed is None:
         return na(name, "claim claimed_zero_count (the integer count of zeros up to the height)", data)
-    try:
-        claimed_i = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "claimed_zero_count must be an integer")
+    try:                                   # a claimed result (THE RULE), compared and shown as a number
+        claimed_i = _claimed_integer(claimed, "claimed_zero_count", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if claimed_i != n_turing:
         return mismatch(name, f"N({T:g}) = {n_turing:,} zeros in the strip (Turing's method), claimed {claimed_i:,}", data)
     return confirm(name, f"ζ has exactly {n_turing:,} non-trivial zeros with 0 < Im(ρ) <= {T:g} (Turing's method; "

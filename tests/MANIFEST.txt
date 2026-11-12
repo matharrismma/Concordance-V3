@@ -17,6 +17,7 @@ test_audit_extract.py
 test_audit_nonlinear.py
 test_band_consumers.py
 test_benchmark.py
+test_benchmark_record.py
 test_binding.py
 test_biology.py
 test_bound_values.py
@@ -63,6 +64,7 @@ test_elliptic_curves.py
 test_energy.py
 test_ephemeris.py
 test_equation_audit_2026_10_01.py
+test_exact_integers.py
 test_exercise_science.py
 test_expression_parser.py
 test_failure_report_2026_10_08.py

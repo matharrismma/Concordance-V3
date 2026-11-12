@@ -355,7 +355,10 @@ Per domain, the benchmark cases each restatement was applied to; each declined t
   number_theory is closed and the domain number_theory is not: `{gcd_a: 48.7, gcd_b: 36, claimed_gcd: 12}`,
   `{gcd_a: 48, gcd_b: 36, claimed_gcd: 12.9}`, `{n_prime: 137.5, claimed_prime: true}`,
   `{n_prime: 137, claimed_prime: 'false'}` and `{factorial_n: 5.9, claimed_factorial: 120}` still read HOLDS through
-  NUM_VERIFY. A request number read through int() across the verifier files is a run of its own. Mode polynomial is what the
+  NUM_VERIFY. A request number read through int() across the verifier files is a run of its own. Run
+  2026-11-11-exact-integers, step fix-a, reads the domain's numbers by THE RULE (`verifiers/_integer.py`): the first,
+  third and fifth of those rows now read SYSTEM_ERROR and the second BROKEN, while `{n_prime: 137, claimed_prime: 'false'}`,
+  a bool read by its truth and no integer read, still reads HOLDS. Mode polynomial is what the
   refusal in the next paragraph points to: a polynomial gcd is defined up to a unit, so a claim that names its ring and
   generators leaves nothing unbound. It states gcd or lcm as a list of two or more polynomial texts, the claimed value as a
   text, generators as a list of names and ring as ZZ or QQ, and `polynomial_claim` reads it, from this mode, from mode

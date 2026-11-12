@@ -8,8 +8,8 @@
   "attempted": 2949,
   "with_band": 1433,
   "counterexamples_with_band": 414,
-  "counterexamples": 954
+  "counterexamples": 955
  },
- "recorded_at": "2026-10-28",
+ "recorded_at": "2026-11-11",
  "means": "tools/benchmark.py --record; capabilities.trust() turns these counts into a Beta posterior"
 }

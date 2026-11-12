@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 from .base import VerifierResult, band, clamp_tol, confirm, error, mismatch, na
 from .base import literal_is_claim, stated_precision, stated_window, window_for
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE's two readers (verifiers/_integer.py)
 
 simplify = diff = integrate = limit = solve = None
 Symbol = oo = S = expand = _SympifyError = None
@@ -1923,15 +1924,9 @@ def _more_than_one_claim(name: str, held: list) -> VerifierResult:
     return error(name, f"{_MALFORMED_NUMBER}: a spec holds one claim, and this one holds {' and '.join(key for key, _ in held)}")
 
 
-def _exact_integer(value) -> int:
-    """The one way a number-theory value is read: an int, a finite float with no fraction, or a text of an integer.
-    int() alone drops a fraction and takes a bool for 1, so anything else stops here. Each refusal is a member of the
-    malformed path, as int()'s own refusal of a text was."""
-    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-        raise TypeError(f"{value!r} is not an integer")
-    if isinstance(value, float) and not (_math.isfinite(value) and value.is_integer()):
-        raise ValueError(f"{value!r} is not an integer")
-    return int(value)
+# _exact_integer and _claimed_integer, the one way a number-theory value is read, live in verifiers/_integer.py
+# (THE RULE, run 2026-11-11-exact-integers), imported above unchanged: called with no field, as here, each refusal
+# reads exactly as it read when they were defined in this module.
 
 
 def _exact_integers(value, count: int = None) -> list:
@@ -1940,16 +1935,6 @@ def _exact_integers(value, count: int = None) -> list:
     if not isinstance(value, list) or count not in (None, len(value)):
         raise TypeError(f"expected a list{f' of exactly {count}' if count else ''}, got {_brief(value)}")
     return [_exact_integer(item) for item in value]
-
-
-def _claimed_integer(value):
-    """A claimed value as it is compared. One with a fraction stands as written: it is a number the answer is not, so it reads
-    BROKEN, where an input with one reads malformed. A text whose value is an integer never has a float with a fraction, so
-    this cannot read a true claim false. Everything else is read as an input is."""
-    number = float(value) if isinstance(value, str) else value
-    if isinstance(number, float) and _math.isfinite(number) and not number.is_integer():
-        return value
-    return _exact_integer(value)
 
 
 def verify_number_theory(spec: Dict[str, Any]) -> VerifierResult:

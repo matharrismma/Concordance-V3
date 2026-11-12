@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional
 from .base import VerifierResult, na, confirm, mismatch, error, band
 from .base import dispatch  # declarative run() driver
 from . import alpha_scale as _ascale  # alpha-anchored energy levels / spectral lines
+from ._integer import _claimed_integer, _exact_integer, _valid_integer  # THE RULE (verifiers/_integer.py)
 
 # Madelung (n+l, then n) fill order, covering Z = 1..118.
 _MADELUNG = [
@@ -119,7 +120,8 @@ def _parse_config(s: str) -> Optional[Dict[tuple, int]]:
         return None
     for n_s, l_c, c_s in found:
         l = _LNUM[l_c.lower()]
-        out[(int(n_s), l)] = out.get((int(n_s), l), 0) + int(c_s)
+        ni, ci = _exact_integer(n_s), _exact_integer(c_s)      # the digits the pattern matched: exact
+        out[(ni, l)] = out.get((ni, l), 0) + ci
     return out
 
 
@@ -127,24 +129,24 @@ def verify_quantum_numbers(spec: Dict[str, Any]) -> VerifierResult:
     name = "atomic.quantum_numbers"
     if "n" not in spec or "l" not in spec:
         return na(name)
-    try:
-        n = int(spec["n"]); l = int(spec["l"])
-        m_l = spec.get("m_l", spec.get("ml"))
-        m_s = spec.get("m_s", spec.get("ms"))
-        claimed = spec.get("claimed_valid_quantum_numbers")
-    except (TypeError, ValueError) as e:
-        return error(name, f"non-integer quantum number: {e}")
+    m_l = spec.get("m_l", spec.get("ml"))
+    m_s = spec.get("m_s", spec.get("ms"))
+    claimed = spec.get("claimed_valid_quantum_numbers")
+    try:            # the check's own question is validity (THE RULE): a quantum number with a fraction is invalid
+        n, l = _valid_integer(spec["n"], "n"), _valid_integer(spec["l"], "l")
+        ml = None if m_l is None else _valid_integer(m_l, "m_l")
+    except (TypeError, ValueError) as e:     # not a number at all (a bool, other text, null): malformed
+        return error(name, str(e))
     reasons: List[str] = []
-    if n < 1:
+    for key, given, read in (("n", spec["n"], n), ("l", spec["l"], l), ("m_l", m_l, ml)):
+        if given is not None and read is None:
+            reasons.append(f"{key}={given!r} is not a whole number")
+    if n is not None and n < 1:
         reasons.append(f"n={n} must be >= 1")
-    if not (0 <= l <= n - 1):
+    if n is not None and l is not None and not (0 <= l <= n - 1):
         reasons.append(f"l={l} must satisfy 0 <= l <= n-1 ({n - 1})")
-    if m_l is not None:
-        try:
-            if not (-l <= int(m_l) <= l):
-                reasons.append(f"m_l={m_l} must satisfy -l..+l ({-l}..{l})")
-        except (TypeError, ValueError):
-            reasons.append(f"m_l={m_l!r} not an integer")
+    if ml is not None and l is not None and not (-l <= ml <= l):
+        reasons.append(f"m_l={m_l} must satisfy -l..+l ({-l}..{l})")
     if m_s is not None:
         try:
             if abs(abs(float(m_s)) - 0.5) > 1e-9:
@@ -163,24 +165,26 @@ def verify_quantum_numbers(spec: Dict[str, Any]) -> VerifierResult:
 def verify_shell_capacity(spec: Dict[str, Any]) -> VerifierResult:
     name = "atomic.shell_capacity"
     if "shell_n" in spec and "claimed_shell_capacity" in spec:
-        try:
-            n = int(spec["shell_n"]); claimed = int(spec["claimed_shell_capacity"])
+        try:                               # shell_n is an input; the capacity is a claimed result (THE RULE)
+            n = _exact_integer(spec["shell_n"], "shell_n")
+            claimed = _claimed_integer(spec["claimed_shell_capacity"], "claimed_shell_capacity", as_number=True)
         except (TypeError, ValueError) as e:
-            return error(name, f"non-integer: {e}")
+            return error(name, str(e))
         if n < 1:
             return error(name, f"shell_n={n} must be >= 1")
-        actual = 2 * n * n
-        return band(name, actual, claimed, 0, "shell_capacity", {"shell_n": n, "formula": "2n²"}, fmt="{:.0f}")
+        actual = 2 * n * n                 # a claim with a fraction is shown as written, never rounded to a count
+        return band(name, actual, claimed, 0, "shell_capacity", {"shell_n": n, "formula": "2n²"}, fmt="{:.15g}")
     if "subshell_l" in spec and "claimed_subshell_capacity" in spec:
-        try:
-            l = int(spec["subshell_l"]); claimed = int(spec["claimed_subshell_capacity"])
+        try:                               # subshell_l is an input; the capacity is a claimed result (THE RULE)
+            l = _exact_integer(spec["subshell_l"], "subshell_l")
+            claimed = _claimed_integer(spec["claimed_subshell_capacity"], "claimed_subshell_capacity", as_number=True)
         except (TypeError, ValueError) as e:
-            return error(name, f"non-integer: {e}")
+            return error(name, str(e))
         if l < 0:
             return error(name, f"subshell_l={l} must be >= 0")
         actual = 2 * (2 * l + 1)
         return band(name, actual, claimed, 0, "subshell_capacity",
-                    {"subshell_l": l, "subshell": _LSYM.get(l, "?"), "formula": "2(2l+1)"}, fmt="{:.0f}")
+                    {"subshell_l": l, "subshell": _LSYM.get(l, "?"), "formula": "2(2l+1)"}, fmt="{:.15g}")
     return na(name)
 
 
@@ -190,10 +194,10 @@ def verify_electron_configuration(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_configuration")
     if z is None or claimed is None:
         return na(name)
-    try:
-        z = int(z)
-    except (TypeError, ValueError):
-        return error(name, f"atomic_number {z!r} not an integer")
+    try:                                   # an input (THE RULE)
+        z = _exact_integer(z, "atomic_number")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     truth = _ground_config(z)
     if truth is None:
         return error(name, f"atomic_number {z} out of range (1-118)")
@@ -217,20 +221,29 @@ def verify_energy_level(spec: Dict[str, Any]) -> VerifierResult:
     mass (a few x 10^-4 from the reduced-mass value; the tolerance absorbs it)."""
     name = "atomic.energy_level"
     if "level_n" in spec and "claimed_energy_level_eV" in spec:
+        try:                               # level_n is an input (THE RULE); Z is a real number
+            n = _exact_integer(spec["level_n"], "level_n")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
         try:
-            n = int(spec["level_n"]); Z = float(spec.get("level_Z", 1))
+            Z = float(spec.get("level_Z", 1))
         except (TypeError, ValueError):
-            return error(name, "level_n / level_Z must be numeric")
+            return error(name, "level_Z must be numeric")
         if n < 1 or Z <= 0:
             return error(name, "need n >= 1 and Z > 0")
         return _ascale.compare(name, _ascale.hydrogen_energy_eV(Z, n),
                                spec["claimed_energy_level_eV"], 2e-3,
                                {"formula": f"E_{n} = -Z^2 Ry / n^2 (Z={Z:g})"})
     if all(k in spec for k in ("line_lower", "line_upper", "claimed_line_nm")):
+        try:                               # the two levels are inputs (THE RULE); Z is a real number
+            n1 = _exact_integer(spec["line_lower"], "line_lower")
+            n2 = _exact_integer(spec["line_upper"], "line_upper")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
         try:
-            n1 = int(spec["line_lower"]); n2 = int(spec["line_upper"]); Z = float(spec.get("line_Z", 1))
+            Z = float(spec.get("line_Z", 1))
         except (TypeError, ValueError):
-            return error(name, "line quantum numbers must be integers")
+            return error(name, "line_Z must be numeric")
         if not (1 <= n1 < n2) or Z <= 0:
             return error(name, "need 1 <= n_lower < n_upper and Z > 0")
         return _ascale.compare(name, _ascale.rydberg_line_m(Z, n1, n2) * 1e9,

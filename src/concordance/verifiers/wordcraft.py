@@ -29,6 +29,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, dispatch, band, merge_checks
+from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py): every count claimed here is a claimed result
 
 # the explicit golden the domain gate derives its true/false pair from (numbers and booleans only: a string claim
 # such as a plural cannot be falsified by scaling); every check here confirms, and its perturbed twin must not
@@ -215,15 +216,15 @@ def verify_letters(spec: Dict[str, Any]) -> VerifierResult:
         c = spec.get("claimed_" + key)
         if c is None:
             continue
-        try:
-            cf = int(float(c))
-        except (TypeError, ValueError):
-            return error(name, f"claimed_{key} must be a whole number")
+        try:                               # a claimed count: a fraction stands as written and is no count
+            cf = _claimed_integer(c, f"claimed_{key}", as_number=True)
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
         checks.append((key, cf, actual[key]))
     if not checks:
         return na(name)
-    # exact counts: the band is [n, n]
-    results = [band(name, a, c, 0, k, data, fmt="{:.0f}") for k, c, a in checks]
+    # exact counts: the band is [n, n]; a claim with a fraction is shown as written, never rounded to a count
+    results = [band(name, a, c, 0, k, data, fmt="{:.15g}") for k, c, a in checks]
     r = merge_checks(name, results, data)
     if r.status == "ERROR":
         return r
@@ -261,14 +262,14 @@ def verify_edit_distance(spec: Dict[str, Any]) -> VerifierResult:
     a, b, claimed = spec.get("word_a"), spec.get("word_b"), spec.get("claimed_edit_distance")
     if a is None or b is None or claimed is None:
         return na(name)
-    try:
-        c = int(float(claimed))
-    except (TypeError, ValueError):
-        return error(name, "claimed_edit_distance must be a whole number")
+    try:                                   # a claimed count (THE RULE)
+        c = _claimed_integer(claimed, "claimed_edit_distance", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     actual = levenshtein(str(a).lower(), str(b).lower())
     data = {"word_a": a, "word_b": b, "actual_edit_distance": actual, "claimed_edit_distance": c,
             "convention": "Levenshtein distance: insertions, deletions and substitutions, case ignored"}
-    return band(name, actual, c, 0, "edit_distance", data, fmt="{:.0f}")
+    return band(name, actual, c, 0, "edit_distance", data, fmt="{:.15g}")
 
 
 def verify_syllables(spec: Dict[str, Any]) -> VerifierResult:
@@ -289,15 +290,17 @@ def verify_syllables(spec: Dict[str, Any]) -> VerifierResult:
             "convention": "ARPABET: one syllable per vowel phoneme (each carries a stress digit); phonemes = tokens"}
     results = []
     if cs is not None:
-        try:
-            results.append(band(name, syll, int(float(cs)), 0, "syllables", data, fmt="{:.0f}"))
-        except (TypeError, ValueError):
-            return error(name, "claimed_syllables must be a whole number")
+        try:                               # a claimed count (THE RULE)
+            c = _claimed_integer(cs, "claimed_syllables", as_number=True)
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        results.append(band(name, syll, c, 0, "syllables", data, fmt="{:.15g}"))
     if cp is not None:
-        try:
-            results.append(band(name, phon, int(float(cp)), 0, "phonemes", data, fmt="{:.0f}"))
-        except (TypeError, ValueError):
-            return error(name, "claimed_phonemes must be a whole number")
+        try:                               # a claimed count (THE RULE)
+            c = _claimed_integer(cp, "claimed_phonemes", as_number=True)
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        results.append(band(name, phon, c, 0, "phonemes", data, fmt="{:.15g}"))
     r = merge_checks(name, results, data)
     if r.status == "ERROR":
         return r
@@ -315,13 +318,13 @@ def verify_alphabet(spec: Dict[str, Any]) -> VerifierResult:
     entry = ALPHABETS.get(key)
     if entry is None:
         return na(name, f"the {alpha!r} alphabet is not in the table — declined, not judged")
-    try:
-        c = int(float(claimed))
-    except (TypeError, ValueError):
-        return error(name, "claimed_alphabet_letters must be a whole number")
+    try:                                   # a claimed count (THE RULE)
+        c = _claimed_integer(claimed, "claimed_alphabet_letters", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     n, note = entry
     data = {"alphabet": alpha, "actual_letters": n, "claimed_letters": c, "note": note, "source": ALPHABETS_SOURCE}
-    r = band(name, n, c, 0, "letters", data, fmt="{:.0f}")
+    r = band(name, n, c, 0, "letters", data, fmt="{:.15g}")
     if r.status == "ERROR":
         return r
     return (confirm if r.passed else mismatch)(name, f"the {key} alphabet: {r.detail} ({note})", r.data)
@@ -354,13 +357,13 @@ def verify_letter_rank(spec: Dict[str, Any]) -> VerifierResult:
     ch = str(letter).strip().lower()
     if len(ch) != 1 or ch not in LETTER_RANK_EN:
         return na(name, f"{letter!r} is not a letter a-z")
-    try:
-        c = int(float(claimed))
-    except (TypeError, ValueError):
-        return error(name, "claimed_rank must be a whole number (1 = most common)")
+    try:                                   # a claimed rank (THE RULE): 1 = most common
+        c = _claimed_integer(claimed, "claimed_rank", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     actual = LETTER_RANK_EN.index(ch) + 1
     data = {"letter": ch, "actual_rank": actual, "claimed_rank": c, "order": LETTER_RANK_EN, "source": LETTER_RANK_SOURCE}
-    r = band(name, actual, c, 0, "rank", data, fmt="{:.0f}")
+    r = band(name, actual, c, 0, "rank", data, fmt="{:.15g}")
     if r.status == "ERROR":
         return r
     return (confirm if r.passed else mismatch)(name, f"{ch.upper()} in English letter frequency: {r.detail} of 26 ({LETTER_RANK_SOURCE})", r.data)
@@ -577,10 +580,10 @@ def verify_stress(spec: Dict[str, Any]) -> VerifierResult:
     w, claimed = spec.get("word"), spec.get("claimed_stress_syllable")
     if w is None or claimed is None:
         return na(name)
-    try:
-        c = int(float(claimed))
-    except (TypeError, ValueError):
-        return error(name, "claimed_stress_syllable must be a whole number (1 = first; -1 = last, -2 = penultimate)")
+    try:                                   # a claimed syllable (THE RULE): 1 = first; -1 = last, -2 = penultimate
+        c = _claimed_integer(claimed, "claimed_stress_syllable", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     prons, src = _prons_for(spec, "word", "pronunciation")
     if not prons:
         return _declined_word(name, w)

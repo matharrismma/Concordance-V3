@@ -185,21 +185,24 @@ def test_a_packet_reads_the_same_way():
     assert packet(gcd=[12, 18], claimed_gcd=6) == H
 
 
-# ── what this step does not close ────────────────────────────────────────────────────────────────────────────────────
+# ── what this step did not close ─────────────────────────────────────────────────────────────────────────────────────
 # MISS 10: the domain number_theory has its own reads, and a request number through int() across the verifier files is a
-# run of its own. Each of these is false or says nothing, and reads HOLDS. That run flips this table.
+# run of its own. Each of these is false or says nothing, and read HOLDS when this step closed. That run, 2026-11-11-exact-
+# integers (step fix-a), flips the table: the domain reads its numbers by THE RULE (verifiers/_integer.py), so a fraction
+# in an input reads SYSTEM_ERROR and one in a claimed value BROKEN. The fourth row is not an integer read: claimed_prime is
+# read by its truth, so the text 'false' still reads HOLDS, a miss of its own.
 DOMAIN_ROWS = (
-    {"gcd_a": 48.7, "gcd_b": 36, "claimed_gcd": 12},
-    {"gcd_a": 48, "gcd_b": 36, "claimed_gcd": 12.9},
-    {"n_prime": 137.5, "claimed_prime": True},
-    {"n_prime": 137, "claimed_prime": "false"},
-    {"factorial_n": 5.9, "claimed_factorial": 120},
+    ({"gcd_a": 48.7, "gcd_b": 36, "claimed_gcd": 12}, E),
+    ({"gcd_a": 48, "gcd_b": 36, "claimed_gcd": 12.9}, B),
+    ({"n_prime": 137.5, "claimed_prime": True}, E),
+    ({"n_prime": 137, "claimed_prime": "false"}, H),
+    ({"factorial_n": 5.9, "claimed_factorial": 120}, E),
 )
 
 
-@pytest.mark.parametrize("artifact", DOMAIN_ROWS, ids=str)
-def test_the_named_miss_the_domain_number_theory_still_reads_them(artifact):
-    assert verify({"NUM_VERIFY": artifact}, domain="number_theory")["verdict"] == H
+@pytest.mark.parametrize("artifact,want", DOMAIN_ROWS, ids=str)
+def test_the_named_miss_the_domain_number_theory_reads_them_by_the_rule(artifact, want):
+    assert verify({"NUM_VERIFY": artifact}, domain="number_theory")["verdict"] == want
 
 
 # ── the record ───────────────────────────────────────────────────────────────────────────────────────────────────────

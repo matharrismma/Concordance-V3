@@ -41,10 +41,12 @@ OR_VERIFY packet shape (any subset):
     }
 """
 from __future__ import annotations
+import math
 from typing import Any, Dict, List, Optional
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ---------------------------------------------------------------------------
@@ -237,11 +239,13 @@ def verify_knapsack_01(spec: Dict[str, Any]) -> VerifierResult:
     except (KeyError, TypeError, ValueError) as exc:
         return error(name, f"items, capacity must be numeric: {exc}")
 
-    # Integer-scaled DP (handle float weights by scaling if needed).
-    # If all weights are integers, use integer DP; otherwise scale.
-    if all(w == int(w) for w in weights) and cap == int(cap):
-        cap_i = int(cap)
-        w_i   = [int(w) for w in weights]
+    # Weights and capacity are real numbers. If all are whole, use the integer DP, reading each exactly (THE RULE's
+    # input reader, of a value already found whole); otherwise brute-force the subsets. A fraction is never dropped.
+    if not (all(math.isfinite(w) for w in weights) and math.isfinite(cap)):
+        return error(name, "item weights and capacity must be finite numbers")
+    if all(w.is_integer() for w in weights) and cap.is_integer():
+        cap_i = _exact_integer(cap)
+        w_i   = [_exact_integer(w) for w in weights]
         # Standard 0-1 knapsack DP.
         dp = [0.0] * (cap_i + 1)
         for j in range(n):
@@ -300,8 +304,8 @@ def verify_assignment_cost(spec: Dict[str, Any]) -> VerifierResult:
     try:
         total = 0.0
         pairs_used: List[Dict[str, Any]] = []
-        for pair in assignment:
-            i, j = int(pair[0]), int(pair[1])
+        for k, pair in enumerate(assignment):          # each index is an input (THE RULE)
+            i, j = _exact_integer(pair[0], f"assignment[{k}][0]"), _exact_integer(pair[1], f"assignment[{k}][1]")
             cost = float(cost_matrix[i][j])
             total += cost
             pairs_used.append({"i": i, "j": j, "cost": cost})

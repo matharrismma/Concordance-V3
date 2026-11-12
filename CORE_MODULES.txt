@@ -40,6 +40,7 @@ transparency                                        408  <- <entry>
 validate                                            114  <- derivation
 verifiers                                           237  <- <entry>
 verifiers._boolean                                   96  <- verifiers.mathematics
+verifiers._integer                                   73  <- verifiers.mathematics
 verifiers.alpha_scale                               117  <- verifiers.periodic_table
 verifiers.base                                      302  <- audit
 verifiers.bridges                                   118  <- derivation
@@ -55,4 +56,4 @@ verifiers.si_units                                  188  <- audit
 verifiers.spec                                      379  <- verifiers
 verifiers.thermal_scale                              51  <- verifiers.chemistry
 verifiers.wordcraft                                 889  <- audit
-# 57 modules, 17931 lines (lazy imports)
+# 58 modules, 18004 lines (lazy imports)

@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from . import alpha_scale as _ascale  # alpha-anchored Moseley K-alpha
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # (atomic_number, symbol, name, standard_atomic_weight)
@@ -184,7 +185,9 @@ _BY_NUMBER: Dict[int, Dict[str, Any]] = {
 
 
 def _lookup(spec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Identify an element from any of: symbol, name, or atomic_number."""
+    """Identify an element from any of: symbol, name, or atomic_number. An atomic_number it reads is an input, read
+    by THE RULE: one that is not a whole number (a fraction, a bool, other text) raises, and never names the element it
+    is not."""
     sym = (spec.get("symbol") or "").strip()
     if sym:
         # IUPAC symbols are case-sensitive (Fe, not FE). Normalize first
@@ -202,19 +205,20 @@ def _lookup(spec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return _BY_NAME[name]
     z = spec.get("atomic_number")
     if z is not None:
-        try:
-            zi = int(z)
-            if zi in _BY_NUMBER:
-                return _BY_NUMBER[zi]
-        except (TypeError, ValueError):
-            pass
+        zi = _exact_integer(z, "atomic_number")
+        if zi in _BY_NUMBER:
+            return _BY_NUMBER[zi]
     return None
 
 
 def element(symbol=None, name=None, atomic_number=None) -> Optional[Dict[str, Any]]:
     """Look up an element by symbol / name / atomic number — the reusable lookup behind both
-    verify_element and the `lookup` tool (one source, so the two routes cannot drift)."""
-    return _lookup({"symbol": symbol, "name": name, "atomic_number": atomic_number})
+    verify_element and the `lookup` tool (one source, so the two routes cannot drift). No element has an atomic
+    number that is not a whole number, so such a number finds none."""
+    try:
+        return _lookup({"symbol": symbol, "name": name, "atomic_number": atomic_number})
+    except (TypeError, ValueError):
+        return None
 
 
 def verify_element(spec: Dict[str, Any]) -> VerifierResult:
@@ -233,7 +237,15 @@ def verify_element(spec: Dict[str, Any]) -> VerifierResult:
     verify_atomic_mass_weighted_average below.
     """
     name = "periodic_table.element"
-    el = _lookup(spec)
+    # Did the caller claim any of the supported (definitional) attributes? Nothing claimed, nothing is read.
+    if not any(k in spec for k in (
+        "claimed_atomic_number", "claimed_name", "claimed_symbol",
+    )):
+        return na(name)
+    try:
+        el = _lookup(spec)
+    except (TypeError, ValueError) as e:       # an atomic_number that is not a whole number: malformed (THE RULE)
+        return error(name, str(e))
     if not el:
         return na(name)
     mismatches: List[str] = []
@@ -243,13 +255,13 @@ def verify_element(spec: Dict[str, Any]) -> VerifierResult:
     }
     claimed_z = spec.get("claimed_atomic_number")
     if claimed_z is not None:
-        try:
-            cz = int(claimed_z)
-            data["claimed_atomic_number"] = cz
-            if cz != el["atomic_number"]:
-                mismatches.append(f"atomic number: actual Z={el['atomic_number']}, claimed {cz}")
-        except (TypeError, ValueError):
-            pass
+        try:                                   # a claimed result: a fraction stands as written (THE RULE)
+            cz = _claimed_integer(claimed_z, "claimed_atomic_number")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        data["claimed_atomic_number"] = cz
+        if cz != el["atomic_number"]:
+            mismatches.append(f"atomic number: actual Z={el['atomic_number']}, claimed {cz}")
     claimed_name = (spec.get("claimed_name") or "").strip().lower()
     if claimed_name:
         data["claimed_name"] = claimed_name
@@ -264,11 +276,6 @@ def verify_element(spec: Dict[str, Any]) -> VerifierResult:
         data["claimed_symbol"] = norm
         if norm != el["symbol"]:
             mismatches.append(f"symbol: actual {el['symbol']}, claimed {norm}")
-    # Did the caller claim any of the supported (definitional) attributes?
-    if not any(k in spec for k in (
-        "claimed_atomic_number", "claimed_name", "claimed_symbol",
-    )):
-        return na(name)
     if mismatches:
         return mismatch(name, "; ".join(mismatches), data)
     return confirm(
@@ -340,7 +347,7 @@ def molar_mass(formula: str):
         el = _BY_SYMBOL.get(sym)
         if el is None:
             return None, f"unknown element symbol {sym!r} in {f}"
-        c = int(cnt) if cnt else 1
+        c = _exact_integer(cnt) if cnt else 1          # the digits the formula's own pattern matched: exact
         comp[sym] = comp.get(sym, 0) + c
         total += c * el["atomic_mass"]
     return round(total, 6), comp
