@@ -33,6 +33,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # Note name → semitones above C (0..11).
@@ -90,7 +91,7 @@ def _parse_note(note: str):
         return None
     name = s[:octave_idx]
     try:
-        octave = int(s[octave_idx:])
+        octave = _exact_integer(s[octave_idx:])      # the note's own octave text: as int() reads a text
     except ValueError:
         return None
     if name not in _NOTE_TO_SEMI:
@@ -115,14 +116,14 @@ def verify_interval_semitones(spec: Dict[str, Any]) -> VerifierResult:
     semi_a = pa[0] + pa[1] * 12
     semi_b = pb[0] + pb[1] * 12
     actual = semi_b - semi_a
-    try:
-        c = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, f"claimed_semitones must be int, got {claimed!r}")
+    try:                                   # a claimed result (THE RULE): a fraction stands as written
+        c = _claimed_integer(claimed, "claimed_semitones", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     data = {"note_a": a, "note_b": b,
             "actual_semitones": actual, "claimed_semitones": c,
             "rule": "12 semitones per octave; signed (b - a)"}
-    r = band(name, actual, c, 0, "semitones", data, fmt="{:.0f}")
+    r = band(name, actual, c, 0, "semitones", data, fmt="{:.15g}")
     if r.status == "ERROR":
         return r
     return (confirm if r.passed else mismatch)(name, f"{a} → {b}: {r.detail}", r.data)
@@ -163,8 +164,11 @@ def verify_equal_temperament_freq(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_frequency_hz")
     if n is None or claimed is None:
         return na(name)
+    try:                                   # an input (THE RULE)
+        nf = _exact_integer(n, "midi_note")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
-        nf = int(n)
         c = float(claimed)
     except (TypeError, ValueError):
         return error(name, "midi_note int and claimed_frequency_hz numeric required")

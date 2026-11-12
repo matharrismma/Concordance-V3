@@ -43,6 +43,7 @@ import unicodedata
 from typing import Any, Dict, List, Optional
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 _STRONGS_PATTERN = re.compile(r"^[GHgh]\d+$")
@@ -140,10 +141,10 @@ def verify_word_count(strongs: str, claimed_count: Any) -> VerifierResult:
         return mismatch(name,
                         f"{strongs!r} is not a valid Strong's identifier",
                         {"strongs": strongs})
-    try:
-        claimed = int(claimed_count)
-    except (TypeError, ValueError):
-        return error(name, f"claimed_count must be an integer, got {claimed_count!r}")
+    try:                                   # a claimed count (THE RULE): a fraction stands as written
+        claimed = _claimed_integer(claimed_count, "claimed_count", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
         result = _word_study(strongs)
     except Exception as e:
@@ -156,8 +157,9 @@ def verify_word_count(strongs: str, claimed_count: Any) -> VerifierResult:
     if isinstance(actual, bool) or not isinstance(actual, (int, float)):
         return mismatch(name, f"{strongs} claimed {claimed} occurrences, corpus has {actual!r}",
                         {"strongs": strongs, "claimed": claimed, "actual": actual})
-    actual_i = int(actual) if float(actual).is_integer() else actual
-    r = band(name, actual_i, claimed, 0, "count", {"strongs": strongs, "claimed": claimed, "actual": actual_i}, fmt="{:.0f}")
+    actual_i = _exact_integer(actual) if float(actual).is_integer() else actual     # the corpus's own count
+    r = band(name, actual_i, claimed, 0, "count", {"strongs": strongs, "claimed": claimed, "actual": actual_i},
+             fmt="{:.15g}")
     if r.status == "ERROR":
         return r
     return (confirm if r.passed else mismatch)(name, f"{strongs} occurrences in the corpus: {r.detail}", r.data)

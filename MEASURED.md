@@ -356,7 +356,7 @@ Per domain, the benchmark cases each restatement was applied to; each declined t
   `{gcd_a: 48, gcd_b: 36, claimed_gcd: 12.9}`, `{n_prime: 137.5, claimed_prime: true}`,
   `{n_prime: 137, claimed_prime: 'false'}` and `{factorial_n: 5.9, claimed_factorial: 120}` still read HOLDS through
   NUM_VERIFY. A request number read through int() across the verifier files is a run of its own. Run
-  2026-11-11-exact-integers, step fix-a, reads the domain's numbers by THE RULE (`verifiers/_integer.py`): the first,
+  2026-11-11-exact-integers, step fix-a2, reads the domain's numbers by THE RULE (`verifiers/_integer.py`): the first,
   third and fifth of those rows now read SYSTEM_ERROR and the second BROKEN, while `{n_prime: 137, claimed_prime: 'false'}`,
   a bool read by its truth and no integer read, still reads HOLDS. Mode polynomial is what the
   refusal in the next paragraph points to: a polynomial gcd is defined up to a unit, so a claim that names its ring and

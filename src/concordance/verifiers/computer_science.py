@@ -22,6 +22,7 @@ import time
 from typing import Any, Callable, Dict, List, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ----- Static checks (AST-based) -------------------------------------------
@@ -243,6 +244,15 @@ def _slope_verdict(slope: float, expected: float, tol: float, all_slopes) -> str
     return "inconclusive"
 
 
+def _repeat_factor(target_s: float, elapsed: float) -> int:
+    """How many times more repeats should fill the measuring window: the whole number of windows the last run
+    fits in, plus one, and at least 2 (10 when the clock read nothing). The floor is the count's own
+    (tests/integer_fields.json): a repeat count is whole."""
+    if elapsed > 0:
+        return max(2, int(target_s / elapsed) + 1)
+    return 10
+
+
 def verify_runtime_complexity(spec: Dict[str, Any]) -> VerifierResult:
     """Measure runtime at log-spaced input sizes and compare to claimed class.
 
@@ -321,12 +331,7 @@ def verify_runtime_complexity(spec: Dict[str, Any]) -> VerifierResult:
             # Hard cap stops the repeat-doubling loop too
             if elapsed >= max_per_call_s or elapsed >= target_s or repeats >= 1_000_000:
                 break
-            # Estimate factor needed
-            if elapsed > 0:
-                factor = max(2, int(target_s / elapsed) + 1)
-            else:
-                factor = 10
-            repeats *= factor
+            repeats *= _repeat_factor(target_s, elapsed)
         per_call = elapsed / repeats
         times.append(max(per_call, 1e-9))
         sizes_used.append(n)
@@ -563,7 +568,10 @@ def verify_determinism(spec):
     """Run the function multiple times on each test_case and confirm identical output."""
     code = spec.get("code"); fn_name = spec.get("function_name")
     cases = spec.get("test_cases") or []
-    trials = max(2, int(spec.get("trials", 3)))
+    try:                                   # an input (THE RULE)
+        trials = max(2, _exact_integer(spec.get("trials", 3), "trials"))
+    except (TypeError, ValueError) as e:
+        return error("cs.determinism", str(e))
     if not code or not fn_name or not cases:
         return na("cs.determinism")
     try:

@@ -65,6 +65,7 @@ from typing import Any, Dict, List, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from ._boolean import boolean_equivalent, satisfiable, truth_rows, BooleanParseError
+from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _vars_of(spec: Dict[str, Any], *formulas) -> list:
@@ -353,10 +354,10 @@ def verify_minimal_form(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, f"claimed_minimal is not a two-level sum-of-products over the declared variables: {e}")
     stated = spec.get("claimed_minimal_terms")
     if stated is not None:
-        try:
-            stated = int(stated)
-        except (TypeError, ValueError):
-            return na(name, "claimed_minimal_terms must be an integer")
+        try:                               # a claimed result (THE RULE): a fraction stands as written
+            stated = _claimed_integer(stated, "claimed_minimal_terms")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
     try:
         equiv = boolean_equivalent(claimed, formula, var_names)
     except BooleanParseError as e:

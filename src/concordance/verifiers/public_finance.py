@@ -42,6 +42,7 @@ from typing import Any, Dict, List
 
 from .base import band, merge_checks, VerifierResult, na, confirm, mismatch, error, clamp_tol
 from .base import dispatch
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 _D = "public_finance"
 
@@ -108,7 +109,7 @@ def verify_issuance_grossup(spec: Dict[str, Any]) -> VerifierResult:
     if not (0 <= pct < 1) or net <= 0:
         return error(name, "issuance_cost_pct must be in [0,1) and net_proceeds positive")
     raw = net / (1 - pct)
-    par = math.ceil(raw / step) * step if step and step > 0 else raw
+    par = math.ceil(raw / step) * step if step and step > 0 else raw   # rounding up to the step (integer_fields)
     data = {"net_proceeds": net, "issuance_cost_pct": pct, "round_up_to": step, "raw_par": raw,
             "formula": "par = ceil((net / (1 - cost%)) / step) * step"}
     return _check(name, par, claimed, spec, "par", data, abs_floor=0.5)
@@ -148,8 +149,12 @@ def verify_depreciated_value(spec: Dict[str, Any]) -> VerifierResult:
     floor_pct = 0.0 if floor_pct is None else floor_pct
     if orig < 0 or not (0 <= decline <= 1) or not (0 <= floor_pct <= 1) or year < 0:
         return error(name, "decline_per_year and floor_pct in [0,1]; year and original_cost non-negative")
-    v = depreciated(orig, decline, floor_pct, int(year))
-    data = {"original_cost": orig, "decline_per_year": decline, "floor_pct": floor_pct, "year": int(year),
+    try:                                   # the year is an input (THE RULE), read as the spec writes it
+        year_i = _exact_integer(spec.get("year"), "year")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
+    v = depreciated(orig, decline, floor_pct, year_i)
+    data = {"original_cost": orig, "decline_per_year": decline, "floor_pct": floor_pct, "year": year_i,
             "formula": "value_y = max(original × (1 − decline × y), original × floor)"}
     return _check(name, v, claimed, spec, "value", data)
 
@@ -173,7 +178,10 @@ def verify_abatement_schedule(spec: Dict[str, Any]) -> VerifierResult:
         full = [float(x) for x in full]
     except (TypeError, ValueError):
         return error(name, "full_tax_by_year must be a list of numbers")
-    years = int(years)
+    try:                                   # the term is an input (THE RULE), read as the spec writes it
+        years = _exact_integer(spec.get("abatement_years"), "abatement_years")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     floor = 0.0 if floor is None else floor
     if len(full) < years or years <= 0 or not (0 <= start <= 1) or not (0 <= floor <= start):
         return error(name, "need full_tax_by_year for every abatement year; 0 ≤ floor ≤ start ≤ 1")
@@ -190,7 +198,10 @@ def verify_abatement_schedule(spec: Dict[str, Any]) -> VerifierResult:
         if spec.get("claimed_total_pilot") is not None:
             results.append(_check(name, sum(pilot), float(spec["claimed_total_pilot"]), spec, "total_pilot", data))
         if spec.get("claimed_pilot_payment") is not None and spec.get("claimed_pilot_year") is not None:
-            y = int(spec["claimed_pilot_year"])
+            try:                           # the year a claimed payment is for: an input that names it (THE RULE)
+                y = _exact_integer(spec["claimed_pilot_year"], "claimed_pilot_year")
+            except (TypeError, ValueError) as e:
+                return error(name, str(e))
             if not (1 <= y <= years):
                 return error(name, f"claimed_pilot_year must be in 1..{years}")
             results.append(_check(name, pilot[y - 1], float(spec["claimed_pilot_payment"]), spec, f"pilot_year_{y}", data))

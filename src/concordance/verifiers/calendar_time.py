@@ -47,6 +47,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 _WEEKDAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -70,10 +71,10 @@ def verify_leap_year(spec: Dict[str, Any]) -> VerifierResult:
         claimed = spec.get("claimed_is_leap_year")
     if year is None or claimed is None:
         return na(name)
-    try:
-        y = int(year)
-    except (TypeError, ValueError):
-        return error(name, f"year must be an integer, got {year!r}")
+    try:                                   # an input (THE RULE)
+        y = _exact_integer(year, "year")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     actual = _is_leap_gregorian(y)
     data = {"year": y, "actual_leap": actual, "claimed_leap": bool(claimed),
             "rule": "Gregorian: divisible by 4, except century not divisible by 400"}

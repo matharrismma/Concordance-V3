@@ -44,6 +44,7 @@ import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
+from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
 
 
 def verify_concrete_volume(spec: Dict[str, Any]) -> VerifierResult:
@@ -159,21 +160,25 @@ def verify_paint_coverage(spec: Dict[str, Any]) -> VerifierResult:
     if any(v is None for v in (area, coverage, claimed)):
         return na(name)
     try:
-        af, cf_cov, c = float(area), float(coverage), float(claimed)
+        af, cf_cov = float(area), float(coverage)
     except (TypeError, ValueError):
         return error(name, "paint_area_m2, coverage_m2_per_can, claimed_paint_cans must be numeric")
+    try:                                   # a claimed count (THE RULE): a fraction stands as written
+        c = _claimed_integer(claimed, "claimed_paint_cans", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     # found: a caller-supplied number large enough to overflow float() to inf (e.g. a 300+ digit
     # string) parses without raising here, then crashes at math.ceil()/int() (both raise
     # OverflowError on infinity) — same shape as the architecture.py verifier fixed earlier.
-    if not (math.isfinite(af) and math.isfinite(cf_cov) and math.isfinite(c)):
+    if not (math.isfinite(af) and math.isfinite(cf_cov)):      # the claim is a whole number or a finite fraction
         return error(name, "paint_area_m2, coverage_m2_per_can, claimed_paint_cans must be finite numbers")
     if cf_cov <= 0:
         return error(name, f"coverage_m2_per_can must be > 0, got {cf_cov}")
-    actual = math.ceil(af / cf_cov)
+    actual = math.ceil(af / cf_cov)        # the formula's own ceiling (tests/integer_fields.json)
     data = {"paint_area_m2": af, "coverage_m2_per_can": cf_cov,
             "actual_cans": actual, "claimed_cans": c,
             "formula": "cans = ceil(area / coverage_per_can)"}
-    if actual == int(c):
+    if actual == c:
         return confirm(name, f"{actual} cans needed (matches claim)", data)
     return mismatch(name, f"{actual} cans needed, claimed {c}", data)
 
@@ -188,20 +193,24 @@ def verify_floor_tiles(spec: Dict[str, Any]) -> VerifierResult:
     if any(v is None for v in (area, tile_size, claimed)):
         return na(name)
     try:
-        af, tsf, wf, c = float(area), float(tile_size), float(waste), float(claimed)
+        af, tsf, wf = float(area), float(tile_size), float(waste)
     except (TypeError, ValueError):
         return error(name, "tile_area_m2, tile_size_m2, claimed_tile_count must be numeric")
-    if not (math.isfinite(af) and math.isfinite(tsf) and math.isfinite(wf) and math.isfinite(c)):
+    try:                                   # a claimed count (THE RULE): a fraction stands as written
+        c = _claimed_integer(claimed, "claimed_tile_count", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
+    if not (math.isfinite(af) and math.isfinite(tsf) and math.isfinite(wf)):   # the claim: whole or a finite fraction
         return error(name, "tile_area_m2, tile_size_m2, waste_factor, claimed_tile_count "
                            "must be finite numbers")
     if tsf <= 0:
         return error(name, f"tile_size_m2 must be > 0, got {tsf}")
-    base_tiles = math.ceil(af / tsf)
+    base_tiles = math.ceil(af / tsf)       # the formula's own ceilings (tests/integer_fields.json)
     actual = math.ceil(base_tiles * (1 + wf))
     data = {"tile_area_m2": af, "tile_size_m2": tsf, "waste_factor": wf,
             "base_tiles": base_tiles, "actual_tile_count": actual, "claimed_tile_count": c,
             "formula": "tiles = ceil(area / tile_size) × (1 + waste)"}
-    if actual == int(c):
+    if actual == c:
         return confirm(name, f"{actual} tiles needed (matches claim)", data)
     return mismatch(name, f"{actual} tiles needed, claimed {c}", data)
 

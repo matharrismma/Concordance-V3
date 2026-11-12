@@ -57,6 +57,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 _EARTH_RADIUS_KM = 6371.0
@@ -162,12 +163,15 @@ def verify_utm_zone(spec: Dict[str, Any]) -> VerifierResult:
         return na(name)
     try:
         lf = float(lon)
-        c = int(claimed)
     except (TypeError, ValueError):
         return error(name, "longitude must be numeric, claimed_utm_zone integer")
+    try:                                   # a claimed result (THE RULE): a fraction stands as written
+        c = _claimed_integer(claimed, "claimed_utm_zone")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if not (-180.0 <= lf <= 180.0):
         return error(name, f"longitude out of range, got {lf}")
-    actual = int(((lf + 180.0) // 6) + 1)
+    actual = _exact_integer(((lf + 180.0) // 6) + 1)      # floor division already gives a whole value
     if actual > 60:
         actual = 60  # exactly +180° edge case
     data = {"longitude": lf, "actual_utm_zone": actual, "claimed_utm_zone": c,

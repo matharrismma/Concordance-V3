@@ -24,6 +24,8 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+
 Dims = Dict[str, int]
 Parsed = Tuple[Dims, float]
 
@@ -103,7 +105,7 @@ def _atom(tok: str) -> Optional[Parsed]:
     m = _TOKEN.match(tok)
     if not m:
         return None
-    sym, exp = m.group(1), int(m.group(2) or 1)
+    sym, exp = m.group(1), _exact_integer(m.group(2) or 1)     # the exponent's own digits: exact
     base = _lookup(sym)
     if base is None:
         return None

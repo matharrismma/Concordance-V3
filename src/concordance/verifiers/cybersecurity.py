@@ -31,6 +31,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ── Password entropy ──────────────────────────────────────────────────────────
@@ -57,9 +58,12 @@ def verify_password_entropy(spec: Dict[str, Any]) -> VerifierResult:
         return na(name)
     if charset is None:
         return na(name, "charset_size required (or use a key from CHARSET_SIZES)")
+    try:                                   # the length and the charset size are inputs (THE RULE)
+        L = _exact_integer(length, "password_length")
+        N = _exact_integer(_CHARSET_SIZES.get(str(charset), charset), "charset_size")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
-        L = int(length)
-        N = int(_CHARSET_SIZES.get(str(charset), charset))
         c = float(claimed)
     except (TypeError, ValueError, KeyError):
         return error(name, "password_length, charset_size, claimed_entropy_bits must be numeric")
@@ -148,11 +152,11 @@ def verify_subnet_hosts(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_host_count")
     if prefix is None or claimed is None:
         return na(name)
-    try:
-        p = int(prefix)
-        c = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "cidr_prefix and claimed_host_count must be integers")
+    try:                                   # the prefix is an input; the count is a claimed result (THE RULE)
+        p = _exact_integer(prefix, "cidr_prefix")
+        c = _claimed_integer(claimed, "claimed_host_count")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if not (0 <= p <= 32):
         return error(name, f"CIDR prefix must be 0–32, got {p}")
     total = 2 ** (32 - p)
@@ -176,10 +180,10 @@ def verify_port_class(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_port_class")
     if port is None or claimed is None:
         return na(name)
-    try:
-        p = int(port)
-    except (TypeError, ValueError):
-        return error(name, "port_number must be an integer")
+    try:                                   # an input (THE RULE)
+        p = _exact_integer(port, "port_number")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if not (0 <= p <= 65535):
         return error(name, f"port must be 0–65535, got {p}")
     if p < 1024:

@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _band(name, actual, claimed, what, data, rel_tol=1e-3, abs_tol=1e-6, unit=""):
@@ -130,9 +131,12 @@ def verify_harmonic_frequency(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_harmonic_hz")
     if f1 is None or n is None or claimed is None:
         return na(name)
+    try:                                   # harmonic_n is an input (THE RULE)
+        nf = _exact_integer(n, "harmonic_n")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
         f1f = float(f1)
-        nf = int(n)
         c = float(claimed)
     except (TypeError, ValueError):
         return error(name, "fundamental_hz and claimed_harmonic_hz numeric; harmonic_n integer")

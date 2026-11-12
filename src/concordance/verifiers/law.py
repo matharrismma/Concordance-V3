@@ -34,6 +34,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +124,10 @@ def verify_constitutional_age_requirement(spec: Dict[str, Any]) -> VerifierResul
         return error(name,
                      f"office={office!r} not recognised; expected: "
                      f"{list(_AGE_REQUIREMENTS.keys())}")
-    try:
-        age_int = int(age)
-    except (TypeError, ValueError):
-        return error(name, f"age must be an integer, got {age!r}")
+    try:                                   # an input (THE RULE): an age in whole years
+        age_int = _exact_integer(age, "age")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     requirement = _AGE_REQUIREMENTS[office_key]
     actual_meets = age_int >= requirement
     data = {

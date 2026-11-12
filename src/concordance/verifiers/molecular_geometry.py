@@ -22,6 +22,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 # (steric_number, lone_pairs) -> (geometry, ideal_bond_angle_deg | None if multi-angle).
 # Angles for 0-lone-pair cases are exact ideals; lone-pair cases are nominal
@@ -50,11 +51,11 @@ def verify_vsepr(spec: Dict[str, Any]) -> VerifierResult:
     claimed_angle = spec.get("claimed_bond_angle_deg")
     if bd is None or (claimed_geo is None and claimed_angle is None):
         return na(name)
-    try:
-        bd = int(bd)
-        lp = int(lp)
-    except (TypeError, ValueError):
-        return error(name, "bonding_domains and lone_pairs must be integers")
+    try:                                   # both counts are inputs (THE RULE)
+        bd = _exact_integer(spec.get("bonding_domains"), "bonding_domains")
+        lp = _exact_integer(spec.get("lone_pairs", 0), "lone_pairs")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if bd < 1 or lp < 0:
         return error(name, "bonding_domains >= 1 and lone_pairs >= 0")
     steric = bd + lp

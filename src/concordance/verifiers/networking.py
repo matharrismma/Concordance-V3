@@ -47,6 +47,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # Three common MAC formats: colon, hyphen, and Cisco dot-quad nibble.
@@ -121,11 +122,11 @@ def verify_subnet_host_count(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_usable_hosts")
     if prefix is None or claimed is None:
         return na(name)
-    try:
-        n = int(prefix)
-        c = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "subnet_prefix and claimed_usable_hosts must be integers")
+    try:                                   # the prefix is an input; the count is a claimed result (THE RULE)
+        n = _exact_integer(prefix, "subnet_prefix")
+        c = _claimed_integer(claimed, "claimed_usable_hosts")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if not (0 <= n <= 32):
         return error(name, f"subnet_prefix must be 0-32 for IPv4, got {n}")
     # /32 = 1 host (host route); /31 = 2 (RFC 3021); else 2^(32-n) - 2

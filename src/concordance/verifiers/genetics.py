@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ── Standard genetic code (NCBI translation table 1) ──────────────────────
@@ -242,11 +243,16 @@ def verify_orf_bounds(spec: Dict[str, Any]) -> VerifierResult:
     if not _is_valid_seq(seq, rna=rna):
         return error(name, f"sequence has non-{'RNA' if rna else 'DNA'} characters")
     seq_dna = _to_dna(seq) if rna else seq
-    try:
-        start = int(orf.get("start"))
-        end = int(orf.get("end"))
-    except (TypeError, ValueError, AttributeError):
+    try:                                   # the claimed bounds are claimed results (THE RULE)
+        start = _claimed_integer(orf.get("start"), "claimed_orf.start", as_number=True)
+        end = _claimed_integer(orf.get("end"), "claimed_orf.end", as_number=True)
+    except AttributeError:
         return error(name, f"claimed_orf must have integer start/end, got {orf!r}")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
+    if not (isinstance(start, int) and isinstance(end, int)):
+        return mismatch(name, f"an ORF's bounds are whole positions; claimed [{start},{end})",
+                        {"start": start, "end": end, "seq_len": len(seq_dna)})
     if start < 0 or end > len(seq_dna):
         return mismatch(name,
                         f"ORF [{start},{end}) out of bounds for sequence length {len(seq_dna)}",

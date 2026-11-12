@@ -28,6 +28,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _h2(p: float) -> float:
@@ -93,10 +94,10 @@ def verify_hamming_distance(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_hamming")
     if a is None or b is None or claimed is None:
         return na(name)
-    try:
-        c = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, f"claimed_hamming must be an integer, got {claimed!r}")
+    try:                                   # a claimed result (THE RULE): a fraction stands as written
+        c = _claimed_integer(claimed, "claimed_hamming")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if not isinstance(a, str) or not isinstance(b, str):
         return error(name, "string_a and string_b must be strings")
     if len(a) != len(b):

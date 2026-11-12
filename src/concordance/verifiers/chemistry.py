@@ -24,6 +24,7 @@ from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band,
 from . import alpha_scale as _ascale  # alpha-anchored atomic energy scale
 from . import thermal_scale as _thermal  # k_B-anchored Boltzmann factor
 from . import molar_scale as _molar  # N_A-anchored particle count
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 # regex pieces ---------------------------------------------------------------
 
@@ -45,7 +46,7 @@ def _parse_charge(species: str) -> Tuple[str, int]:
         return s, 0
     # Be careful: a trailing - might be the dash in -> already stripped, fine.
     digits, sign = m.group(1), m.group(2)
-    n = int(digits) if digits else 1
+    n = _exact_integer(digits) if digits else 1          # the digits the charge pattern matched: exact
     bare = s[:m.start()].rstrip()
     return bare, n if sign == "+" else -n
 
@@ -67,7 +68,7 @@ def _parse_formula(formula: str) -> Dict[str, int]:
             while i < len(s) and s[i].isdigit():
                 mdigits += s[i]
                 i += 1
-            mult = int(mdigits) if mdigits else 1
+            mult = _exact_integer(mdigits) if mdigits else 1        # digits the scan read: exact
             top = stack.pop()
             for el, n in top.items():
                 stack[-1][el] = stack[-1].get(el, 0) + n * mult
@@ -81,7 +82,7 @@ def _parse_formula(formula: str) -> Dict[str, int]:
             while i < len(s) and s[i].isdigit():
                 ndigits += s[i]
                 i += 1
-            n = int(ndigits) if ndigits else 1
+            n = _exact_integer(ndigits) if ndigits else 1           # digits the scan read: exact
             stack[-1][sym] = stack[-1].get(sym, 0) + n
         elif c.isdigit():
             # bare leading digit is a coefficient — should not appear here because
@@ -104,7 +105,7 @@ def _split_term(term: str) -> Tuple[int, str]:
     t = term.strip()
     m = re.match(r"^(\d+)\s*(.+)$", t)
     if m:
-        return int(m.group(1)), m.group(2).strip()
+        return _exact_integer(m.group(1)), m.group(2).strip()      # the coefficient's own digits: exact
     return 1, t
 
 
@@ -306,7 +307,7 @@ def _nullspace_positive_integer(A: List[List[Fraction]]) -> List[int] | None:
     den_lcm = 1
     for v in x:
         den_lcm = den_lcm * v.denominator // gcd(den_lcm, v.denominator)
-    ints = [int(v * den_lcm) for v in x]
+    ints = [(v * den_lcm).numerator for v in x]       # each is whole: den_lcm is a multiple of every denominator
     g = ints[0]
     for v in ints[1:]:
         g = gcd(g, v)

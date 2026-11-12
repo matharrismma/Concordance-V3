@@ -37,18 +37,18 @@ import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def verify_replicates(spec: Dict[str, Any]) -> VerifierResult:
-    n = spec.get("n_replicates")
-    minimum = spec.get("min_replicates", 3)
-    if n is None:
+    given, given_min = spec.get("n_replicates"), spec.get("min_replicates", 3)
+    if given is None:
         return na("biology.replicates")
-    try:
-        n = int(n)
-        minimum = int(minimum)
-    except (ValueError, TypeError):
-        return error("biology.replicates", f"non-integer values: n={n}, min={minimum}")
+    try:                                   # the count and its minimum are inputs (THE RULE)
+        n = _exact_integer(given, "n_replicates")
+        minimum = _exact_integer(given_min, "min_replicates")
+    except (ValueError, TypeError) as e:
+        return error("biology.replicates", str(e))
     return bound("biology.replicates", n, minimum, "min", "n_replicates", fmt="{:d}")
 
 
@@ -143,7 +143,7 @@ def verify_sample_size_powered(spec: Dict[str, Any]) -> VerifierResult:
         d = float(d)
         if d <= 0:
             return error("biology.power", f"effect_size must be positive, got {d}")
-        n_required = math.ceil(2 * ((z_alpha + z_beta) / d) ** 2) + 1
+        n_required = math.ceil(2 * ((z_alpha + z_beta) / d) ** 2) + 1   # the formula's own ceiling (integer_fields)
     except Exception as e:
         return error("biology.power", f"computation failure: {e}")
 

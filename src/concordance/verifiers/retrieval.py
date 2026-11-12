@@ -49,6 +49,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch
+from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _ids(v: Any) -> List[str]:
@@ -138,10 +139,10 @@ def verify_rank_of_target(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_rank")
     if not returned or target is None or claimed is None:
         return na(name)
-    try:
-        c = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "claimed_rank must be an integer (1-based; 0 = absent)")
+    try:                                   # a claimed result (THE RULE): 1-based; 0 = absent
+        c = _claimed_integer(claimed, "claimed_rank")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
 
     t = str(target)
     actual = returned.index(t) + 1 if t in returned else 0
@@ -168,10 +169,13 @@ def verify_no_false_silence(spec: Dict[str, Any]) -> VerifierResult:
     contains = spec.get("corpus_contains_match")
     if claimed_n is None or contains is None:
         return na(name)
-    try:
-        n = int(claimed_n)
-    except (TypeError, ValueError):
-        return error(name, "claimed_result_count must be an integer")
+    try:                                   # a claimed result (THE RULE): a fraction stands as written
+        n = _claimed_integer(claimed_n, "claimed_result_count")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
+    if not isinstance(n, int):
+        return mismatch(name, f"a result count is a whole number; claimed {n}",
+                        {"query": spec.get("query"), "claimed_result_count": n})
 
     held = bool(contains)
     silent = (n == 0)

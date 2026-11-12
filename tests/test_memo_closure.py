@@ -21,7 +21,8 @@ from concordance.verifiers import base, physical_constants, scale_base, si_units
 
 P = "concordance."
 V = P + "verifiers."
-RUNNER = {P[:-1], P + "cas", P + "config", P + "layers", P + "validate", P + "derivation", V[:-1], V + "base", V + "spec"}
+RUNNER = {P[:-1], P + "cas", P + "config", P + "layers", P + "validate", P + "derivation", V[:-1], V + "base", V + "spec",
+          V + "_integer"}       # base.py reads its digits through THE RULE (run 2026-11-11-exact-integers, step fix-b)
 GRAVITY = {V + "grav_scale", V + "scale_base", V + "physical_constants", V + "si_units"}
 CLOSURES = {
     "public_finance": RUNNER | {V + "public_finance"},

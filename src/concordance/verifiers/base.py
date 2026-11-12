@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Sequence, Tuple, Union
 
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+
 VerifierStatus = Literal["CONFIRMED", "MISMATCH", "NOT_APPLICABLE", "ERROR"]
 
 
@@ -230,7 +232,7 @@ def stated_precision(literal: Any) -> Optional[Tuple[int, float]]:
     m = _LITERAL.fullmatch(_literal_text(literal))
     if not m or not (m.group(1) or m.group(2)):
         return None
-    ip, fp, ex = m.group(1) or "", m.group(2), int(m.group(3) or 0)
+    ip, fp, ex = m.group(1) or "", m.group(2), _exact_integer(m.group(3) or 0)   # the exponent's own digits
     if fp is not None:                       # a decimal point was written: every written decimal counts
         digits = (ip + fp).lstrip("0")
         return (len(digits) if digits else 1, 0.5 * 10.0 ** (ex - len(fp)))

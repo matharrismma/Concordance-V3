@@ -36,6 +36,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ---------------------------------------------------------------------------
@@ -62,12 +63,12 @@ def verify_year_arithmetic(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_elapsed_years")
     if from_y is None or to_y is None or claimed is None:
         return na(name)
-    try:
-        fy  = int(from_y)
-        ty  = int(to_y)
-        cl  = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "from_year / to_year / claimed_elapsed_years must be integers")
+    try:                                   # the years are inputs; the count is a claimed result (THE RULE)
+        fy  = _exact_integer(from_y, "from_year")
+        ty  = _exact_integer(to_y, "to_year")
+        cl  = _claimed_integer(claimed, "claimed_elapsed_years", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     actual = ty - fy
     diff = abs(actual - cl)
     # EXACT (2026-10-08, the failure report C1): the tolerance was 1 year, so "2024 to 2028 is 3 years" and
@@ -110,11 +111,11 @@ def verify_century_assignment(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_century")
     if year is None or claimed is None:
         return na(name)
-    try:
-        y  = int(year)
-        cl = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "year_CE / claimed_century must be integers")
+    try:                                   # the year is an input; the century is a claimed result (THE RULE)
+        y  = _exact_integer(year, "year_CE")
+        cl = _claimed_integer(claimed, "claimed_century")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if y <= 0:
         return error(name, f"year_CE must be a positive CE year, got {y}")
     try:
@@ -161,10 +162,10 @@ def verify_era_classification(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_era")
     if year is None or claimed is None:
         return na(name)
-    try:
-        y = int(year)
-    except (TypeError, ValueError):
-        return error(name, f"year must be an integer, got {year!r}")
+    try:                                   # an input (THE RULE)
+        y = _exact_integer(year, "year")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     claimed_norm = str(claimed).strip().upper()
     # Validate the claimed label is a known alias
     if claimed_norm.lower() not in (_BCE_ALIASES | _CE_ALIASES):
@@ -210,12 +211,12 @@ def verify_elapsed_years_bce_to_ce(spec: Dict[str, Any]) -> VerifierResult:
     claimed  = spec.get("claimed_elapsed")
     if from_bce is None or to_ce is None or claimed is None:
         return na(name)
-    try:
-        fb = int(from_bce)
-        tc = int(to_ce)
-        cl = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "from_BCE / to_CE / claimed_elapsed must be integers")
+    try:                                   # the years are inputs; the count is a claimed result (THE RULE)
+        fb = _exact_integer(from_bce, "from_BCE")
+        tc = _exact_integer(to_ce, "to_CE")
+        cl = _claimed_integer(claimed, "claimed_elapsed", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if fb <= 0:
         return error(name, f"from_BCE must be a positive integer, got {fb}")
     if tc <= 0:
@@ -255,11 +256,11 @@ def verify_decade_assignment(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_decade_start")
     if year is None or claimed is None:
         return na(name)
-    try:
-        y  = int(year)
-        cl = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "year_CE / claimed_decade_start must be integers")
+    try:                                   # the year is an input; the decade is a claimed result (THE RULE)
+        y  = _exact_integer(year, "year_CE")
+        cl = _claimed_integer(claimed, "claimed_decade_start")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     actual = (y // 10) * 10
     data = {
         "rule": _DECADE_RULE,

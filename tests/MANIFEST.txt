@@ -65,6 +65,7 @@ test_energy.py
 test_ephemeris.py
 test_equation_audit_2026_10_01.py
 test_exact_integers.py
+test_exact_integers_rest.py
 test_exercise_science.py
 test_expression_parser.py
 test_failure_report_2026_10_08.py

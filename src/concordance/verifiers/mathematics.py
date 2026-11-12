@@ -285,7 +285,7 @@ def _power_bits(base, exponent) -> int:
     if not isinstance(base, _sp.Basic):
         raise PowerRefused("a power is on a mathematical value")
     if base.is_Rational:
-        return max(int(base.p).bit_length(), int(base.q).bit_length()) * _ceiling(abs(exponent))
+        return max(_operator.index(base.p).bit_length(), _operator.index(base.q).bit_length()) * _ceiling(abs(exponent))
     if isinstance(base, _sp.Piecewise):
         return max(_power_bits(piece, exponent) for piece, _condition in base.args)
     if isinstance(base, _sp.Pow):
@@ -906,7 +906,7 @@ class _Reader:
         if type(node.value) is float:
             written = _ast.get_source_segment(self.source, node)
             exponent = _WRITTEN_EXPONENT_RE.search(written)    # a written 1eN is the power 10**N,
-            if exponent and abs(int(exponent.group(1))) > _MAX_POW_EXP:    # and sympy expands it whole
+            if exponent and abs(_exact_integer(exponent.group(1))) > _MAX_POW_EXP:    # and sympy expands it whole
                 raise ExpressionRefused("exponent too large")
             return _sp.Rational(written) if self.rational else _sp.Float(written)
         raise ExpressionRefused(f"a {type(node.value).__name__} literal is not a number here")
@@ -1138,7 +1138,7 @@ def _term_estimate(value) -> int:
     product = isinstance(value, _sp.Mul)
     if not product and not isinstance(value, _sp.Add):
         return over
-    total = int(product)
+    total = 1 if product else 0
     for part in value.args:
         terms = _term_estimate(part)
         total = min(total * terms if product else total + terms, over)
@@ -1178,12 +1178,12 @@ def _weight(value) -> int:
     is dense, so twelve terms near degree 9000 in each of twelve symbols took 19.9 s to build, and eight binomials with
     coefficients of 500,000 bits did not multiply out in 25 s, in a ring or anywhere."""
     if isinstance(value, _sp.Pow):
-        return _weight(value.base) * abs(int(value.exp))
+        return _weight(value.base) * abs(_operator.index(value.exp))     # an integer power: _rational_value's list
     if isinstance(value, _sp.Mul):
         return sum(map(_weight, value.args))
     if isinstance(value, _sp.Add):
         return max(map(_weight, value.args))
-    return 1 if value.is_Symbol else int(max(abs(value.p), value.q)).bit_length()
+    return 1 if value.is_Symbol else _operator.index(max(abs(value.p), value.q)).bit_length()
 
 
 def _written_factors(base) -> list:
@@ -1967,10 +1967,10 @@ def verify_number_theory(spec: Dict[str, Any]) -> VerifierResult:
             actual, label = bool(isprime(n)), f"isprime({n})"
         elif "factorial" in spec and "claimed_factorial" in spec:
             n = _exact_integer(spec["factorial"])
-            actual, claimed, label = int(_fact(n)), _claimed_integer(spec["claimed_factorial"]), f"{n}!"
+            actual, claimed, label = _operator.index(_fact(n)), _claimed_integer(spec["claimed_factorial"]), f"{n}!"
         elif "binomial" in spec and "claimed_binomial" in spec:
             n, k = _exact_integers(spec["binomial"], 2)
-            actual, claimed, label = int(_binom(n, k)), _claimed_integer(spec["claimed_binomial"]), f"C({n},{k})"
+            actual, claimed, label = _operator.index(_binom(n, k)), _claimed_integer(spec["claimed_binomial"]), f"C({n},{k})"
         elif "modulo" in spec and "claimed_modulo" in spec:
             a, m = _exact_integers(spec["modulo"], 2)
             actual, claimed, label = a % m, _claimed_integer(spec["claimed_modulo"]), f"{a} mod {m}"

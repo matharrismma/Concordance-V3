@@ -40,6 +40,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def verify_floor_area_ratio(spec: Dict[str, Any]) -> VerifierResult:
@@ -78,32 +79,36 @@ def verify_occupant_load(spec: Dict[str, Any]) -> VerifierResult:
     if area is None or factor is None or claimed is None:
         return na(name)
     try:
-        areaf, factorf, c = float(area), float(factor), float(claimed)
+        areaf, factorf = float(area), float(factor)
     except (TypeError, ValueError):
         return error(name, "floor_area_m2, occupant_load_factor_m2_per_person, "
                            "claimed_occupant_count must be numeric")
+    try:                                   # a claimed count (THE RULE): a fraction stands as written, never rounded
+        c = _claimed_integer(claimed, "claimed_occupant_count", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     # found: a caller-supplied number large enough to overflow float() to inf (e.g. a 300+ digit
-    # string) parses without raising here, then crashes downstream — math.ceil(areaf/factorf) and
-    # int(round(c)) both raise OverflowError on infinity. Decline (like the other invalid-input
-    # branches below) rather than crash.
-    if not (math.isfinite(areaf) and math.isfinite(factorf) and math.isfinite(c)):
+    # string) parses without raising here, then crashes downstream — math.ceil(areaf/factorf)
+    # raises OverflowError on infinity. Decline (like the other invalid-input branches below)
+    # rather than crash.
+    if not (math.isfinite(areaf) and math.isfinite(factorf)):     # the claim is a whole number or a finite fraction
         return error(name, "floor_area_m2, occupant_load_factor_m2_per_person, "
                            "claimed_occupant_count must be finite numbers")
     if factorf <= 0:
         return error(name, f"occupant_load_factor_m2_per_person must be positive, got {factorf}")
     if areaf < 0:
         return error(name, f"floor_area_m2 must be non-negative, got {areaf}")
-    actual = math.ceil(areaf / factorf)
+    actual = math.ceil(areaf / factorf)    # the code's own ceiling (tests/integer_fields.json)
     data = {"formula": "occupants = ⌈floor_area / occupant_load_factor⌉",
             "floor_area_m2": areaf, "occupant_load_factor_m2_per_person": factorf,
-            "actual_occupant_count": actual, "claimed_occupant_count": int(round(c)),
+            "actual_occupant_count": actual, "claimed_occupant_count": c,
             "diff": abs(actual - c)}
-    if actual == int(round(c)):
+    if actual == c:
         return confirm(name,
-                       f"⌈{areaf}/{factorf}⌉ = {actual} occupants (matches claim {int(round(c))})",
+                       f"⌈{areaf}/{factorf}⌉ = {actual} occupants (matches claim {c})",
                        data)
     return mismatch(name,
-                    f"actual ⌈{areaf}/{factorf}⌉ = {actual} occupants, claimed {int(round(c))}",
+                    f"actual ⌈{areaf}/{factorf}⌉ = {actual} occupants, claimed {c}",
                     data)
 
 

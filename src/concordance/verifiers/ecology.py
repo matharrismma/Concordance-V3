@@ -37,6 +37,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def verify_logistic_growth(spec: Dict[str, Any]) -> VerifierResult:
@@ -95,24 +96,28 @@ def verify_trophic_efficiency(spec: Dict[str, Any]) -> VerifierResult:
     if energy_input is None or levels is None or claimed is None:
         return na(name)
     efficiency = spec.get("trophic_efficiency", 0.10)
+    try:                                   # the number of levels is an input (THE RULE)
+        lf = _exact_integer(levels, "trophic_levels_up")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
-        Ef, lf, eff, cl = float(energy_input), float(levels), float(efficiency), float(claimed)
+        Ef, eff, cl = float(energy_input), float(efficiency), float(claimed)
     except (TypeError, ValueError):
         return error(name, "energy_input, trophic_levels_up, trophic_efficiency, and claimed_energy_output must be numeric")
     if Ef < 0:
         return error(name, f"energy_input must be non-negative, got {Ef}")
-    if lf < 0 or lf != int(lf):
+    if lf < 0:
         return error(name, f"trophic_levels_up must be a non-negative integer, got {lf}")
     if not (0.0 < eff <= 1.0):
         return error(name, f"trophic_efficiency must be in (0, 1], got {eff}")
-    actual = Ef * (eff ** int(lf))
+    actual = Ef * (eff ** lf)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-9)
     diff = abs(actual - cl)
     threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
     data = {
         "energy_input": Ef,
-        "trophic_levels_up": int(lf),
+        "trophic_levels_up": lf,
         "trophic_efficiency": eff,
         "diff": diff,
         "formula": "output = input × efficiency^levels",

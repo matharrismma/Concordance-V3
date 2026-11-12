@@ -16,6 +16,7 @@ import re
 from typing import Any, Dict, List
 
 from .base import VerifierResult, confirm, error, mismatch, na, bound
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 # Golden: a complete, valid decision packet confirms; perturbing the scope to an invalid value is
 # the falsehood the shape check must refuse.
@@ -105,10 +106,10 @@ def verify_witness_count_consistency(spec: Dict[str, Any], packet: Dict[str, Any
     if not isinstance(dp_witnesses, list):
         return error(name, "DECISION_PACKET.witnesses is not a list")
     n_named = len(dp_witnesses)
-    try:
-        n_top = int(top_count)
-    except (ValueError, TypeError):
-        return error(name, f"witness_count is non-integer: {top_count!r}")
+    try:                                   # the declared count is the claim checked here (THE RULE)
+        n_top = _claimed_integer(top_count, "witness_count")
+    except (ValueError, TypeError) as e:
+        return error(name, str(e))
     data = {"rule": "DECISION_PACKET.witnesses count must equal top-level witness_count",
             "named_count": n_named, "declared_count": n_top}
     if n_named == n_top:
@@ -126,19 +127,19 @@ def verify_decision_timing(packet: Dict[str, Any]) -> VerifierResult:
         return na(name, "scope or created_epoch missing")
     if acted is None:
         return na(name, "no acted_at_epoch — cannot judge wait window yet")
-    try:
-        c, a = int(created), int(acted)
-    except (TypeError, ValueError):
-        return error(name, "created_epoch/acted_at_epoch must be integers")
+    try:                                   # the two times are inputs (THE RULE)
+        c, a = _exact_integer(created, "created_epoch"), _exact_integer(acted, "acted_at_epoch")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if scope not in _SCOPE_WAIT_WINDOWS:
         return error(name, f"unknown scope {scope!r}; expected local/mesh/archived")
     floor = _SCOPE_WAIT_WINDOWS[scope]
     override = packet.get("wait_window_seconds")
     if override is not None:
-        try:
-            floor = max(floor, int(override))
-        except (TypeError, ValueError):
-            return error(name, "wait_window_seconds must be an integer")
+        try:                               # an input (THE RULE)
+            floor = max(floor, _exact_integer(override, "wait_window_seconds"))
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
     elapsed = a - c
     data = {"rule": "scope-determined wait window must elapse between created and acted",
             "scope": scope, "elapsed_seconds": elapsed, "required_seconds": floor}

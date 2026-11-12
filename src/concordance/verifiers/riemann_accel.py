@@ -17,6 +17,7 @@ is a speed, never a verdict. The compiled .so is a per-node artifact; it never t
 from __future__ import annotations
 
 import math
+import operator
 import os
 import subprocess
 import sys
@@ -134,7 +135,7 @@ def _np_z(ts):
     c0 = np.cos(_TWO_PI * (p * p - p - 1.0 / 16.0)) / np.cos(_TWO_PI * p)
     corr = np.where(m % 2 == 1, 1.0, -1.0) * a ** -0.5 * c0
     out = np.empty_like(ts)
-    mmax = int(m.max()) if ts.size else 0
+    mmax = operator.index(m.max()) if ts.size else 0     # m is already int64
     logn = np.log(np.arange(1, mmax + 1, dtype=float)) if mmax else np.empty(0)
     invsq = 1.0 / np.sqrt(np.arange(1, mmax + 1, dtype=float)) if mmax else np.empty(0)
     for mv in np.unique(m):                       # m changes slowly: a handful of groups per block
@@ -159,6 +160,12 @@ def _tables(mmax: int):
     return _C_TABLES["logk"], _C_TABLES["invsqrtk"], _C_TABLES["mmax"]
 
 
+def _table_size(tmax: float) -> int:
+    """The C backend's table length for heights up to tmax: one past floor(sqrt(tmax / 2 pi)), the longest main sum
+    the Riemann-Siegel formula runs to below tmax. The floor is the formula's own (tests/integer_fields.json)."""
+    return max(1, int((tmax / _TWO_PI) ** 0.5) + 1)
+
+
 def _c_z(ts):
     import ctypes
     np = _numpy()
@@ -166,7 +173,7 @@ def _c_z(ts):
     ts = np.ascontiguousarray(ts, dtype=float)
     out = np.empty_like(ts)
     tmax = float(ts.max()) if ts.size else 20.0
-    mmax = max(1, int((tmax / _TWO_PI) ** 0.5) + 1)
+    mmax = _table_size(tmax)
     logk, invsqrtk, mm = _tables(mmax)
     fn(ts.ctypes.data_as(ctypes.c_void_p), ts.size,
        logk.ctypes.data_as(ctypes.c_void_p), invsqrtk.ctypes.data_as(ctypes.c_void_p),

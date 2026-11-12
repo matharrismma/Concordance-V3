@@ -47,6 +47,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, band, merge_checks
 from .base import dispatch
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _num_matrix(M):
@@ -79,11 +80,8 @@ def _as_bool(v):
 
 
 def _index(v):
-    """An integral index — 1.7 is not row 1 (it was silently truncated before)."""
-    f = float(v)
-    if not f.is_integer():
-        raise ValueError(f"index must be integral, got {v!r}")
-    return int(f)
+    """An integral index — 1.7 is not row 1 (it was silently truncated before). An input, read by THE RULE."""
+    return _exact_integer(v, "index")
 
 
 def _distribution(p):

@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 import math
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 # numpy + scipy.stats are heavy imports (scipy.stats ~1.5s). They load on
 # first use (via _ensure_stats) so the engine's cold start stays fast.
@@ -654,10 +655,10 @@ def verify_trajectory(spec: Dict[str, Any]) -> VerifierResult:
       STAT_VERIFY: {"trajectory": {"successes": 9, "trials": 10, "confidence": 0.95, "claimed_floor": 0.5956}}"""
     name = "statistics.trajectory"
     tj = spec if "successes" in spec else (spec.get("trajectory") or {})
-    try:
-        s = int(tj.get("successes")); n = int(tj.get("trials"))
-    except (TypeError, ValueError):
-        return error(name, "successes and trials must be integers")
+    try:                                   # both counts are inputs (THE RULE)
+        s = _exact_integer(tj.get("successes"), "successes"); n = _exact_integer(tj.get("trials"), "trials")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if not (0 <= s <= n) or n <= 0:
         return error(name, "need 0 <= successes <= trials and trials > 0")
     conf = float(tj.get("confidence", 0.95))

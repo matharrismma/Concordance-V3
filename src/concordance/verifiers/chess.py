@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 _BOOL_CLAIMS = ("check", "checkmate", "stalemate", "legal_move")
 
@@ -51,18 +52,18 @@ def verify_position(spec: Dict[str, Any]) -> VerifierResult:
         import ast
         try:
             mat = ast.literal_eval(trail.get("detail") or "{}")
-            balance = int(mat.get("balance"))
+            balance = _exact_integer(mat.get("balance"))      # the engine's own computed balance
         except Exception:  # noqa: BLE001
             return error(name, "could not read the material balance")
         data["balance"] = balance
         claimed = spec.get("claimed_balance")
         if claimed is None:
             return na(name, "claim claimed_balance (white - black material, in points)")
-        try:
-            claimed_i = int(claimed)
-        except (TypeError, ValueError):
-            return error(name, "claimed_balance must be an integer")
-        r = band(name, balance, claimed_i, 0, "balance", data, fmt="{:+.0f}")
+        try:                               # a claimed result (THE RULE): a fraction stands as written
+            claimed_i = _claimed_integer(claimed, "claimed_balance", as_number=True)
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
+        r = band(name, balance, claimed_i, 0, "balance", data, fmt="{:+.15g}")
         if r.status == "ERROR":
             return r
         return (confirm if r.passed else mismatch)(name, f"material (white - black): {r.detail}", r.data)

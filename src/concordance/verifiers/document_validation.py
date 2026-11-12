@@ -31,6 +31,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _digits_only(s: str) -> str:
@@ -48,7 +49,7 @@ def _isbn10_check(s: str) -> bool:
         else:
             if not ch.isdigit():
                 return False
-            v = int(ch)
+            v = _exact_integer(ch)          # a digit character: exact
         total += v * (10 - i)
     return total % 11 == 0
 
@@ -59,7 +60,7 @@ def _isbn13_check(s: str) -> bool:
         return False
     total = 0
     for i, ch in enumerate(digits):
-        v = int(ch)
+        v = _exact_integer(ch)          # a digit character: exact
         total += v if i % 2 == 0 else 3 * v
     return total % 10 == 0
 
@@ -71,7 +72,7 @@ def _luhn_check(s: str) -> bool:
     total = 0
     n = len(digits)
     for i, ch in enumerate(digits):
-        v = int(ch)
+        v = _exact_integer(ch)          # a digit character: exact
         # Double every second digit from the right.
         if (n - i) % 2 == 0:
             v *= 2
@@ -92,7 +93,7 @@ def _ean_check(s: str) -> bool:
         return False
     total = 0
     for i, ch in enumerate(digits):
-        v = int(ch)
+        v = _exact_integer(ch)          # a digit character: exact
         total += v if i % 2 == 0 else 3 * v
     return total % 10 == 0
 

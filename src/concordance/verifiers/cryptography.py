@@ -60,6 +60,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # NIST hash classification (informal — based on current public guidance).
@@ -207,10 +208,10 @@ def verify_key_strength(spec: Dict[str, Any]) -> VerifierResult:
     claim = (spec.get("claimed_key_strength") or "").lower().strip()
     if not cipher or bits is None or not claim:
         return na(name)
-    try:
-        b = int(bits)
-    except (TypeError, ValueError):
-        return error(name, f"key_bits must be an integer, got {bits!r}")
+    try:                                   # an input (THE RULE)
+        b = _exact_integer(bits, "key_bits")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if b <= 0:
         return error(name, f"key_bits must be positive, got {b}")
     if cipher == "AES":

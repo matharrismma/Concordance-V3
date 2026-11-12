@@ -29,12 +29,13 @@ import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, band, clamp_tol, confirm, dispatch, error, mismatch, na
+from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _primes(n: int) -> List[int]:
     s = bytearray([1]) * (n + 1)
     s[0] = s[1] = 0
-    for i in range(2, int(n ** 0.5) + 1):
+    for i in range(2, math.isqrt(n) + 1):
         if s[i]:
             s[i * i::i] = bytearray(len(s[i * i::i]))
     return [i for i in range(n + 1) if s[i]]
@@ -130,12 +131,12 @@ def _Lprime1(an: List[int], N: int) -> float:
 
 def verify_l_value(spec: Dict[str, Any]) -> VerifierResult:
     name = "elliptic_curves.l_value"
-    try:
-        ainv = [int(x) for x in spec.get("a_invariants")]
-        N = int(spec.get("conductor"))
-        w = int(spec.get("root_number"))
-    except (TypeError, ValueError):
-        return error(name, "a_invariants (five integers), conductor (an integer) and root_number (±1) are required")
+    try:                                   # every curve number is an input (THE RULE)
+        ainv = [_exact_integer(x, "a_invariants") for x in spec.get("a_invariants")]
+        N = _exact_integer(spec.get("conductor"), "conductor")
+        w = _exact_integer(spec.get("root_number"), "root_number")
+    except (TypeError, ValueError) as e:
+        return error(name, f"a_invariants (five integers), conductor (an integer) and root_number (±1) are required: {e}")
     if len(ainv) != 5 or w not in (-1, 1) or N < 11:
         return error(name, "a_invariants must be [a1,a2,a3,a4,a6]; root_number must be +1 or -1; the conductor is at least 11")
     if N % 2 == 0 or N % 3 == 0:
@@ -186,12 +187,14 @@ def verify_l_value(spec: Dict[str, Any]) -> VerifierResult:
         if b.status == "MISMATCH":
             problems.append(b.detail)
     if spec.get("claimed_analytic_rank") is not None:
-        try:
-            cr = int(spec["claimed_analytic_rank"])
-        except (TypeError, ValueError):
-            return error(name, "claimed_analytic_rank must be an integer")
+        try:                               # a claimed result (THE RULE): a fraction stands as written
+            cr = _claimed_integer(spec["claimed_analytic_rank"], "claimed_analytic_rank", as_number=True)
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
         data["claimed_analytic_rank"] = cr
-        if isinstance(rank_bound, int):
+        if not isinstance(cr, int):
+            problems.append(f"an analytic rank is a whole number; claimed {cr}")
+        elif isinstance(rank_bound, int):
             if cr != rank_bound:
                 problems.append(f"analytic rank {rank_bound}, claimed {cr}")
         elif cr < 2:
@@ -242,15 +245,16 @@ def verify_bsd_formula(spec: Dict[str, Any]) -> VerifierResult:
                         "torsion_order": 5, "sha_order": 1, "inputs_source": "Cremona's tables / LMFDB 11.a3",
                         "claimed_bsd_holds": true}"""
     name = "elliptic_curves.bsd_formula"
-    try:
-        ainv = [int(x) for x in spec.get("a_invariants")]
-        N = int(spec.get("conductor"))
-        w = int(spec.get("root_number"))
-        cp = int(spec.get("tamagawa_product"))
-        tors = int(spec.get("torsion_order"))
-        sha = int(spec.get("sha_order", 1))
-    except (TypeError, ValueError):
-        return error(name, "a_invariants, conductor, root_number, tamagawa_product and torsion_order (integers) are required; sha_order defaults to 1")
+    try:                                   # every curve number and cited count is an input (THE RULE)
+        ainv = [_exact_integer(x, "a_invariants") for x in spec.get("a_invariants")]
+        N = _exact_integer(spec.get("conductor"), "conductor")
+        w = _exact_integer(spec.get("root_number"), "root_number")
+        cp = _exact_integer(spec.get("tamagawa_product"), "tamagawa_product")
+        tors = _exact_integer(spec.get("torsion_order"), "torsion_order")
+        sha = _exact_integer(spec.get("sha_order", 1), "sha_order")
+    except (TypeError, ValueError) as e:
+        return error(name, "a_invariants, conductor, root_number, tamagawa_product and torsion_order (integers) are "
+                           f"required; sha_order defaults to 1: {e}")
     if spec.get("claimed_bsd_holds") is None:
         return na(name, "claim claimed_bsd_holds")
     if len(ainv) != 5 or w not in (-1, 1) or N < 11 or cp < 1 or tors < 1 or sha < 1:

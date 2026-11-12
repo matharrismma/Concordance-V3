@@ -21,10 +21,11 @@ from fractions import Fraction
 from typing import Any, Dict, List
 
 from .base import VerifierResult, confirm, dispatch, error, mismatch, na
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _divisors(n: int) -> List[int]:
-    n = abs(int(n))
+    n = abs(_exact_integer(n))
     return [d for d in range(1, n + 1) if n % d == 0]
 
 
@@ -37,8 +38,9 @@ def _poly_eval(coeffs: List[int], x: Fraction) -> Fraction:
 
 
 def rational_roots(coeffs: List[int]) -> List[Fraction]:
-    """The COMPLETE set of rational roots, by the Rational Root Theorem + exact testing."""
-    c = [int(v) for v in coeffs]
+    """The COMPLETE set of rational roots, by the Rational Root Theorem + exact testing. Each coefficient is an input,
+    read by THE RULE."""
+    c = [_exact_integer(v, "coeffs") for v in coeffs]
     roots = set()
     while len(c) > 1 and c[-1] == 0:        # a zero constant term: 0 is a root; factor out x and reduce
         roots.add(Fraction(0))
@@ -67,7 +69,7 @@ def _as_fraction(v: Any) -> Fraction:
 
 
 def _coeffs(art: Dict[str, Any]) -> List[int]:
-    coeffs = [int(v) for v in art["coeffs"]]
+    coeffs = [_exact_integer(v, "coeffs") for v in art["coeffs"]]      # inputs (THE RULE)
     if len(coeffs) < 2 or coeffs[0] == 0:
         raise ValueError("need a polynomial of degree >= 1 with a nonzero leading coefficient")
     return coeffs

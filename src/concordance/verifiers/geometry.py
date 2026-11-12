@@ -49,6 +49,7 @@ def _window(spec: Dict[str, Any], threshold: float, actual: float, claimed: floa
         data.update({k: info[k] for k in ("stated_literal", "literal_not_the_claim")})
     return thr
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def verify_triangle_inequality(spec: Dict[str, Any]) -> VerifierResult:
@@ -125,8 +126,11 @@ def verify_polygon_angle_sum(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_interior_angle_sum_deg")
     if n is None or claimed is None:
         return na(name)
+    try:                                   # an input (THE RULE)
+        nf = _exact_integer(n, "polygon_n")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
-        nf = int(n)
         c = float(claimed)
     except (TypeError, ValueError):
         return error(name, "polygon_n must be int, claimed sum numeric")

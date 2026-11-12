@@ -39,6 +39,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ── Reference data (public-domain) ─────────────────────────────────────
@@ -57,7 +58,7 @@ def _zone_to_int(zone: str) -> Optional[int]:
     m = _VALID_ZONE.match(z)
     if not m:
         return None
-    base = int(m.group(1))
+    base = _exact_integer(m.group(1))         # the digits the zone pattern matched: exact
     half = z[-1] if z[-1] in ("a", "b") else "a"
     return base * 2 + (0 if half == "a" else 1)
 

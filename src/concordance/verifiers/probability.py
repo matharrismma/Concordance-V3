@@ -59,6 +59,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 def _close(a: float, b: float, rel: float = 1e-4, abs_: float = 1e-6) -> bool:
@@ -148,8 +149,11 @@ def verify_binomial_probability(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_binomial_probability")
     if n is None or p is None or k is None or claimed is None:
         return na(name)
+    try:                                   # n and k are inputs (THE RULE)
+        nf, kf = _exact_integer(n, "binomial_n"), _exact_integer(k, "binomial_k")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
-        nf, kf = int(n), int(k)
         pf, cl = float(p), float(claimed)
     except (TypeError, ValueError):
         return error(name, "binomial inputs must be numeric (n,k int; p,claimed float)")
@@ -171,8 +175,12 @@ def verify_binomial_mean(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_binomial_mean")
     if n is None or p is None or claimed is None:
         return na(name)
+    try:                                   # n is an input (THE RULE)
+        nf = _exact_integer(n, "binomial_n")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
-        nf = int(n); pf = float(p); cl = float(claimed)
+        pf = float(p); cl = float(claimed)
     except (TypeError, ValueError):
         return error(name, "n, p, claimed_binomial_mean must be numeric")
     actual = nf * pf
@@ -243,8 +251,12 @@ def verify_poisson_probability(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_poisson_probability")
     if lam is None or k is None or claimed is None:
         return na(name)
+    try:                                   # k is an input (THE RULE)
+        kf = _exact_integer(k, "poisson_k")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
-        lf = float(lam); kf = int(k); cl = float(claimed)
+        lf = float(lam); cl = float(claimed)
     except (TypeError, ValueError):
         return error(name, "lambda, k, claimed_poisson_probability must be numeric")
     if lf < 0:

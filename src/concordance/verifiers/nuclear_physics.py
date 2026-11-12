@@ -35,6 +35,7 @@ from typing import Any, Dict, List
 from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import rela_scale as _rela  # c-anchored rest energy (E = m c^2)
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 _LN2 = math.log(2)
 _AMU_TO_MEV = 931.49410242  # MeV per u (CODATA 2018: u·c²/e) — the same value verify_rest_energy derives
@@ -85,13 +86,17 @@ def verify_binding_energy_per_nucleon(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_binding_energy_MeV_per_nucleon")
     if mass_defect is None or A is None or claimed is None:
         return na(name)
+    try:                                   # the nucleon count is an input (THE RULE)
+        Af = _exact_integer(A, "nucleon_count")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
-        mdf, Af, cl = float(mass_defect), float(A), float(claimed)
+        mdf, cl = float(mass_defect), float(claimed)
     except (TypeError, ValueError):
         return error(name, "mass_defect_amu, nucleon_count, claimed_binding_energy_MeV_per_nucleon must be numeric")
     if mdf < 0:
         return error(name, f"mass_defect_amu must be non-negative, got {mdf}")
-    if Af <= 0 or Af != int(Af):
+    if Af <= 0:
         return error(name, f"nucleon_count must be a positive integer, got {Af}")
     binding_energy_MeV = mdf * _AMU_TO_MEV
     actual = binding_energy_MeV / Af
@@ -101,7 +106,7 @@ def verify_binding_energy_per_nucleon(spec: Dict[str, Any]) -> VerifierResult:
     threshold = max(abs_tol, rel_tol * abs(actual) if actual else abs_tol)
     data = {
         "mass_defect_amu": mdf,
-        "nucleon_count": int(Af),
+        "nucleon_count": Af,
         "total_binding_energy_MeV": binding_energy_MeV,
         "actual_BE_per_nucleon_MeV": actual,
         "claimed_BE_per_nucleon_MeV": cl,

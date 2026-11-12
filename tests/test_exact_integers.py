@@ -1,4 +1,4 @@
-"""Run 2026-11-11-exact-integers, step fix-a: THE RULE (src/concordance/verifiers/_integer.py) closes every lossy
+"""Run 2026-11-11-exact-integers, step fix-a2: THE RULE (src/concordance/verifiers/_integer.py) closes every lossy
 integer read in combinatorics.py, periodic_table.py, atomic.py, number_theory.py, wordcraft.py and
 operations_research.py.
 
@@ -352,7 +352,8 @@ def test_a_claim_with_a_fraction_is_shown_as_written(site):
 
 
 # Each claimed leaf the probe found in these files, once: written as a text with a fraction it stands as written and
-# reads BROKEN (a claimed zero count of '1747146.25' raised on its own detail's format at fix-a), and given as true it
+# reads BROKEN (a claimed zero count of '1747146.25' raised on its own detail's format in the abandoned step fix-a), and
+# given as true it
 # is malformed and reads SYSTEM_ERROR.
 CLAIMED_LEAVES = sorted({(check, leaf) for check, leaf, _, _, _ in PROBED.values()
                          if leaf.split("/")[-1].startswith("claimed_")})
@@ -543,7 +544,8 @@ def test_the_critical_line_reads_a_real_height_as_before():
 
 
 def test_each_named_field_is_a_rounding_of_this_step_and_none_reads_a_spec_value():
-    named = json.loads((ROOT / "tests" / "integer_fields.json").read_text(encoding="utf-8"))["fields"]
+    named = [f for f in json.loads((ROOT / "tests" / "integer_fields.json").read_text(encoding="utf-8"))["fields"]
+             if f["site"].split(":", 1)[0] in FILES]      # step fix-b names others, in the other files
     assert sorted(f["site"] for f in named) == sorted([
         "number_theory.py:_rs_z:int(a)#1", "number_theory.py:_count_above_np:math.ceil((b - start) / h)#1",
         "number_theory.py:_zeros_in_strip:int(T / 400)#1", "number_theory.py:_zeros_in_strip:round(N)#1",
@@ -565,7 +567,8 @@ def test_every_site_of_these_files_is_closed():
     walked = tool.walk()
     assert [k for k in walked["findings"] if k.split(":", 1)[0] in FILES] == []
     assert sorted(k for k in walked["excluded"] if k.split(":", 1)[0] in FILES) == sorted(
-        f["site"] for f in json.loads((ROOT / "tests" / "integer_fields.json").read_text(encoding="utf-8"))["fields"])
+        f["site"] for f in json.loads((ROOT / "tests" / "integer_fields.json").read_text(encoding="utf-8"))["fields"]
+        if f["site"].split(":", 1)[0] in FILES)
     assert walked["exempt"] == {"_integer.py:_exact_integer:int(value)#1": "int"}
 
 

@@ -37,6 +37,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base import VerifierResult, bound, confirm, dispatch, error, mismatch, na
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 _TOL = 1e-7
 
@@ -95,10 +96,10 @@ def verify_diagonalize(a: Dict[str, Any]) -> VerifierResult:
                                   f"{[round(g.real, 6) for g in got]}", data)
     # the solve: A^k (or A^k x) through the eigenbasis vs directly
     if "power" in a:
-        try:
-            k = int(a["power"])
-        except (TypeError, ValueError):
-            return error(name, "'power' must be an integer")
+        try:                               # an input (THE RULE)
+            k = _exact_integer(a["power"], "power")
+        except (TypeError, ValueError) as e:
+            return error(name, str(e))
         P = vecs
         try:
             Pinv = np.linalg.inv(P)
@@ -153,7 +154,7 @@ def verify_fourier_convolution(a: Dict[str, Any]) -> VerifierResult:
     gap = float(np.linalg.norm(direct - via_fft))
     if gap > 1e-6 * (1.0 + float(np.linalg.norm(direct))):
         return mismatch(name, f"the convolution theorem check failed (gap {gap:.2e})", {"gap": gap})
-    data: Dict[str, Any] = {"convolution": [round(float(v), 10) for v in direct], "length": int(N),
+    data: Dict[str, Any] = {"convolution": [round(float(v), 10) for v in direct], "length": N,
                             "theorem_gap": gap}
     if "claimed_convolution" in a:
         claimed = np.array(a["claimed_convolution"], dtype=float)

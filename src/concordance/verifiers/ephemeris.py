@@ -45,13 +45,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 from .base import dispatch  # declarative run() driver
 from . import grav_scale as _grav  # G-anchored orbital period (Kepler's third law)
+from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ── Julian Day ─────────────────────────────────────────────────────────
 
 def _julian_day(year: int, month: int, day: float) -> float:
     """Meeus §7. Valid for both Julian and Gregorian; the gregorian
-    correction kicks in at 1582-10-15."""
+    correction kicks in at 1582-10-15. Each floor is the algorithm's own (tests/integer_fields.json)."""
     if month <= 2:
         year -= 1
         month += 12
@@ -188,7 +189,8 @@ def _equinox_jd(year: int, event: str) -> Optional[float]:
 
 
 def _jd_to_iso_date(jd: float) -> str:
-    """Convert a JD to ISO date (UT). Inverse of _julian_day."""
+    """Convert a JD to ISO date (UT). Inverse of _julian_day. Each floor is the algorithm's own
+    (tests/integer_fields.json), and each already returns an int."""
     jd_plus_half = jd + 0.5
     Z = math.floor(jd_plus_half)
     F = jd_plus_half - Z
@@ -202,9 +204,9 @@ def _jd_to_iso_date(jd: float) -> str:
     D = math.floor(365.25 * C)
     E = math.floor((B - D) / 30.6001)
     day_f = B - D - math.floor(30.6001 * E) + F
-    day = int(math.floor(day_f))
-    month = int(E - 1 if E < 14 else E - 13)
-    year = int(C - 4716 if month > 2 else C - 4715)
+    day = math.floor(day_f)
+    month = E - 1 if E < 14 else E - 13
+    year = C - 4716 if month > 2 else C - 4715
     return f"{year:04d}-{month:02d}-{day:02d}"
 
 
@@ -215,10 +217,10 @@ def verify_equinox_solstice(spec: Dict[str, Any]) -> VerifierResult:
     claimed_iso = (spec.get("claimed_event_iso") or "").strip()
     if y is None or not event or not claimed_iso:
         return na(name)
-    try:
-        yi = int(y)
-    except (TypeError, ValueError):
-        return error(name, "year must be integer")
+    try:                                   # an input (THE RULE)
+        yi = _exact_integer(y, "year")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if yi < 1000 or yi > 3000:
         return error(name, "year out of supported range [1000, 3000]")
     jd = _equinox_jd(yi, event)
@@ -227,7 +229,7 @@ def verify_equinox_solstice(spec: Dict[str, Any]) -> VerifierResult:
     actual_iso = _jd_to_iso_date(jd)
     # Compare dates allowing ±1 day for the low-precision algorithm
     try:
-        ay, am, ad = (int(x) for x in actual_iso.split("-"))
+        ay, am, ad = (_exact_integer(x) for x in actual_iso.split("-"))   # the digits this code wrote: exact
         cp = _parse_iso_date(claimed_iso)
         if not cp:
             return error(name, f"could not parse claimed_event_iso: {claimed_iso!r}")
@@ -240,7 +242,7 @@ def verify_equinox_solstice(spec: Dict[str, Any]) -> VerifierResult:
     # Tolerance is ±2 days: the algorithm gives mean equinox/solstice
     # without applying the table of periodic terms (which would tighten
     # this to ~minutes). Date-level claims survive at ±2 d.
-    tol = int(clamp_tol(spec, "tolerance_days", 2))
+    tol = clamp_tol(spec, "tolerance_days", 2)      # a real tolerance: the day difference it bounds is whole
     data = {
         "year": yi, "event": event,
         "actual_iso": actual_iso,

@@ -188,7 +188,7 @@ def test_a_packet_reads_the_same_way():
 # ── what this step did not close ─────────────────────────────────────────────────────────────────────────────────────
 # MISS 10: the domain number_theory has its own reads, and a request number through int() across the verifier files is a
 # run of its own. Each of these is false or says nothing, and read HOLDS when this step closed. That run, 2026-11-11-exact-
-# integers (step fix-a), flips the table: the domain reads its numbers by THE RULE (verifiers/_integer.py), so a fraction
+# integers (step fix-a2), flips the table: the domain reads its numbers by THE RULE (verifiers/_integer.py), so a fraction
 # in an input reads SYSTEM_ERROR and one in a claimed value BROKEN. The fourth row is not an integer read: claimed_prime is
 # read by its truth, so the text 'false' still reads HOLDS, a miss of its own.
 DOMAIN_ROWS = (

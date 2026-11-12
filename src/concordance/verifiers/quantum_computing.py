@@ -53,6 +53,7 @@ from typing import Any, Dict, List
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import planck_scale as _planck  # h-anchored qubit energy E = h f
+from ._integer import _claimed_integer, _exact_integer, _valid_integer  # THE RULE (verifiers/_integer.py)
 
 
 # ── qubit state normalization ────────────────────────────────────────────────
@@ -99,9 +100,12 @@ def verify_born_rule(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_probability")
     if amps is None or idx is None or claimed is None:
         return na(name)
+    try:                                   # the outcome index is an input (THE RULE)
+        i = _exact_integer(idx, "outcome_index")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     try:
         vals = [complex(a) for a in amps]
-        i = int(idx)
         c = float(claimed)
     except (TypeError, ValueError) as e:
         return error(name, f"amplitudes/outcome_index/claimed_probability must be numeric: {e}")
@@ -128,11 +132,11 @@ def verify_grover_iterations(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_grover_iterations")
     if N is None or claimed is None:
         return na(name)
-    try:
-        n = int(N)
-        c = int(claimed)
-    except (TypeError, ValueError):
-        return error(name, "n_items and claimed_grover_iterations must be integers")
+    try:                                   # the size is an input; the count is a claimed result (THE RULE)
+        n = _exact_integer(N, "n_items")
+        c = _claimed_integer(claimed, "claimed_grover_iterations", as_number=True)
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if n <= 0:
         return error(name, f"n_items must be positive, got {n}")
     try:
@@ -144,7 +148,7 @@ def verify_grover_iterations(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"n_items is too large to compute Grover iterations for: {n}")
     data = {"n_items": n, "optimal_iterations": optimal,
             "claimed_iterations": c, "formula": "T = floor(π√N/4)"}
-    return band(name, optimal, c, 0, "iterations", data, fmt="{:.0f}")
+    return band(name, optimal, c, 0, "iterations", data, fmt="{:.15g}")
 
 
 # ── Shor's algorithm period verification ─────────────────────────────────────
@@ -158,13 +162,18 @@ def verify_shor_period(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_period_valid")
     if a is None or N is None or r is None or claimed is None:
         return na(name)
-    try:
-        ai, Ni, ri = int(a), int(N), int(r)
-    except (TypeError, ValueError):
-        return error(name, "shor_a, shor_N, shor_r must be integers")
+    try:                                   # a and N are inputs; whether r is a valid period is the question (THE RULE)
+        ai, Ni = _exact_integer(a, "shor_a"), _exact_integer(N, "shor_N")
+        ri = _valid_integer(r, "shor_r")
+    except (TypeError, ValueError) as e:
+        return error(name, str(e))
     if Ni < 2:
         return error(name, f"N must be ≥ 2, got {Ni}")
-    if ri <= 0:
+    if ri is None:                         # a period with a fraction is no period
+        failures = [f"r={r!r} is not a whole number"]
+        data = {"a": ai, "N": Ni, "r": r, "failures": failures}
+        valid = False
+    elif ri <= 0:
         failures = [f"r={ri} must be > 0"]
         data = {"a": ai, "N": Ni, "r": ri, "failures": failures}
         valid = False
