@@ -42,6 +42,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, band, merge_checks
+from . import certificate as _cert  # independently checkable certificates (verifiers/certificate.py)
 
 # numpy is the optional `math` extra. Load it lazily so THIS MODULE IMPORTS on a stdlib-only box
 # (a top-level `import numpy` would crash the import and take the whole verifier registry with it).
@@ -344,6 +345,10 @@ def verify_linear_system(spec: Dict[str, Any]) -> VerifierResult:
     data = {"matrix": A.tolist(), "claimed_solution": x.tolist(),
             "b_target": b.tolist(), "A_times_x": actual_b.tolist(),
             "formula": "A x = b"}
+    try:                                     # when x solves A x = b EXACTLY in rationals, the proof (certificate.py)
+        data["certificate"] = _cert.linear_system(spec.get("matrix"), spec.get("vec_b"), spec.get("claimed_solution"))
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass                                 # not exact, or beyond what a certificate holds: the band check stands alone
     # A·x must land on b: each entry of A·x inside the band around the target entry
     return _array_bands(name, b, actual_b, "A_times_x", data, rel=1e-5, abs_=1e-7,
                         detail=f"A x = b verified ({b.tolist()})")

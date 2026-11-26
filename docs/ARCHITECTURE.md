@@ -17,7 +17,7 @@
 
 | what | count | means |
 |---|---|---|
-| core modules reached from the 8 tools | 59 (20,187 lines) | lazy import closure, `tools/closure.py` |
+| core modules reached from the 8 tools | 59 (20,193 lines) | lazy import closure, `tools/closure.py` |
 | verifier modules | 78 | distinct verifier modules registered (a module is one domain) |
 | named checks | 395 | named checks across modules (from each module's docstring list, else its verify_* functions) |
 | domain names accepted | 194 | domain names the dispatcher accepts, aliases included |

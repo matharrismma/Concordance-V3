@@ -22,6 +22,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, confirm, dispatch, error, mismatch, na
 from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from . import certificate as _cert  # independently checkable certificates (verifiers/certificate.py)
 
 
 def _divisors(n: int) -> List[int]:
@@ -105,6 +106,10 @@ def verify_root(art: Dict[str, Any]) -> VerifierResult:
     val = _poly_eval(coeffs, r)
     data = {"coeffs": coeffs, "x": _fmt(r), "value": _fmt(val)}
     if val == 0:
+        try:                                 # the root's proof, checkable without this verifier (certificate.py)
+            data["certificate"] = _cert.polynomial_root(coeffs, r)
+        except ValueError:                   # beyond what a certificate holds (degree > 64, an entry past 600 digits)
+            pass
         return confirm(name, f"x = {_fmt(r)} is a root (the polynomial evaluates to 0)", data)
     return mismatch(name, f"x = {_fmt(r)} is not a root (the polynomial evaluates to {_fmt(val)}, not 0)", data)
 

@@ -883,6 +883,10 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         # framing, so the seal can name the law without the verifier's whole data dict travelling out
         if isinstance(_g.get("shared_law"), dict):
             entry["shared_law"] = _g["shared_law"]
+        # an independently checkable certificate of the verdict (verifiers/certificate.py): curated the same way, so
+        # the seal carries a proof anyone can re-check without this engine
+        if isinstance(_g.get("certificate"), dict):
+            entry["certificate"] = _g["certificate"]
         if missing:
             entry["missing_refs"] = missing
         if unconfirmed:

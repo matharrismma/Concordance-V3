@@ -4,6 +4,20 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- Certificates: a proof of the verdict anyone can re-check without this engine, the pattern bbchallenge sealed BB(5)
+  with, ported from concordance-2 (d3c4a0f, cf07081, b369b4f) as `verifiers/certificate.py`. A primality check for
+  2 <= n <= 10^12 carries a factor for a composite and a Pratt/Lucas proof for a prime; a polynomial root carries its
+  coefficients and the rational root; an exact solution of A x = b carries A, b and x. The proof rides the trail and
+  the sealed record (RECEIPT_SPEC section 4d), and `docs/verify_receipt.py` re-checks it by arithmetic with its own
+  copy of the checker (`CERT`), and with `--spec` binds it to the inputs the step checked (`BIND`). Until now that
+  file proved a record is the one sealed; a certificate lets it re-confirm the verdict itself. Concordance-2's
+  checker accepted four forgeries, measured: "17.9 is prime" carrying 17's proof, "2 is a root of x - 2.5", a
+  coefficient written true, and a valid proof for 17 in a record about 19. Here every integer is a JSON integer and
+  every rational the text p or p/q, the certificate is bound to the checked spec, and the checker refuses what is past
+  its bounds. `tests/test_certificate.py` pins those four and 19 more forgeries as refused by both checkers, holds the
+  two checkers to the same answer on 3,000 random mutations of valid certificates, and certifies every n to 3,000 and
+  300 more to 10^12 in agreement with the primality check. The memo entries of number_theory, polynomial and
+  linear_algebra miss once.
 - The log scale summed. `H = k * sum(p * log_b(p))`, the p-weighted sum of the shared law's levels with k = -1, was
   written out four ways in three verifiers: Shannon entropy and the binary entropy inside a binary symmetric
   channel's capacity (information_theory, base 2), the Shannon diversity index (ecology, base e) and the von

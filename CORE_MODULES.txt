@@ -11,7 +11,7 @@ compute                                             263  <- audit
 config                                               38  <- receipts
 constraints                                         152  <- engine
 context                                             412  <- airlock
-derivation                                          944  <- <entry>
+derivation                                          948  <- <entry>
 discern                                              78  <- <entry>
 domain_resolver                                     513  <- discern
 domains                                               6  <- engine
@@ -25,7 +25,7 @@ mcp.http                                            171  <- http_api
 mcp.server                                          315  <- <entry>
 notary                                              749  <- capabilities
 packet                                               38  <- receipts
-receipts                                            215  <- <entry>
+receipts                                            217  <- <entry>
 record                                              253  <- receipts
 redact                                              129  <- <entry>
 schema                                              225  <- <entry>
@@ -57,4 +57,4 @@ verifiers.si_units                                  190  <- audit
 verifiers.spec                                      379  <- verifiers
 verifiers.thermal_scale                              51  <- verifiers.chemistry
 verifiers.wordcraft                                 900  <- audit
-# 59 modules, 20187 lines (lazy imports)
+# 59 modules, 20193 lines (lazy imports)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """verify_receipt.py — check a Concordance receipt with nothing but this file.
 
-    python3 verify_receipt.py receipt.json [--public-key <b64url Ed25519 raw key>] [--offline]
+    python3 verify_receipt.py receipt.json [--public-key <b64url Ed25519 raw key>] [--offline] [--spec spec.json ...]
 
 Dependencies: Python 3.9+, `cbor2`, `cryptography` (pip install cbor2 cryptography). Nothing from
 Concordance is imported; the point is that a stranger can run this.
@@ -19,6 +19,10 @@ Four independent checks, each printed with its own verdict:
   3. LOG       the Rekor entry (fetched live, unless --offline) is a `rekord` whose data is exactly the
                statement bytes and whose public key is the issuer key.
   4. INCLUSION the entry's Merkle inclusion proof (RFC 6962 hashing) reproduces the log root hash.
+A step that carries a CERTIFICATE (data.certificate: a primality, polynomial-root or linear-system proof) is
+re-checked here by arithmetic alone, so the stranger re-confirms the verdict itself, not only that the record is the
+one sealed. Give the spec a step checked with --spec (the packet you submitted, or the one the receipt page shows):
+when it re-hashes to the step's spec_hash, the certificate must state exactly its inputs (BIND).
 A document root is walked: every step's spec_hash and the derivation seal are listed so you can fetch
 and re-check each one the same way.
 """
@@ -29,7 +33,10 @@ import base64
 import hashlib
 import json
 import sys
+import math
+import re
 import urllib.request
+from fractions import Fraction
 
 ALG_EDDSA = -8
 LABEL_CLAIMS = -70001
@@ -159,11 +166,196 @@ def check_inclusion(entry: dict) -> tuple[bool, str]:
     return ok, f"{len(hashes)} proof hashes, tree size {size}, leaf index {index}; root {'reproduced' if ok else 'MISMATCH'}"
 
 
+# ── certificates: re-check the verdict itself, by arithmetic alone ─────────────────────────────────────────────────
+# A copy of the engine's certificate checker (verifiers/certificate.py), kept here so this file needs nothing of it.
+# Every number is read exactly: an integer is a JSON integer, a rational the text "p" or "p/q"; nothing else reads.
+CERT_MAX_N_BITS, CERT_MAX_DEGREE, CERT_MAX_DIM, CERT_MAX_DIGITS, CERT_MAX_INT_BITS = 64, 64, 32, 600, 2000
+_CERT_RATIONAL = re.compile(r"-?[0-9]{1,600}(/[0-9]{1,600})?")
+
+
+def _c_int(v):
+    if type(v) is not int or v.bit_length() > CERT_MAX_INT_BITS:
+        raise ValueError(f"not an integer a certificate holds: {v!r}"[:120])
+    return v
+
+
+def _c_rational(v):
+    if not isinstance(v, str) or not _CERT_RATIONAL.fullmatch(v):
+        raise ValueError(f"not a rational a certificate holds: {v!r}"[:120])
+    try:
+        return Fraction(v)
+    except ZeroDivisionError:
+        raise ValueError("a zero denominator") from None
+
+
+def _c_horner(coeffs, x):
+    acc = Fraction(0)
+    for c in coeffs:
+        acc = acc * x + c
+    return acc
+
+
+def _c_primality(c, depth=0):
+    if depth > CERT_MAX_N_BITS:
+        return False, "the proof nests deeper than its n allows"
+    try:
+        n, verdict, proof = _c_int(c["claim"]["n"]), c["claim"]["verdict"], c["proof"]
+    except (KeyError, TypeError, ValueError) as e:
+        return False, f"malformed claim: {e}"[:160]
+    if n < 2:
+        return False, "n < 2 is neither prime nor composite"
+    if n.bit_length() > CERT_MAX_N_BITS:
+        return False, f"n has {n.bit_length()} bits; this checker reads primality certificates up to {CERT_MAX_N_BITS}"
+    if verdict == "composite":
+        try:
+            d = _c_int(proof["factor"])
+        except (KeyError, TypeError, ValueError) as e:
+            return False, f"malformed factor: {e}"[:160]
+        return (True, f"{n} = {d} x {n // d}, composite") if 1 < d < n and n % d == 0 else \
+            (False, f"{d} is not a factor of {n} strictly between 1 and {n}")
+    if verdict != "prime":
+        return False, f"unknown verdict {verdict!r}"[:120]
+    if n == 2:
+        return True, "2 is prime"
+    try:
+        a, factors = _c_int(proof["base"]), proof["factors"]
+        if not isinstance(factors, list) or len(factors) > CERT_MAX_N_BITS:
+            raise ValueError("factors must be a list of at most 64 entries")
+        qs = []
+        for item in factors:
+            if not isinstance(item, list) or len(item) != 2 or not isinstance(item[1], dict):
+                raise ValueError("a factor entry is [q, its own primality certificate]")
+            q, sub = _c_int(item[0]), item[1]
+            if not 1 < q < n:
+                return False, f"listed factor {q} is not between 1 and {n}"
+            ok, why = _c_primality(sub, depth + 1)
+            if not ok:
+                return False, f"factor {q} is not certified prime: {why}"[:200]
+            if sub.get("kind") != "primality" or sub["claim"]["n"] != q or sub["claim"]["verdict"] != "prime":
+                return False, f"the entry for {q} does not certify {q} prime"
+            qs.append(q)
+    except (KeyError, TypeError, ValueError) as e:
+        return False, f"malformed proof: {e}"[:160]
+    m = n - 1
+    for q in qs:
+        if m % q:
+            return False, f"{q} does not divide what is left of n - 1"
+        while m % q == 0:
+            m //= q
+    if m != 1:
+        return False, "the listed primes do not generate n - 1: a prime factor is missing"
+    if not 1 < a < n or pow(a, n - 1, n) != 1:
+        return False, "the base does not satisfy a^(n-1) = 1 (mod n)"
+    for q in qs:
+        if pow(a, (n - 1) // q, n) == 1:
+            return False, f"a^((n-1)/{q}) = 1 (mod n): the base's order is not n - 1"
+    return True, f"{n} is prime by Lucas (base {a}; n - 1 has prime factors {sorted(qs)})"
+
+
+def check_certificate(cert):
+    """Re-confirm a certificate from the certificate alone. Returns (ok, why)."""
+    if not isinstance(cert, dict) or cert.get("schema") != 1:
+        return False, "not a certificate of schema 1"
+    kind, claim, proof = cert.get("kind"), cert.get("claim"), cert.get("proof")
+    if not isinstance(claim, dict) or not isinstance(proof, dict):
+        return False, "a certificate holds a claim and a proof"
+    if kind == "primality":
+        return _c_primality(cert)
+    try:
+        if kind == "polynomial_root":
+            coeffs = claim["coeffs"]
+            if claim["verdict"] != "root" or not isinstance(coeffs, list) or not 2 <= len(coeffs) <= CERT_MAX_DEGREE + 1:
+                raise ValueError("a root certificate holds a verdict of root and 2 to 65 coefficients")
+            cf = [_c_int(v) for v in coeffs]
+            if cf[0] == 0:
+                raise ValueError("the leading coefficient is 0")
+            r = _c_rational(proof["root"])
+            v = _c_horner(cf, r)
+            return (True, f"p({proof['root']}) = 0 exactly (degree {len(cf) - 1})") if v == 0 else (False, f"p(root) = {v}, not 0")
+        if kind == "linear_system":
+            rows, b, x = claim["A"], claim["b"], proof["x"]
+            if claim["verdict"] != "solves" or not (isinstance(rows, list) and isinstance(b, list) and isinstance(x, list)) \
+                    or not rows or len(rows) > CERT_MAX_DIM or not 1 <= len(x) <= CERT_MAX_DIM or len(rows) != len(b) \
+                    or any(not isinstance(row, list) or len(row) != len(x) for row in rows):
+                raise ValueError("A must be m x n, b of length m and x of length n, each at most 32")
+            A = [[_c_rational(v) for v in row] for row in rows]
+            bF, xF = [_c_rational(v) for v in b], [_c_rational(v) for v in x]
+            ok = all(sum((row[j] * xF[j] for j in range(len(xF))), Fraction(0)) == bF[i] for i, row in enumerate(A))
+            return (True, f"A x = b exactly ({len(A)} x {len(xF)})") if ok else (False, "A x is not b")
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+        return False, f"malformed {kind} certificate: {e}"[:160]
+    return False, f"unknown certificate kind {kind!r}"[:120]
+
+
+def _in_integer(v):
+    """An integer as a verifier reads its input: an int, a finite float with no fraction, or a text of one; no bool."""
+    if isinstance(v, bool) or not isinstance(v, (int, float, str)) or \
+            (isinstance(v, float) and not (math.isfinite(v) and v.is_integer())):
+        raise ValueError(f"not a whole number: {v!r}"[:120])
+    return int(v)
+
+
+def _in_root(v):
+    """A claimed root as polynomial.root reads it: text by Fraction, an int exactly, a float to the nearest fraction
+    with a denominator up to 10**9; no bool."""
+    if isinstance(v, str):
+        return Fraction(v)
+    if isinstance(v, bool):
+        raise ValueError("a boolean is not a number")
+    return Fraction(v).limit_denominator(10 ** 9) if isinstance(v, float) else Fraction(v)
+
+
+def _in_exact(v):
+    """A matrix or vector entry read exactly: an int, a finite float's exact binary value, or a rational text."""
+    if isinstance(v, bool):
+        raise ValueError("a boolean is not a number")
+    if isinstance(v, int):
+        return Fraction(v)
+    if isinstance(v, float):
+        if not math.isfinite(v):
+            raise ValueError("not finite")
+        return Fraction(v)
+    if isinstance(v, str):
+        return _c_rational(v.strip())
+    raise ValueError(f"not a number: {v!r}"[:120])
+
+
+_CERT_FIELDS = {"primality": ("n_prime",), "polynomial_root": ("coeffs", "claimed_root"),
+                "linear_system": ("matrix", "vec_b", "claimed_solution")}
+
+
+def bind_certificate(cert, spec):
+    """Whether the certificate states exactly the inputs this spec gave its check. Returns (ok, why)."""
+    kind = cert.get("kind") if isinstance(cert, dict) else None
+    fields = _CERT_FIELDS.get(kind)
+    if fields is None:
+        return False, f"unknown certificate kind {kind!r}"[:120]
+    candidates = ([spec] + [v for v in spec.values() if isinstance(v, dict)]) if isinstance(spec, dict) else []
+    pk = next((d for d in candidates if all(f in d for f in fields)), None)
+    if pk is None:
+        return False, f"the spec holds no packet with {', '.join(fields)}"
+    try:
+        claim, proof = cert["claim"], cert["proof"]
+        if kind == "primality":
+            same = _in_integer(pk["n_prime"]) == claim["n"]
+        elif kind == "polynomial_root":
+            same = [_in_integer(v) for v in pk["coeffs"]] == claim["coeffs"] and _in_root(pk["claimed_root"]) == _c_rational(proof["root"])
+        else:
+            same = ([[_in_exact(v) for v in row] for row in pk["matrix"]] == [[_c_rational(v) for v in row] for row in claim["A"]]
+                    and [_in_exact(v) for v in pk["vec_b"]] == [_c_rational(v) for v in claim["b"]]
+                    and [_in_exact(v) for v in pk["claimed_solution"]] == [_c_rational(v) for v in proof["x"]])
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+        return False, f"the spec or the certificate does not read: {e}"[:160]
+    return (True, "the certificate states the checked inputs") if same else \
+        (False, "the certificate is about other inputs than the ones checked")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("receipt")
     ap.add_argument("--public-key", help="issuer Ed25519 public key, base64url raw (defaults to the one in the envelope)")
     ap.add_argument("--offline", action="store_true", help="skip the live Rekor fetch; use the log claim as held")
+    ap.add_argument("--spec", action="append", default=[], help="a spec a step checked (JSON); binds that step's certificate")
     a = ap.parse_args()
     data = json.load(open(a.receipt, encoding="utf-8"))
     record = data.get("record") or data
@@ -204,6 +396,25 @@ def main() -> int:
             results.append(("LOG", False, f"could not check the log entry: {e}"))
     else:
         results.append(("LOG", None, (log or {}).get("error") or "no log claim"))
+
+    # certificates: the verdict re-checked by arithmetic, and bound to the spec it was about when that spec is given
+    specs = {}
+    for path in a.spec:
+        sp = json.load(open(path, encoding="utf-8"))
+        specs[sha256(canonical(sp))] = sp
+    for vr in record.get("verifier_results") or []:
+        d = vr.get("data") or {}
+        cert = d.get("certificate")
+        if not isinstance(cert, dict):
+            continue
+        ok, why = check_certificate(cert)
+        results.append(("CERT", ok, f"{vr.get('name')}: {why}"))
+        sp = specs.get(d.get("spec_hash"))
+        if sp is not None:
+            ok, why = bind_certificate(cert, sp)
+            results.append(("BIND", ok, f"{vr.get('name')}: {why}"))
+        elif a.spec:
+            results.append(("BIND", None, f"{vr.get('name')}: no --spec re-hashes to this step's spec_hash"))
 
     for name, ok, why in results:
         print(f"{name:<10} {'ok' if ok else ('—' if ok is None else 'FAIL'):<5} {why}")

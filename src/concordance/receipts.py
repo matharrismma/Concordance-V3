@@ -98,6 +98,8 @@ def record_from_derivation(result: Dict[str, Any], *, domain: str = "mathematics
                   # the one shared law the check applied and the constants that grounded it (verifiers/log_scale.py):
                   # sealed so the receipt names it; absent when the check used none, so such a record is unchanged
                   **({"shared_law": e["shared_law"]} if isinstance(e.get("shared_law"), dict) else {}),
+                  # the verdict's certificate, re-checkable by docs/verify_receipt.py with nothing of this engine
+                  **({"certificate": e["certificate"]} if isinstance(e.get("certificate"), dict) else {}),
                   # the inverted reading is sealed too: which refutations were attempted, the bands, and any
                   # counterexample — the strongest artifact a receipt can hold travels in the permanent record
                   **({"refutations": e["refutations"]} if e.get("refutations") else {}),

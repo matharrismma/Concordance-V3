@@ -212,6 +212,20 @@ and `reference` 1. Each term is the information in an outcome of probability p, 
 Shannon entropy and the binary entropy in a channel's capacity (base 2), the Shannon diversity index (base e) and
 the von Neumann entropy of a density matrix's eigenvalues (base 2).
 
+### 4d. Certificates
+
+Where a check can hand over a proof of its verdict that is cheap to re-check, the sealed record carries it:
+`verifier_results[].data.certificate` is `{kind, claim, proof, schema: 1}` (`verifiers/certificate.py`). Three kinds:
+`primality` (number_theory.primality, 2 <= n <= 10^12: a composite carries a factor; a prime carries a Pratt/Lucas
+proof, a base and the prime factors of n - 1, each itself certified prime), `polynomial_root` (polynomial.root, when the
+value is 0: integer coefficients and the rational root) and `linear_system` (linear_algebra.solve_check, when x solves
+A x = b exactly in rationals). Inside a certificate an integer is a JSON integer and a rational is the text `p` or
+`p/q`; nothing else reads, and a checker refuses what is past its bounds (n of 64 bits, 65 coefficients, 32 x 32,
+600 digits) rather than working on it. `docs/verify_receipt.py` re-checks every certificate by arithmetic alone
+(`CERT`), and with `--spec` the packet a step checked, re-hashed to the step's `spec_hash`, it requires the
+certificate to state exactly those inputs (`BIND`), so a proof about one number cannot stand for a claim about
+another. The field is absent where a check makes no certificate (a minor change under VERSIONING.md).
+
 ## 5. Documents
 
 A `kind: document` record is a root over steps (`spec_hash`, status, `uses`), a `derivation_seal` and

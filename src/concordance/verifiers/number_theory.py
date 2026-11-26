@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
 from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from . import certificate as _cert  # independently checkable certificates (verifiers/certificate.py)
 
 
 def _is_prime(n: int) -> bool:
@@ -56,6 +57,10 @@ def verify_primality(spec: Dict[str, Any]) -> VerifierResult:
     actual = _is_prime(nf)
     data = {"n": nf, "actual_prime": actual, "claimed_prime": bool(claimed),
             "rule": "primality via trial division up to √n"}
+    if 2 <= nf <= _cert.PRODUCE_MAX_N:       # the verdict's proof, checkable without this verifier (certificate.py)
+        cert = _cert.primality(nf)
+        if (cert["claim"]["verdict"] == "prime") == actual and _cert.check(cert)[0]:
+            data["certificate"] = cert
     if actual == bool(claimed):
         return confirm(name, f"{nf} is{' ' if actual else ' NOT '}prime (matches claim)", data)
     return mismatch(name, f"{nf} is{' ' if actual else ' NOT '}prime, claimed {bool(claimed)}", data)
