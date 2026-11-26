@@ -4,6 +4,21 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- The log scale summed. `H = k * sum(p * log_b(p))`, the p-weighted sum of the shared law's levels with k = -1, was
+  written out four ways in three verifiers: Shannon entropy and the binary entropy inside a binary symmetric
+  channel's capacity (information_theory, base 2), the Shannon diversity index (ecology, base e) and the von
+  Neumann entropy (quantum_computing, base 2, eigenvalues at or below 1e-15 left out). It now lives beside the law
+  as `log_scale.entropy`, each term p * (k * log_b(p)) and the terms added by Python's sum() from 0.0, and each
+  check records `shared_law` with the summed `law` text (RECEIPT_SPEC section 4c). Measured over 14,000 random,
+  true and broken inputs, and the 60,000 forward and inverse cases again: no status changed anywhere, and three
+  things moved. A certain outcome (H = 0) read -0.0 in Shannon and von Neumann entropy, so its detail said
+  "-0.000000 bits"; it reads 0.000000 now (777 results). Ecology added its terms one at a time, which lands on
+  the exactly rounded sum of its own terms in 5,403 of 22,867 distributions measured; the shared sum lands there
+  in all 22,867, so 1,670 of 3,000 diversity indices move by at most 12 units in the last place, in the data only,
+  with every status and detail as before. The binary entropy and every nonzero Shannon and von Neumann entropy are
+  the same bit for bit. A control that adds the terms by a plain loop moves about 1,700 results in each of the
+  three checks, so the comparison sees a move of one unit in the last place. As with any change to a verifier,
+  every memo entry of these domains and of every domain whose closure reads log_scale misses once.
 - The log scale read backwards. `value = reference * b^(level / k)`, the shared law turned round, was written out
   separately thirteen times in eleven verifiers: a distance from its distance modulus (k = 5, base 10), a Richter
   amplitude ratio (base 10), the Elo odds ratio in the expected score and the rating update (k = 400, base 10), a

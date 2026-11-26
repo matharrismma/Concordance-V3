@@ -23,11 +23,11 @@ INFO_VERIFY shape (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
 
 
@@ -35,7 +35,7 @@ def _h2(p: float) -> float:
     """Binary entropy function H₂(p) in bits. H₂(0) = H₂(1) = 0."""
     if p in (0, 1):
         return 0.0
-    return -p * math.log2(p) - (1 - p) * math.log2(1 - p)
+    return LS.entropy([p, 1 - p], base=2)
 
 
 def verify_shannon_entropy(spec: Dict[str, Any]) -> VerifierResult:
@@ -56,11 +56,11 @@ def verify_shannon_entropy(spec: Dict[str, Any]) -> VerifierResult:
     s = sum(ps)
     if abs(s - 1.0) > 1e-6:
         return error(name, f"probabilities must sum to 1, got {s}")
-    actual = -sum(p * math.log2(p) for p in ps if p > 0)
+    actual = LS.entropy(ps, base=2)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-6)
     threshold = max(abs_tol, rel_tol * abs(actual))
-    data = {"probabilities": ps, "formula": "H(X) = −Σ p·log₂(p)"}
+    data = {"probabilities": ps, "formula": "H(X) = −Σ p·log₂(p)", "shared_law": LS.law(k=-1.0, base=2, entropy=True)}
     return band(name, actual, c, threshold, "entropy_bits", data, fmt="{:.6f}", unit="bits")
 
 
@@ -82,7 +82,7 @@ def verify_bsc_capacity(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-3)
     threshold = max(abs_tol, rel_tol * abs(actual))
-    data = {"bsc_error_rate": pf, "formula": "C = 1 − H₂(p)"}
+    data = {"bsc_error_rate": pf, "formula": "C = 1 − H₂(p)", "shared_law": LS.law(k=-1.0, base=2, entropy=True)}
     return band(name, actual, c, threshold, "capacity_bits", data, fmt="{:.4f}", unit="bits/use")
 
 

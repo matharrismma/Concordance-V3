@@ -53,6 +53,7 @@ from typing import Any, Dict, List
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import planck_scale as _planck  # h-anchored qubit energy E = h f
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 from ._integer import _claimed_integer, _exact_integer, _valid_integer  # THE RULE (verifiers/_integer.py)
 
 
@@ -258,11 +259,12 @@ def verify_von_neumann_entropy(spec: Dict[str, Any]) -> VerifierResult:
     total = sum(lambdas)
     if abs(total - 1.0) > 1e-4:
         return error(name, f"eigenvalues must sum to 1, got {total:.6f}")
-    entropy = -sum(lam * math.log2(lam) for lam in lambdas if lam > 1e-15)
+    entropy = LS.entropy(lambdas, base=2, floor=1e-15)
     tol = clamp_tol(spec, "tolerance_bits", 0.005)
     diff = abs(entropy - c)
     data = {"eigenvalues": lambdas, "computed_entropy_bits": entropy,
-            "claimed_entropy_bits": c, "diff_bits": diff, "tolerance_bits": tol}
+            "claimed_entropy_bits": c, "diff_bits": diff, "tolerance_bits": tol,
+            "shared_law": LS.law(k=-1.0, base=2, entropy=True)}
     return band(name, entropy, c, tol, "entropy_bits", data, fmt="{:.6f}", unit="bits")
 
 

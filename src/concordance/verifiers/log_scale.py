@@ -6,6 +6,11 @@ and password strength in bits (base 2), half-lives elapsed (k = -1, base 2), a r
 the Nernst and Goldman potentials (k = RT/zF), the Weber-Fechner law (k), the Clausius-Clapeyron step (k = R/L),
 Boltzmann entropy (k = k_B) and the Magnus dew-point term (base e, reference 100 %) are one law with different constants.
 
+Summed, `entropy` is the p-weighted sum of the levels of the p themselves, k * sum(p * log_b(p)): with k = -1 each
+term is the information in an outcome of probability p, and the sum is its expectation. Shannon entropy (base 2), the
+binary entropy inside a binary symmetric channel's capacity (base 2), the Shannon diversity index (base e) and the von
+Neumann entropy of a density matrix's eigenvalues (base 2) are that one sum.
+
 Backwards, `inverse` turns a level back into the quantity it stands for. A distance from its distance modulus (k = 5,
 base 10), an amplitude ratio from a Richter difference (base 10), an Elo odds ratio from a rating difference (k = 400,
 base 10), a note's frequency from its semitones above A4 (k = 12, base 2, reference 440 Hz), the addresses in a subnet
@@ -22,7 +27,9 @@ is math.log2, base e is math.log; the ratio is value / reference only when a ref
 reaches math.log2 or math.log whole; and k multiplies the logarithm last. Backwards: base e is math.exp (never math.e
 ** x), bases 10 and 2 are the power operator; the level is divided by k only when k is not 1, so an exact integer
 power stays an exact integer (2 ** 24 is an int; the caller bounds such an exponent, as a CIDR prefix of 0-32 does);
-and the reference multiplies last.
+and the reference multiplies last. Summed: each term is p * (k * log_b(p)), the p at or below `floor` are left out
+(0 * log 0 is 0), and the terms are added by Python's sum() from 0.0, the compensated sum every supported Python (3.12
+and later) uses; so a sum that is all zeros, one certain outcome, is 0.0 and never -0.0.
 
 Not a verifier (no run(), not registered): a shared library, like scale_base.
 """
@@ -34,6 +41,7 @@ from typing import Any, Dict, Optional, Union
 FORM = "log_scale"
 LAW = "level = k * log_b(value / reference)"
 LAW_INVERSE = "value = reference * b^(level / k)"
+LAW_ENTROPY = "level = k * sum(p * log_b(p))"
 E = "e"
 _LOG = {10: math.log10, 2: math.log2, E: math.log}
 _POW = {10: lambda x: 10 ** x, 2: lambda x: 2 ** x, E: math.exp}
@@ -55,10 +63,17 @@ def inverse(level: Any, reference: Optional[Any] = None, *, k: Any = 1.0, base: 
     return v if reference is None else reference * v
 
 
-def law(*, k: Any, base: Base, reference: Any = None, inverse: bool = False) -> Dict[str, Any]:
+def entropy(ps: Any, *, k: Any = -1.0, base: Base = 2, floor: Any = 0.0) -> float:
+    """sum(p * (k * log_base(p))) over the p above `floor`: the p-weighted sum of the law's levels of the p."""
+    log = _LOG[base]
+    return sum((p * (k * log(p)) for p in ps if p > floor), 0.0)
+
+
+def law(*, k: Any, base: Base, reference: Any = None, inverse: bool = False,
+        entropy: bool = False) -> Dict[str, Any]:
     """What a verifier records beside its value: the law and its direction, its base, its constant k and its reference."""
-    return {"form": FORM, "law": LAW_INVERSE if inverse else LAW, "base": base, "k": k,
+    return {"form": FORM, "law": LAW_ENTROPY if entropy else LAW_INVERSE if inverse else LAW, "base": base, "k": k,
             "reference": 1 if reference is None else reference}
 
 
-__all__ = ["FORM", "LAW", "LAW_INVERSE", "E", "level", "inverse", "law"]
+__all__ = ["FORM", "LAW", "LAW_INVERSE", "LAW_ENTROPY", "E", "level", "inverse", "entropy", "law"]

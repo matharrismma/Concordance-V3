@@ -152,11 +152,7 @@ def verify_shannon_diversity(spec: Dict[str, Any]) -> VerifierResult:
             f"species_proportions sum to {total:.6f}, must be ≈ 1.0 (tolerance {sum_tol})",
         )
     # Compute H; skip p=0 terms (0 × ln 0 → 0 by convention)
-    H = 0.0
-    for p in props:
-        if p > 0:
-            H -= p * math.log(p)
-    actual = H
+    actual = LS.entropy(props, base=LS.E)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-9)
     diff = abs(actual - cl)
@@ -168,6 +164,7 @@ def verify_shannon_diversity(spec: Dict[str, Any]) -> VerifierResult:
         "diff": diff,
         "formula": "H = −Σ(p_i × ln(p_i))",
         "note": "zero-proportion terms excluded (0·ln0 = 0 by convention)",
+        "shared_law": LS.law(k=-1.0, base=LS.E, entropy=True),
     }
     return band(name, actual, cl, threshold, "shannon_index", data)
 

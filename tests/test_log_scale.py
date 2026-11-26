@@ -21,9 +21,9 @@ import pytest
 from concordance import receipts
 from concordance.derivation import verify_derivation
 from concordance.verifiers import (acoustics, archaeology, astronomy, chemistry, cybersecurity, ecology, electrical,
-                                   electrochemistry, geology, log_scale as LS, meteorology, music_theory, neuroscience,
-                                   nuclear_physics, optics, photography, photonics, sports_analytics, thermal_scale,
-                                   thermodynamics)
+                                   electrochemistry, geology, information_theory, log_scale as LS, meteorology,
+                                   music_theory, neuroscience, nuclear_physics, optics, photography, photonics,
+                                   quantum_computing, sports_analytics, thermal_scale, thermodynamics)
 
 
 def test_the_shared_law_is_the_same_arithmetic_bit_for_bit():
@@ -232,3 +232,90 @@ def test_the_seal_carries_the_law_read_backwards():
         "isotope_half_life_years": 5730.0, "elapsed_years": 11460.0, "initial_amount": 100.0, "claimed_remaining_amount": 25.0}}})
     assert res["verdict"] == "HOLDS"
     assert rec.verifier_results[0].data["shared_law"] == _inv(-5730.0, 2, 100.0)
+
+
+# ── THE LAW SUMMED: H = k * sum(p * log_b(p)) ─────────────────────────────────────────────────────────────────────
+# Shannon entropy, the binary entropy inside a channel's capacity, the Shannon diversity index and the von Neumann
+# entropy each summed p * log(p) their own way. They now call log_scale.entropy: each term is p * (k * log_b(p)), the
+# p-weighted level of p with k = -1, added by Python's compensated sum() from 0.0.
+
+def _ent(base):
+    return {**_law(-1.0, base), "law": "level = k * sum(p * log_b(p))"}
+
+
+def _dist(r):
+    n = r.randint(1, 300)
+    w = [r.expovariate(1.0) * (0 if r.random() < 0.1 else 1) for _ in range(n)]
+    tot = sum(w) or 1.0
+    return [x / tot for x in w]
+
+
+def test_the_entropy_is_the_negated_sum_it_was_bit_for_bit_except_the_sign_of_a_zero():
+    r = random.Random(20261127)
+    for _ in range(3000):
+        ps = _dist(r)
+        for b, log in ((2, math.log2), (LS.E, math.log), (10, math.log10)):
+            old = -sum(p * log(p) for p in ps if p > 0)
+            new = LS.entropy(ps, base=b)
+            assert new == old
+            if old == 0:                          # one certain outcome: the old sums wrote -0.0
+                assert math.copysign(1.0, new) == 1.0
+    assert math.copysign(1.0, LS.entropy([1.0])) == 1.0 and LS.entropy([0.0, 1.0, 0.0], base=LS.E) == 0.0
+    assert LS.entropy([0.5, 0.5]) == 1.0 and LS.entropy([0.25] * 4) == 2.0
+
+
+def test_the_sum_is_the_exactly_rounded_sum_of_its_terms():
+    """Ecology added its terms one by one; the law's compensated sum lands where the exact sum of the same terms
+    rounds, which the plain loop missed in most distributions (5,403 of 22,867 measured)."""
+    r = random.Random(3)
+    for _ in range(3000):
+        ps = _dist(r)
+        assert LS.entropy(ps, base=LS.E) == math.fsum(-(p * math.log(p)) for p in ps if p > 0)
+
+
+def test_the_floor_leaves_out_what_is_at_or_below_it():
+    lam = [0.5, 0.5 - 1e-16, 1e-16, 1e-15, 0.0]
+    assert LS.entropy(lam, base=2, floor=1e-15) == -sum(x * math.log2(x) for x in lam if x > 1e-15)
+
+
+def test_the_binary_entropy_is_the_two_term_sum_it_was_bit_for_bit():
+    r = random.Random(11)
+    for _ in range(20000):
+        q = r.choice([r.random(), 10 ** r.uniform(-300, 0), 1 - 10 ** r.uniform(-15, -1)])
+        assert information_theory._h2(q) == -q * math.log2(q) - (1 - q) * math.log2(1 - q)
+    assert information_theory._h2(0.0) == 0.0 == information_theory._h2(1.0)
+
+
+_PS = [0.5, 0.25, 0.125, 0.125]
+ENTROPY_VOICES = [
+    (information_theory.verify_shannon_entropy, {"probabilities": _PS, "claimed_entropy_bits": 1.75},
+     "actual_entropy_bits", 1.75, _ent(2)),
+    (information_theory.verify_bsc_capacity, {"bsc_error_rate": 0.11, "claimed_capacity_bits": 0.5},
+     "actual_capacity_bits", 1.0 - (-0.11 * math.log2(0.11) - 0.89 * math.log2(0.89)), _ent(2)),
+    (ecology.verify_shannon_diversity, {"species_proportions": _PS, "claimed_shannon_index": 1.2130},
+     "actual_shannon_index", math.fsum(-(p * math.log(p)) for p in _PS), _ent("e")),
+    (quantum_computing.verify_von_neumann_entropy, {"density_eigenvalues": [0.5, 0.5], "claimed_entropy_bits": 1.0},
+     "computed_entropy_bits", 1.0, _ent(2)),
+]
+
+
+@pytest.mark.parametrize("fn, spec, key, old, law", ENTROPY_VOICES, ids=[v[0].__name__ for v in ENTROPY_VOICES])
+def test_each_entropy_names_the_law_summed(fn, spec, key, old, law):
+    r = fn(dict(spec))
+    assert r.status == "CONFIRMED", (r.status, r.detail)
+    assert r.data[key] == old
+    assert r.data["shared_law"] == law
+
+
+def test_a_certain_outcome_reads_zero_bits_not_minus_zero():
+    r = information_theory.verify_shannon_entropy({"probabilities": [1.0, 0.0], "claimed_entropy_bits": 0.0})
+    assert r.status == "CONFIRMED" and "-0.000000" not in r.detail
+    q = quantum_computing.verify_von_neumann_entropy({"density_eigenvalues": [1.0, 0.0], "claimed_entropy_bits": 0.0})
+    assert q.status == "CONFIRMED" and "-0.000000" not in q.detail
+
+
+def test_the_seal_carries_the_law_summed():
+    res, rec = _sealed_record({"id": "h", "domain": "information_theory", "spec": {"INFO_VERIFY": {
+        "probabilities": _PS, "claimed_entropy_bits": 1.75}}})
+    assert res["verdict"] == "HOLDS"
+    assert rec.verifier_results[0].data["shared_law"] == _ent(2)

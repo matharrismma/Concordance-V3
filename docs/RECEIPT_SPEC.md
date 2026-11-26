@@ -207,6 +207,11 @@ frequency from its semitones above A4, the addresses in a subnet, what remains a
 (radioactive decay, Beer-Lambert absorption, an RC charge, logistic growth), the Boltzmann factor and the Magnus
 saturation vapour pressure. So a radiocarbon age and the amount a half-life leaves name the same `form`, one each way.
 
+Summed, `law` is `level = k * sum(p * log_b(p))`: the p-weighted sum of the levels of the p themselves, with `k` = -1
+and `reference` 1. Each term is the information in an outcome of probability p, and the sum is its expectation:
+Shannon entropy and the binary entropy in a channel's capacity (base 2), the Shannon diversity index (base e) and
+the von Neumann entropy of a density matrix's eigenvalues (base 2).
+
 ## 5. Documents
 
 A `kind: document` record is a root over steps (`spec_hash`, status, `uses`), a `derivation_seal` and
