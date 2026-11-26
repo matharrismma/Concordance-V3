@@ -22,11 +22,11 @@ NEURO_VERIFY packet (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 
 _R = 8.314462618   # J/(mol·K)
 _F = 96485.33212   # C/mol
@@ -49,10 +49,11 @@ def verify_nernst_potential(spec: Dict[str, Any]) -> VerifierResult:
     if zf == 0 or cof <= 0 or cif <= 0:
         return error(name, f"ion charge must be nonzero and concentrations positive (z={zf}, Co={cof}, Ci={cif})")
     T = clamp_tol(spec, "temp_K", 310.0) if spec.get("temp_K") is None else float(spec["temp_K"])
-    actual = (_R * T / (zf * _F)) * math.log(cof / cif) * 1000.0
+    actual = LS.level(cof, cif, k=_R * T / (zf * _F), base=LS.E) * 1000.0
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"z": zf, "c_out": cof, "c_in": cif, "T_K": T, "E_mV": actual, "claimed_mV": cl,
-            "formula": "E = (RT/zF) ln(C_out/C_in)"}
+            "formula": "E = (RT/zF) ln(C_out/C_in)",
+            "shared_law": LS.law(k=_R * T / (zf * _F), base=LS.E, reference=cif)}
     return band(name, actual, cl, _tol(actual, rel_tol=rel_tol), "E_mV", data, fmt="{:.2f}", unit="mV")
 
 
@@ -73,9 +74,10 @@ def verify_goldman(spec: Dict[str, Any]) -> VerifierResult:
     if num <= 0 or den <= 0:
         return error(name, "weighted concentrations must be positive")
     T = 310.0 if spec.get("temp_K") is None else float(spec["temp_K"])
-    actual = (_R * T / _F) * math.log(num / den) * 1000.0
+    actual = LS.level(num, den, k=_R * T / _F, base=LS.E) * 1000.0
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
-    data = {"num": num, "den": den, "T_K": T, "Vm_mV": actual, "claimed_mV": cl, "formula": "GHK"}
+    data = {"num": num, "den": den, "T_K": T, "Vm_mV": actual, "claimed_mV": cl, "formula": "GHK",
+            "shared_law": LS.law(k=_R * T / _F, base=LS.E, reference=den)}
     return band(name, actual, cl, _tol(actual, rel_tol=rel_tol), "Vm_mV", data, fmt="{:.2f}", unit="mV")
 
 
@@ -91,9 +93,10 @@ def verify_weber_fechner(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "all inputs must be numeric")
     if If <= 0 or I0f <= 0:
         return error(name, f"stimulus and reference must be positive (I={If}, I0={I0f})")
-    actual = kf * math.log(If / I0f)
+    actual = LS.level(If, I0f, k=kf, base=LS.E)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
-    data = {"stimulus": If, "reference": I0f, "k": kf, "S": actual, "claimed": cl, "formula": "S = k ln(I/I0)"}
+    data = {"stimulus": If, "reference": I0f, "k": kf, "S": actual, "claimed": cl, "formula": "S = k ln(I/I0)",
+            "shared_law": LS.law(k=kf, base=LS.E, reference=I0f)}
     return band(name, actual, cl, _tol(actual, rel_tol=rel_tol, abs_tol=1e-4), "S", data, fmt="{:.4f}")
 
 

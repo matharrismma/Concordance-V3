@@ -42,11 +42,11 @@ THERMO_VERIFY shape (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from . import thermal_scale as _thermal  # k_B-anchored Boltzmann entropy
 from . import molar_scale as _molar  # N_A-anchored gas constant R = N_A k_B
 
@@ -248,7 +248,7 @@ def verify_clausius_clapeyron(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "latent_heat_J_per_mol, t_ref_K, p_ref, pressure, claimed_boiling_point_K must be numeric")
     if Lf <= 0 or T1f <= 0 or P1f <= 0 or P2f <= 0:
         return error(name, "latent heat, temperatures, and pressures must be positive")
-    inv_T2 = 1.0 / T1f - (_R / Lf) * math.log(P2f / P1f)
+    inv_T2 = 1.0 / T1f - LS.level(P2f, P1f, k=_R / Lf, base=LS.E)
     if inv_T2 <= 0:
         return error(name, "inputs imply a non-physical (≤0 K) boiling point; check L / reference / pressure")
     T2_pred = 1.0 / inv_T2
@@ -262,6 +262,7 @@ def verify_clausius_clapeyron(spec: Dict[str, Any]) -> VerifierResult:
         "predicted_boiling_point_K": round(T2_pred, 3),
         "claimed_boiling_point_K": cT2, "diff_K": round(diff, 3),
         "formula": "ln(P2/P1) = (L/R)(1/T1 − 1/T2)",
+        "shared_law": LS.law(k=_R / Lf, base=LS.E, reference=P1f),
     }
     return band(name, T2_pred, cT2, threshold, "boiling_point_K", data, fmt="{:.2f}", unit="K")
 
@@ -281,10 +282,11 @@ def verify_boltzmann_entropy(spec: Dict[str, Any]) -> VerifierResult:
             cl = float(spec["claimed_entropy_J_per_K"])
         except (KeyError, TypeError, ValueError):
             return error(name, "claimed_entropy_J_per_K must be numeric")
-        dat = {"formula": "S = k_B ln W", "actual": 0.0, "claimed": cl}
+        dat = {"formula": "S = k_B ln W", "actual": 0.0, "claimed": cl, "shared_law": LS.law(k=_thermal._kB, base=LS.E)}
         return band(name, 0.0, cl, 1e-30, "entropy_J_per_K", dat, fmt="{:.4g}", unit="J/K")
     return _thermal.compare(name, _thermal.boltzmann_entropy_J_per_K(W),
-                            spec["claimed_entropy_J_per_K"], 1e-3, {"formula": "S = k_B ln W"})
+                            spec["claimed_entropy_J_per_K"], 1e-3,
+                            {"formula": "S = k_B ln W", "shared_law": LS.law(k=_thermal._kB, base=LS.E)})
 
 
 def verify_gas_constant(spec: Dict[str, Any]) -> VerifierResult:

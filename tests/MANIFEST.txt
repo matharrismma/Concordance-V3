@@ -193,3 +193,4 @@ test_verify_history_chronology.py
 test_verify_quantum_computing.py
 test_watchdog.py
 test_wordcraft.py
+test_log_scale.py

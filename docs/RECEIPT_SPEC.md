@@ -189,6 +189,17 @@ verifier's own source hash, so changed code can never serve a stale verdict; ERR
 input) are never memoised. `CONCORDANCE_MEMO=0` disables it. Everything above is buckets composed: a band is a
 neighborhood of buckets, a chain is buckets linked by `uses`, a document is a bucket of chains.
 
+### 4c. The shared law
+
+Where a check computes its value through a law that several verifiers share, the sealed record says which:
+`verifier_results[].data.shared_law` is `{form, law, base, k, reference}`. The logarithmic scale is the first,
+`verifiers/log_scale.py`: `level = k * log_b(value / reference)`, the one law behind decibels, return loss,
+exposure value, password strength in bits, half-lives, radiometric ages, the Nernst and Goldman potentials,
+the Weber-Fechner law, the Clausius-Clapeyron step, Boltzmann entropy and the Magnus dew-point term, each with
+its own `k`, `base` (10, 2 or "e") and `reference`. Two seals that name the same `form` are the same law with
+different constants. The field is absent when a check applies no shared law, so such a record is byte-for-byte
+what it was before the field existed; a current verifier ignores it (a minor change under VERSIONING.md).
+
 ## 5. Documents
 
 A `kind: document` record is a root over steps (`spec_hash`, status, `uses`), a `derivation_seal` and

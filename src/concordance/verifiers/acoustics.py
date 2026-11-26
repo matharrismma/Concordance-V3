@@ -20,11 +20,11 @@ ACOUS_VERIFY shape (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
@@ -76,12 +76,13 @@ def verify_decibel_ratio(spec: Dict[str, Any]) -> VerifierResult:
     if kind not in ("intensity", "pressure", "power"):
         return error(name, f"db_kind must be 'intensity', 'pressure', or 'power'; got {kind!r}")
     multiplier = 20.0 if kind == "pressure" else 10.0
-    actual = multiplier * math.log10(v / rf)
+    actual = LS.level(v, rf, k=multiplier, base=10)
     tol = clamp_tol(spec, "tolerance_db", 0.1)
     diff = abs(actual - c)
     data = {"value": v, "reference": rf, "kind": kind,
             "actual_db": actual, "claimed_db": c, "diff_db": diff,
-            "formula": f"dB = {multiplier:.0f}·log10(value/reference)"}
+            "formula": f"dB = {multiplier:.0f}·log10(value/reference)",
+            "shared_law": LS.law(k=multiplier, base=10, reference=rf)}
     return band(name, actual, c, tol, "db", data, fmt="{:.2f}", unit="dB")
 
 

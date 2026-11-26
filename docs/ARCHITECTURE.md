@@ -17,10 +17,10 @@
 
 | what | count | means |
 |---|---|---|
-| core modules reached from the 8 tools | 55 (16,753 lines) | lazy import closure, `tools/closure.py` |
-| verifier modules | 79 | distinct verifier modules registered (a module is one domain) |
+| core modules reached from the 8 tools | 59 (20,147 lines) | lazy import closure, `tools/closure.py` |
+| verifier modules | 78 | distinct verifier modules registered (a module is one domain) |
 | named checks | 395 | named checks across modules (from each module's docstring list, else its verify_* functions) |
-| domain names accepted | 195 | domain names the dispatcher accepts, aliases included |
+| domain names accepted | 194 | domain names the dispatcher accepts, aliases included |
 | MCP tools | 8 | verify, discern, find_verifier, seal_fetch, audit, scribe, capabilities, ledger_verify |
 | benchmark v2.2.0 | 1796 cases, 0 FP, 0 FN | `tools/benchmark.py --json` |
 
@@ -39,7 +39,7 @@ returns `SCHEMA_ERROR` naming the field (and its nearest valid name) on a mismat
 
 ## Modules
 
-Top-level: `__main__`, `airlock`, `audit`, `bucket`, `capabilities`, `cas`, `chess`, `compose`, `compute`, `config`, `constraints`, `context`, `derivation`, `discern`, `domain_resolver`, `domains`, `engine`, `gates`, `http_api`, `layers`, `ledger`, `packet`, `receipts`, `record`, `redact`, `schema`, `scribe`, `signing`, `slotfill`, `telemetry`, `text`, `tool_registry`, `transparency`, `validate`, `verifiers`
+Top-level: `__main__`, `airlock`, `audit`, `bucket`, `capabilities`, `cas`, `cells`, `chess`, `compose`, `compute`, `config`, `constraints`, `context`, `derivation`, `discern`, `domain_resolver`, `domains`, `engine`, `gates`, `http_api`, `layers`, `ledger`, `notary`, `packet`, `receipts`, `record`, `redact`, `schema`, `scribe`, `signing`, `slotfill`, `telemetry`, `text`, `tool_registry`, `transparency`, `validate`, `verifiers`
 
 Packages: `domains/`, `mcp/`, `scribe/`, `verifiers/`
 

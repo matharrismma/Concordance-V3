@@ -49,6 +49,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 
 
 def _band(name: str, actual: float, claimed: float, what: str, data: Dict[str, Any],
@@ -211,9 +212,10 @@ def verify_reflection_coefficient(spec: Dict[str, Any]) -> VerifierResult:
     back = (1 + gamma) / (1 - gamma) if gamma != 1 else None       # the inverse, checked
     mag = abs(gamma)
     vswr = (1 + mag) / (1 - mag) if mag < 1 else float("inf")
-    rl = (-20.0 * math.log10(mag)) if mag > 0 else float("inf")
+    rl = LS.level(mag, k=-20.0, base=10) if mag > 0 else float("inf")
     data = {"Z_ohm": [R, X], "Z0_ohm": Z0, "z_normalized": [z.real, z.imag],
             "gamma": [gamma.real, gamma.imag], "gamma_mag": mag, "vswr": vswr, "return_loss_db": rl,
+            "shared_law": LS.law(k=-20.0, base=10),
             "inverse_z": [back.real, back.imag] if back is not None else None,
             "inverse_holds": (back is not None and abs(back - z) < 1e-9),
             "to_centre_series_reactance_ohm": -X if abs(R - Z0) < 1e-9 else None,

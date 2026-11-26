@@ -46,6 +46,7 @@ verifiers.base                                      302  <- audit
 verifiers.bridges                                   118  <- derivation
 verifiers.chemistry                                 701  <- audit
 verifiers.mathematics                               883  <- derivation
+verifiers.log_scale                                  40  <- verifiers.thermal_scale
 verifiers.molar_scale                                42  <- verifiers.chemistry
 verifiers.molecular_geometry                        100  <- audit
 verifiers.periodic_table                            419  <- audit

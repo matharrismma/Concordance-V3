@@ -31,6 +31,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from . import alpha_scale as _ascale  # alpha-anchored light-matter scale
 
 
@@ -290,13 +291,15 @@ def verify_fiber_attenuation(spec: Dict[str, Any]) -> VerifierResult:
         return na(name)
     try:
         c = float(claimed)
+        lawrec = None
         if a is not None and L is not None:
             actual = float(a) * float(L); basis = f"{a} dB/km x {L} km"
         elif pin is not None and pout is not None:
             pif, pof = float(pin), float(pout)
             if pif <= 0 or pof <= 0:
                 return error(name, "powers must be positive")
-            actual = 10.0 * math.log10(pif / pof); basis = f"10*log10({pin}/{pout})"
+            actual = LS.level(pif, pof, k=10.0, base=10); basis = f"10*log10({pin}/{pout})"
+            lawrec = LS.law(k=10.0, base=10, reference=pof)
         else:
             return na(name)
     except (TypeError, ValueError):
@@ -304,6 +307,8 @@ def verify_fiber_attenuation(spec: Dict[str, Any]) -> VerifierResult:
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     data = {"actual_loss_db": actual, "claimed_loss_db": c, "formula": "loss = alpha*L = 10log10(Pin/Pout)"}
     data["basis"] = basis
+    if lawrec:
+        data["shared_law"] = lawrec
     return band(name, actual, c, max(1e-6, rel_tol * abs(actual)), "loss_db", data, fmt="{:.4g}", unit="dB")
 
 

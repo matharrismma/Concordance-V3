@@ -31,6 +31,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from . import thermal_scale as _thermal  # k_B-anchored barometric scale height
 
 
@@ -56,13 +57,14 @@ def verify_dew_point(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "T, RH, and claim must be numeric")
     if Rf <= 0 or Rf > 100:
         return error(name, f"RH must be in (0, 100], got {Rf}")
-    gamma = (_MAGNUS_A * Tf) / (_MAGNUS_B + Tf) + math.log(Rf / 100.0)
+    gamma = (_MAGNUS_A * Tf) / (_MAGNUS_B + Tf) + LS.level(Rf, 100.0, base=LS.E)
     actual = (_MAGNUS_B * gamma) / (_MAGNUS_A - gamma)
     tol = clamp_tol(spec, "tolerance_c", 0.5)
     diff = abs(actual - c)
     data = {"temperature_c": Tf, "relative_humidity_pct": Rf,
             "diff_c": diff, "tolerance_c": tol,
-            "formula": "Magnus-Tetens (a=17.625, b=243.04)"}
+            "formula": "Magnus-Tetens (a=17.625, b=243.04)",
+            "shared_law": LS.law(k=1.0, base=LS.E, reference=100.0)}
     return band(name, actual, c, tol, "dew_point_c", data, fmt="{:.2f}", unit="°C")
 
 

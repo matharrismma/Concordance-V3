@@ -26,11 +26,11 @@ CYBER_VERIFY packet shape (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
 
 
@@ -69,9 +69,9 @@ def verify_password_entropy(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "password_length, charset_size, claimed_entropy_bits must be numeric")
     if N < 2:
         return error(name, f"charset_size must be >= 2, got {N}")
-    actual = L * math.log2(N)
+    actual = LS.level(N, k=L, base=2)
     tol = clamp_tol(spec, "tolerance_bits", 0.5)
-    data = {"length": L, "charset_size": N, "formula": "H = L * log2(N)"}
+    data = {"length": L, "charset_size": N, "formula": "H = L * log2(N)", "shared_law": LS.law(k=L, base=2)}
     return band(name, actual, c, tol, "entropy_bits", data, fmt="{:.2f}", unit="bits")
 
 

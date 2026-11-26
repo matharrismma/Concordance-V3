@@ -17,11 +17,11 @@ ECHEM_VERIFY packet (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from . import alpha_scale as _ascale  # alpha-anchored Faraday / Nernst scale
 
 _R = 8.314462618   # J/(mol·K)
@@ -47,10 +47,11 @@ def verify_nernst(spec: Dict[str, Any]) -> VerifierResult:
     if nf <= 0 or Qf <= 0:
         return error(name, f"electron count and reaction quotient must be positive (n={nf}, Q={Qf})")
     T = 298.15 if spec.get("temp_K") is None else float(spec["temp_K"])
-    actual = e0f - (_R * T / (nf * _F)) * math.log(Qf)
+    actual = e0f - LS.level(Qf, k=_R * T / (nf * _F), base=LS.E)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"E0": e0f, "n": nf, "Q": Qf, "T_K": T, "E_V": actual, "claimed_V": cl,
-            "formula": "E = E0 - (RT/nF) ln(Q)"}
+            "formula": "E = E0 - (RT/nF) ln(Q)",
+            "shared_law": LS.law(k=_R * T / (nf * _F), base=LS.E)}
     return _band(name, actual, cl, "E_V", data, rel_tol=rel_tol, unit="V")
 
 

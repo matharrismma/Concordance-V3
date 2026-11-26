@@ -879,6 +879,10 @@ def verify_derivation(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         _framing = {kk: _g[kk] for kk in ("framing_question", "need", "example", "route") if kk in _g}
         if _framing:
             entry["guidance"] = _framing
+        # the one shared law the check applied and its constants (verifiers/log_scale.py): curated like the
+        # framing, so the seal can name the law without the verifier's whole data dict travelling out
+        if isinstance(_g.get("shared_law"), dict):
+            entry["shared_law"] = _g["shared_law"]
         if missing:
             entry["missing_refs"] = missing
         if unconfirmed:

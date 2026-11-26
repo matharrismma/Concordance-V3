@@ -33,11 +33,12 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 
 
 def _ev(N: float, t: float) -> float:
     """EV (ISO 100) = log2(N² / t)."""
-    return math.log2((N * N) / t)
+    return LS.level(N * N, t, base=2)
 
 
 def verify_exposure_value(spec: Dict[str, Any]) -> VerifierResult:
@@ -58,7 +59,8 @@ def verify_exposure_value(spec: Dict[str, Any]) -> VerifierResult:
     diff = abs(actual - c)
     data = {"f_number": Nf, "shutter_seconds": tf, "diff": diff,
             "tolerance_ev": tol,
-            "formula": "EV = log₂(N²/t)  [ISO 100]"}
+            "formula": "EV = log₂(N²/t)  [ISO 100]",
+            "shared_law": LS.law(k=1.0, base=2, reference=tf)}
     return band(name, actual, c, tol, "ev", data, fmt="{:.3f}", unit="EV")
 
 
@@ -87,7 +89,8 @@ def verify_reciprocity_equivalent(spec: Dict[str, Any]) -> VerifierResult:
             "settings_b": [Nb, tb], "ev_b": evb,
             "ev_diff": abs(eva - evb), "tolerance_ev": tol,
             "actual_equivalent": actual, "claimed_equivalent": bool(claimed),
-            "rule": "equivalent iff EV_a = EV_b within tolerance"}
+            "rule": "equivalent iff EV_a = EV_b within tolerance",
+            "shared_law": LS.law(k=1.0, base=2)}
     if actual == bool(claimed):
         return confirm(name,
                        f"EV_a={eva:.3f} EV_b={evb:.3f} equivalent={actual} (matches claim)",

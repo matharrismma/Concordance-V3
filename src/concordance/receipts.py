@@ -95,6 +95,9 @@ def record_from_derivation(result: Dict[str, Any], *, domain: str = "mathematics
             data={"claim": redact.redact(str(e.get("claim", "")))[0], "domain": e.get("domain", ""),
                   "uses": e.get("uses", []), "link_ok": e.get("link_ok", True),
                   "spec_hash": str(e.get("spec_hash", "")),
+                  # the one shared law the check applied and the constants that grounded it (verifiers/log_scale.py):
+                  # sealed so the receipt names it; absent when the check used none, so such a record is unchanged
+                  **({"shared_law": e["shared_law"]} if isinstance(e.get("shared_law"), dict) else {}),
                   # the inverted reading is sealed too: which refutations were attempted, the bands, and any
                   # counterexample — the strongest artifact a receipt can hold travels in the permanent record
                   **({"refutations": e["refutations"]} if e.get("refutations") else {}),

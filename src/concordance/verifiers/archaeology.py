@@ -22,6 +22,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 
 _C14_HALFLIFE = 5730.0   # years (Libby/Cambridge convention; 5730 standard)
 _LN2 = math.log(2.0)
@@ -44,10 +45,11 @@ def verify_radiocarbon(spec: Dict[str, Any]) -> VerifierResult:
     if not 0.0 < f <= 1.0:
         return error(name, f"fraction remaining must be in (0, 1] (got {f})")
     T = _C14_HALFLIFE if spec.get("half_life_years") is None else float(spec["half_life_years"])
-    actual = -(T / _LN2) * math.log(f)
+    actual = LS.level(f, k=-(T / _LN2), base=LS.E)
+    lawrec = LS.law(k=-(T / _LN2), base=LS.E)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"fraction": f, "half_life_yr": T, "age_years": actual, "claimed_years": cl,
-            "formula": "t = -(T_half/ln2) ln(f)"}
+            "formula": "t = -(T_half/ln2) ln(f)", "shared_law": lawrec}
     return band(name, actual, cl, _tol(actual, rel_tol=rel_tol), "age_years", data, fmt="{:.0f}", unit="yr")
 
 
@@ -63,10 +65,11 @@ def verify_radiometric(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "inputs must be numeric")
     if not 0.0 < f <= 1.0 or Tf <= 0:
         return error(name, f"fraction must be in (0,1] and half-life positive (f={f}, T={Tf})")
-    actual = -(Tf / _LN2) * math.log(f)
+    actual = LS.level(f, k=-(Tf / _LN2), base=LS.E)
+    lawrec = LS.law(k=-(Tf / _LN2), base=LS.E)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-2)
     data = {"fraction": f, "half_life_yr": Tf, "age_years": actual, "claimed_years": cl,
-            "formula": "t = -(T_half/ln2) ln(f)"}
+            "formula": "t = -(T_half/ln2) ln(f)", "shared_law": lawrec}
     return band(name, actual, cl, _tol(actual, rel_tol=rel_tol), "age_years", data, fmt="{:.4g}", unit="yr")
 
 
@@ -82,8 +85,8 @@ def verify_half_lives_elapsed(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "inputs must be numeric")
     if not 0.0 < f <= 1.0:
         return error(name, f"fraction must be in (0, 1] (got {f})")
-    actual = -math.log2(f)
-    data = {"fraction": f, "half_lives": actual, "claimed": cl, "formula": "n = -log2(f)"}
+    actual = LS.level(f, k=-1.0, base=2)
+    data = {"fraction": f, "half_lives": actual, "claimed": cl, "formula": "n = -log2(f)", "shared_law": LS.law(k=-1.0, base=2)}
     return band(name, actual, cl, _tol(actual, rel_tol=1e-3, abs_tol=1e-3), "half_lives", data, fmt="{:.4f}")
 
 

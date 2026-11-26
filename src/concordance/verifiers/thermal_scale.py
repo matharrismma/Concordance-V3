@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from .base import VerifierResult
 from . import scale_base as _sb
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from . import physical_constants as _pc
 
 _C = {c["constant"]: c["value"] for c in _pc.list_constants()}
@@ -37,7 +38,7 @@ def boltzmann_factor(E_J: float, T: float) -> float:
 
 def boltzmann_entropy_J_per_K(W: float) -> float:
     """S = k_B ln W — the Boltzmann entropy of W equally likely microstates."""
-    return _kB * math.log(W)
+    return LS.level(W, k=_kB, base=LS.E)
 
 
 def scale_height_m(T: float, m_kg: float, g: float) -> float:
