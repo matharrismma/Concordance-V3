@@ -200,6 +200,13 @@ its own `k`, `base` (10, 2 or "e") and `reference`. Two seals that name the same
 different constants. The field is absent when a check applies no shared law, so such a record is byte-for-byte
 what it was before the field existed; a current verifier ignores it (a minor change under VERSIONING.md).
 
+The law is read in both directions, and both are the one form. `law` is `level = k * log_b(value / reference)`
+where the check reads a level off a quantity, and `value = reference * b^(level / k)` where it turns a level back
+into the quantity: a distance from its distance modulus, a Richter amplitude ratio, an Elo odds ratio, a note's
+frequency from its semitones above A4, the addresses in a subnet, what remains after half-lives or e-folds
+(radioactive decay, Beer-Lambert absorption, an RC charge, logistic growth), the Boltzmann factor and the Magnus
+saturation vapour pressure. So a radiocarbon age and the amount a half-life leaves name the same `form`, one each way.
+
 ## 5. Documents
 
 A `kind: document` record is a root over steps (`spec_hash`, status, `uses`), a `derivation_seal` and

@@ -173,14 +173,15 @@ def verify_rc_time_constant(spec: Dict[str, Any]) -> VerifierResult:
     if tf < 0:
         return error(name, f"elapsed time cannot be negative, got {tf}")
     tau = Rf * Cf
-    actual = Vf * (1.0 - math.exp(-tf / tau))
+    actual = Vf * (1.0 - LS.inverse(-tf, k=tau, base=LS.E))
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-3)
     threshold = max(abs_tol, rel_tol * abs(actual))
     diff = abs(actual - cf)
     data = {"R": Rf, "C": Cf, "elapsed_s": tf, "supply_V": Vf,
             "tau": tau, "actual_v": actual, "claimed_v": cf,
-            "diff": diff, "formula": "v(t) = V(1 − e^(−t/RC))"}
+            "diff": diff, "formula": "v(t) = V(1 − e^(−t/RC))",
+            "shared_law": LS.law(k=tau, base=LS.E, inverse=True)}
     return band(name, actual, cf, threshold, "v", data, fmt="{:.4f}", unit="V")
 
 

@@ -33,6 +33,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
 
 def verify_pythagorean_expectation(spec: Dict[str, Any]) -> VerifierResult:
@@ -74,13 +75,14 @@ def verify_elo_expected_score(spec: Dict[str, Any]) -> VerifierResult:
         Raf, Rbf, c = float(Ra), float(Rb), float(claimed)
     except (TypeError, ValueError):
         return error(name, "ratings and claim must be numeric")
-    actual = 1.0 / (1.0 + 10 ** ((Rbf - Raf) / 400.0))
+    actual = 1.0 / (1.0 + LS.inverse(Rbf - Raf, k=400.0, base=10))
     tol = clamp_tol(spec, "tolerance", 0.005)
     diff = abs(actual - c)
     data = {"elo_a": Raf, "elo_b": Rbf,
             "actual_expected": actual, "claimed_expected": c, "diff": diff,
             "tolerance": tol,
-            "formula": "E_a = 1 / (1 + 10^((R_b − R_a)/400))"}
+            "formula": "E_a = 1 / (1 + 10^((R_b − R_a)/400))",
+            "shared_law": LS.law(k=400.0, base=10, inverse=True)}
     return band(name, actual, c, tol, "expected", data, fmt="{:.4f}")
 
 
@@ -102,7 +104,7 @@ def verify_elo_rating_update(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"actual_score_a must be in [0, 1] (0 loss, 0.5 draw, 1 win), got {Saf}")
     if Kf <= 0:
         return error(name, "K must be positive")
-    Ea = 1.0 / (1.0 + 10 ** ((Rbf - Raf) / 400.0))
+    Ea = 1.0 / (1.0 + LS.inverse(Rbf - Raf, k=400.0, base=10))
     actual = Raf + Kf * (Saf - Ea)
     tol = clamp_tol(spec, "tolerance_rating", 0.5)
     diff = abs(actual - c)
@@ -110,7 +112,8 @@ def verify_elo_rating_update(spec: Dict[str, Any]) -> VerifierResult:
             "K": Kf, "expected_score_a": Ea,
             "actual_post": actual, "claimed_post": c, "diff": diff,
             "tolerance_rating": tol,
-            "formula": "R'_a = R_a + K·(S_a − E_a)"}
+            "formula": "R'_a = R_a + K·(S_a − E_a)",
+            "shared_law": LS.law(k=400.0, base=10, inverse=True)}
     return band(name, actual, c, tol, "post", data, fmt="{:.3f}")
 
 

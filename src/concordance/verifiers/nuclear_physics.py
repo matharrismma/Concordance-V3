@@ -36,6 +36,7 @@ from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import rela_scale as _rela  # c-anchored rest energy (E = m c^2)
 from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
 _LN2 = math.log(2)
 _AMU_TO_MEV = 931.49410242  # MeV per u (CODATA 2018: u·c²/e) — the same value verify_rest_energy derives
@@ -59,7 +60,7 @@ def verify_radioactive_decay(spec: Dict[str, Any]) -> VerifierResult:
     if tf < 0 or N0f < 0:
         return error(name, "elapsed_seconds and initial_count must be non-negative")
     lam = _LN2 / Tf
-    actual = N0f * math.exp(-lam * tf)
+    actual = LS.inverse(-lam * tf, N0f, base=LS.E)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-9)
     diff = abs(actual - cl)
@@ -74,6 +75,7 @@ def verify_radioactive_decay(spec: Dict[str, Any]) -> VerifierResult:
         "diff": diff,
         "n_half_lives": tf / Tf,
         "formula": "N(t) = N₀ × e^(−λt),  λ = ln(2) / T_half",
+        "shared_law": LS.law(k=1.0, base=LS.E, reference=N0f, inverse=True),
     }
     return band(name, actual, cl, threshold, "remaining_count", data)
 

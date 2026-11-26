@@ -26,7 +26,6 @@ MET_VERIFY shape (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
@@ -41,7 +40,7 @@ _MAGNUS_B = 243.04
 
 def _saturation_vapor_pressure_hpa(T_c: float) -> float:
     """Magnus form: es(T) = 6.112 · exp((17.625·T)/(T + 243.04))."""
-    return 6.112 * math.exp((_MAGNUS_A * T_c) / (T_c + _MAGNUS_B))
+    return LS.inverse((_MAGNUS_A * T_c) / (T_c + _MAGNUS_B), 6.112, base=LS.E)
 
 
 def verify_dew_point(spec: Dict[str, Any]) -> VerifierResult:
@@ -199,7 +198,8 @@ def verify_saturation_vapor_pressure(spec: Dict[str, Any]) -> VerifierResult:
     threshold = max(0.05, rel_tol * actual)
     data = {"temperature_c": Tf, "diff_hpa": diff,
             "tolerance_relative": rel_tol,
-            "formula": "es(T) = 6.112·exp((17.625·T)/(T + 243.04))"}
+            "formula": "es(T) = 6.112·exp((17.625·T)/(T + 243.04))",
+            "shared_law": LS.law(k=1.0, base=LS.E, reference=6.112, inverse=True)}
     return band(name, actual, c, threshold, "es_hpa", data, fmt="{:.3f}", unit="hPa")
 
 

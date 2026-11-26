@@ -30,7 +30,7 @@ CLOSURES = {
     "chess": RUNNER | {V + "chess", P + "chess"},
     "mathematics": RUNNER | {V + "mathematics", V + "_boolean", V + "_integer"},
     "math": RUNNER | {V + "mathematics", V + "_boolean", V + "_integer"},
-    "astronomy": RUNNER | GRAVITY | {V + "astronomy", V + "rela_scale"},
+    "astronomy": RUNNER | GRAVITY | {V + "astronomy", V + "rela_scale", V + "log_scale"},
     "physics": RUNNER | GRAVITY | {V + "physics", V + "mathematics", V + "_boolean", V + "_integer", V + "rela_scale",
                                    V + "planck_scale"},
 }

@@ -159,13 +159,13 @@ def verify_subnet_hosts(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, str(e))
     if not (0 <= p <= 32):
         return error(name, f"CIDR prefix must be 0–32, got {p}")
-    total = 2 ** (32 - p)
+    total = LS.inverse(32 - p, k=1, base=2)
     usable = max(0, total - 2)  # /31 and /32 are special cases
     if p >= 31:
         usable = total  # point-to-point and host routes
     data = {"cidr_prefix": p, "total_addresses": total,
             "usable_hosts": usable, "claimed_host_count": c,
-            "formula": "2^(32-prefix) - 2 (usable)"}
+            "formula": "2^(32-prefix) - 2 (usable)", "shared_law": LS.law(k=1, base=2, inverse=True)}
     if usable == c:
         return confirm(name, f"/{p} → {usable} usable hosts (matches claim)", data)
     return mismatch(name, f"/{p} → {usable} hosts, claimed {c}", data)

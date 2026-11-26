@@ -23,6 +23,7 @@ from typing import Dict, List, Tuple, Any
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, literal_is_claim, merge_checks
 from . import alpha_scale as _ascale  # alpha-anchored atomic energy scale
 from . import thermal_scale as _thermal  # k_B-anchored Boltzmann factor
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 from . import molar_scale as _molar  # N_A-anchored particle count
 from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
 
@@ -622,7 +623,8 @@ def verify_boltzmann_factor(spec: Dict[str, Any]) -> VerifierResult:
     if T <= 0:
         return error(name, "temperature must be > 0 K")
     return _thermal.compare(name, _thermal.boltzmann_factor(E, T),
-                            spec["claimed_boltzmann_factor"], 1e-3, {"formula": "exp(-E / k_B T)"})
+                            spec["claimed_boltzmann_factor"], 1e-3,
+                            {"formula": "exp(-E / k_B T)", "shared_law": LS.law(k=_thermal._kB * T, base=LS.E, inverse=True)})
 
 
 def verify_atomic_energy_scale(spec: Dict[str, Any]) -> VerifierResult:

@@ -38,6 +38,7 @@ from typing import Any, Dict, List
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
 
 def verify_logistic_growth(spec: Dict[str, Any]) -> VerifierResult:
@@ -65,7 +66,7 @@ def verify_logistic_growth(spec: Dict[str, Any]) -> VerifierResult:
     exponent = -rf * tf
     # Guard against overflow for very large exponents
     try:
-        exp_term = math.exp(exponent)
+        exp_term = LS.inverse(exponent, base=LS.E)
     except OverflowError:
         exp_term = math.inf
     denom = 1.0 + ((Kf - N0f) / N0f) * exp_term
@@ -83,6 +84,7 @@ def verify_logistic_growth(spec: Dict[str, Any]) -> VerifierResult:
         "time_t": tf,
         "diff": diff,
         "formula": "N(t) = K / (1 + ((K−N0)/N0) × e^(−r×t))",
+        "shared_law": LS.law(k=1.0, base=LS.E, inverse=True),
     }
     return band(name, actual, cl, threshold, "population", data)
 

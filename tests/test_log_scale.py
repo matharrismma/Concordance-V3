@@ -20,8 +20,10 @@ import pytest
 
 from concordance import receipts
 from concordance.derivation import verify_derivation
-from concordance.verifiers import (acoustics, archaeology, cybersecurity, electrical, electrochemistry, log_scale as LS,
-                                   meteorology, neuroscience, optics, photography, thermal_scale, thermodynamics)
+from concordance.verifiers import (acoustics, archaeology, astronomy, chemistry, cybersecurity, ecology, electrical,
+                                   electrochemistry, geology, log_scale as LS, meteorology, music_theory, neuroscience,
+                                   nuclear_physics, optics, photography, photonics, sports_analytics, thermal_scale,
+                                   thermodynamics)
 
 
 def test_the_shared_law_is_the_same_arithmetic_bit_for_bit():
@@ -130,3 +132,103 @@ def test_the_seal_carries_the_law_and_a_record_without_it_is_unchanged():
                                "spec": {"mode": "numeric", "params": {"numeric_expr": "2 + 2", "claimed_value": 4.0}}})
     assert res["verdict"] == "HOLDS"
     assert "shared_law" not in rec.verifier_results[0].data      # a check that does not use the law seals as before
+
+
+# ── THE LAW READ BACKWARDS: value = reference * b^(level / k) ─────────────────────────────────────────────────────
+# A distance from its modulus, a Richter amplitude ratio, an Elo odds ratio, a note's frequency, a subnet's addresses,
+# what remains after half-lives or e-folds (decay, Beer-Lambert, an RC charge, logistic growth), the Boltzmann factor
+# and the Magnus saturation vapour pressure: each turned a level back into a quantity with its own formula. They now
+# call log_scale.inverse, compute exactly what they did, and name the same form with the law's backward text.
+
+def _inv(k, base, reference=None):
+    return {**_law(k, base, reference), "law": "value = reference * b^(level / k)"}
+
+
+def test_the_inverse_is_the_same_arithmetic_bit_for_bit():
+    r = random.Random(20261126)
+    for _ in range(4000):
+        x, ref = r.uniform(-300, 300), 10 ** r.uniform(-100, 100)
+        k = r.choice([r.uniform(1, 50) * r.choice([1, -1]), 400.0, 12.0, 5.0])
+        assert LS.inverse(x, ref, k=k, base=10) == ref * 10.0 ** (x / k)
+        assert LS.inverse(x, ref, k=k, base=2) == ref * 2.0 ** (x / k)
+        assert LS.inverse(x, k=k, base=LS.E) == math.exp(x / k)
+        y = r.uniform(-700, 700)
+        assert LS.inverse(y, base=LS.E) == math.exp(y)
+        # what remains after t in half-lives of T: geology wrote 0.5 ** (t / T); the law writes 2 ** (t / -T)
+        t, T = r.uniform(0, 1e6), 10 ** r.uniform(-3, 10)
+        assert LS.inverse(t, k=-T, base=2) == 0.5 ** (t / T)
+    total = LS.inverse(24, k=1, base=2)            # an exact integer power stays an exact integer
+    assert total == 2 ** 24 and type(total) is int
+    assert type(LS.inverse(3, base=10)) is int and LS.inverse(-3, base=2) == 0.125
+
+
+def test_the_inverse_undoes_the_level():
+    r = random.Random(7)
+    for _ in range(2000):
+        v, ref = 10 ** r.uniform(-30, 30), 10 ** r.uniform(-30, 30)
+        k = r.choice([10.0, 20.0, -20.0, 12.0, 5.0, 400.0, -1.0, 1.0])
+        for b in (10, 2, LS.E):
+            assert math.isclose(LS.inverse(LS.level(v, ref, k=k, base=b), ref, k=k, base=b), v, rel_tol=1e-9)
+
+
+def test_an_inverse_base_the_law_does_not_hold_is_refused():
+    with pytest.raises(KeyError):
+        LS.inverse(2.0, base=3)
+
+
+_kT = thermal_scale._kB * 300.0
+INVERSE_VOICES = [
+    (astronomy.verify_distance_modulus, {"apparent_magnitude": 11.05, "absolute_magnitude": 15.53, "claimed_distance_parsec": 1.2706},
+     "actual_distance_parsec", 10.0 ** ((11.05 - 15.53 + 5.0) / 5.0), _inv(5.0, 10)),
+    (geology.verify_radiometric_decay, {"isotope_half_life_years": 5730.0, "elapsed_years": 11460.0, "initial_amount": 100.0,
+                                        "claimed_remaining_amount": 25.0},
+     "actual_remaining", 100.0 * (0.5 ** (11460.0 / 5730.0)), _inv(-5730.0, 2, 100.0)),
+    (geology.verify_richter_amplitude, {"richter_M1": 5.0, "richter_M2": 7.0, "claimed_amplitude_ratio": 100.0},
+     "actual_ratio", 10.0 ** (7.0 - 5.0), _inv(1.0, 10)),
+    (music_theory.verify_equal_temperament_freq, {"midi_note": 60, "claimed_frequency_hz": 261.6256},
+     "actual_freq_hz", 440.0 * (2.0 ** ((60 - 69) / 12.0)), _inv(12.0, 2, 440.0)),
+    (nuclear_physics.verify_radioactive_decay, {"half_life_seconds": 10.0, "elapsed_seconds": 20.0, "initial_count": 1000.0,
+                                                "claimed_remaining_count": 250.0},
+     "actual_remaining_count", 1000.0 * math.exp(-(nuclear_physics._LN2 / 10.0) * 20.0), _inv(1.0, "e", 1000.0)),
+    (photonics.verify_beer_lambert, {"input_intensity": 2.0, "coefficient_per_m": 2.0, "path_length_m": 0.5,
+                                     "claimed_output_intensity": 0.73576},
+     "output_intensity", 2.0 * math.exp(-2.0 * 0.5), _inv(1.0, "e", 2.0)),
+    (electrical.verify_rc_time_constant, {"resistance_ohm_rc": 2000.0, "capacitance_F": 1e-3, "elapsed_s": 1.0, "supply_V": 5.0,
+                                          "claimed_capacitor_voltage_V": 1.9673},
+     "actual_v", 5.0 * (1.0 - math.exp(-1.0 / (2000.0 * 1e-3))), _inv(2000.0 * 1e-3, "e")),
+    (sports_analytics.verify_elo_expected_score, {"elo_a": 1600.0, "elo_b": 1400.0, "claimed_expected_score_a": 0.7597},
+     "actual_expected", 1.0 / (1.0 + 10 ** ((1400.0 - 1600.0) / 400.0)), _inv(400.0, 10)),
+    (sports_analytics.verify_elo_rating_update, {"elo_a_pre": 1600.0, "elo_b_pre": 1400.0, "actual_score_a": 1.0, "elo_K": 32.0,
+                                                 "claimed_elo_a_post": 1607.69},
+     "expected_score_a", 1.0 / (1.0 + 10 ** ((1400.0 - 1600.0) / 400.0)), _inv(400.0, 10)),
+    (cybersecurity.verify_subnet_hosts, {"cidr_prefix": 24, "claimed_host_count": 254},
+     "total_addresses", 2 ** (32 - 24), _inv(1, 2)),
+    (ecology.verify_logistic_growth, {"carrying_capacity_K": 1000.0, "initial_population_N0": 10.0, "growth_rate_r": 0.5,
+                                      "time_t": 10.0, "claimed_population": 599.86},
+     "actual_population", 1000.0 / (1.0 + ((1000.0 - 10.0) / 10.0) * math.exp(-0.5 * 10.0)), _inv(1.0, "e")),
+    (meteorology.verify_saturation_vapor_pressure, {"temperature_c_for_es": 25.0, "claimed_saturation_vapor_pressure_hpa": 31.7},
+     "actual_es_hpa", 6.112 * math.exp((17.625 * 25.0) / (25.0 + 243.04)), _inv(1.0, "e", 6.112)),
+    (chemistry.verify_boltzmann_factor, {"boltzmann_energy_J": 4.14e-21, "boltzmann_temperature_K": 300.0,
+                                         "claimed_boltzmann_factor": 0.36805},
+     "actual_value", math.exp(-4.14e-21 / _kT), _inv(_kT, "e")),
+]
+
+
+@pytest.mark.parametrize("fn, spec, key, old, law", INVERSE_VOICES, ids=[v[0].__name__ for v in INVERSE_VOICES])
+def test_each_inverse_names_the_law_and_computes_what_its_old_formula_did(fn, spec, key, old, law):
+    r = fn(dict(spec))
+    assert r.status == "CONFIRMED", (r.status, r.detail)
+    assert r.data[key] == old and type(r.data[key]) is type(old)      # bit for bit, and an exact count stays an int
+    assert r.data["shared_law"] == law
+
+
+def test_the_shared_helper_reads_backwards_too():
+    for E, T in ((4.14e-21, 300.0), (-1e-22, 77.0), (0.0, 1.0), (1e-20, 1.0 / thermal_scale._kB)):
+        assert thermal_scale.boltzmann_factor(E, T) == math.exp(-E / (thermal_scale._kB * T))
+
+
+def test_the_seal_carries_the_law_read_backwards():
+    res, rec = _sealed_record({"id": "c14", "domain": "geology", "spec": {"GEO_VERIFY": {
+        "isotope_half_life_years": 5730.0, "elapsed_years": 11460.0, "initial_amount": 100.0, "claimed_remaining_amount": 25.0}}})
+    assert res["verdict"] == "HOLDS"
+    assert rec.verifier_results[0].data["shared_law"] == _inv(-5730.0, 2, 100.0)

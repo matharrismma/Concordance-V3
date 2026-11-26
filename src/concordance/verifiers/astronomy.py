@@ -41,12 +41,12 @@ ASTRO_VERIFY packet shape (any subset of fields):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from . import grav_scale as _gscale  # G-anchored escape velocity / Schwarzschild radius
 from . import rela_scale as _rela  # c-anchored light-travel time
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
 
 # Newtonian gravitational constant (SI: m³ kg⁻¹ s⁻²). CODATA 2018.
@@ -169,7 +169,7 @@ def verify_distance_modulus(spec: Dict[str, Any]) -> VerifierResult:
     except (TypeError, ValueError):
         return error(name, "magnitudes and distance must be numeric")
     # m - M = 5·log10(d) - 5  ⇒  d = 10^((m - M + 5) / 5)
-    actual = 10.0 ** ((mf - Mf + 5.0) / 5.0)
+    actual = LS.inverse(mf - Mf + 5.0, k=5.0, base=10)
     rel_tol = clamp_tol(spec, "tolerance_relative", 5e-2)
     diff = abs(actual - cf)
     # absolute floor 0.01 pc (was 0.5 pc, which at Proxima's 1.3 pc was a 38 % window)
@@ -177,7 +177,8 @@ def verify_distance_modulus(spec: Dict[str, Any]) -> VerifierResult:
     data = {"apparent_magnitude": mf, "absolute_magnitude": Mf,
             "actual_distance_parsec": actual, "claimed_distance_parsec": cf,
             "diff_pc": diff,
-            "formula": "d = 10^((m - M + 5) / 5)"}
+            "formula": "d = 10^((m - M + 5) / 5)",
+            "shared_law": LS.law(k=5.0, base=10, inverse=True)}
     return band(name, actual, cf, threshold, "distance_parsec", data, fmt="{:.4f}", unit="pc")
 
 

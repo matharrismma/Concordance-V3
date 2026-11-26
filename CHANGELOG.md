@@ -4,6 +4,27 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- The log scale read backwards. `value = reference * b^(level / k)`, the shared law turned round, was written out
+  separately thirteen times in eleven verifiers: a distance from its distance modulus (k = 5, base 10), a Richter
+  amplitude ratio (base 10), the Elo odds ratio in the expected score and the rating update (k = 400, base 10), a
+  note's frequency (k = 12, base 2, reference 440 Hz), a subnet's addresses (base 2), what remains after half-lives
+  (geology, k = -T, base 2) or e-folds (nuclear decay, Beer-Lambert, an RC charge, logistic growth, base e), the
+  Boltzmann factor (k = k_B T, through thermal_scale and so chemistry) and the Magnus saturation vapour pressure
+  (reference 6.112 hPa). It now lives beside the forward law as `log_scale.inverse`, and each check records
+  `shared_law` with the same `form` and the backward `law` text (RECEIPT_SPEC section 4c). The arithmetic is the
+  same bit for bit: bases 10 and 2 are the power operator and base e is math.exp; the level is divided by k only
+  when k is not 1, so a /8's 2 ** 24 addresses stay an exact integer; the reference multiplies last. Geology wrote
+  0.5 ** (t / T) and the law writes 2 ** (t / -T); `tests/test_log_scale.py` pins the two equal wherever the suite
+  runs. Measured: 28,000 random, true and broken inputs through all fourteen functions, and the 32,000 forward
+  cases again, give identical status, detail and data before and after; a control that computes base-10 powers as
+  exp(x ln 10) changes 4,764 of them, all in the four base-10 checks. Left as they are, and why: compound interest
+  and discounting (economics, finance, public_finance, real_estate) and trophic efficiency take their base from
+  the claim, so it is no scale's constant; Poisson's e^-lambda is a normalisation, not a level; the phonon
+  occupation uses expm1, a different function. As with any change to a verifier, every memo entry of the
+  nineteen domains whose closure reads log_scale (acoustics, archaeology, astronomy, chemistry, cybersecurity,
+  ecology, electrical, electrochemistry, geology, materials_science, meteorology, music_theory, neuroscience,
+  nuclear_physics, optics, photography, photonics, sports_analytics, thermodynamics) misses once and stays on
+  disk unread.
 - One law, many constants. `level = k * log_b(value / reference)` was written out separately fifteen times in
   eleven verifiers (acoustics, optics, electrical, neuroscience x3, electrochemistry, thermodynamics x2 through
   thermal_scale, photography, cybersecurity, archaeology x3, meteorology), each with its own constant. It now

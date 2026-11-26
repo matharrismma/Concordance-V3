@@ -28,12 +28,12 @@ MUS_VERIFY shape (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
 
 # Note name → semitones above C (0..11).
@@ -174,12 +174,13 @@ def verify_equal_temperament_freq(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "midi_note int and claimed_frequency_hz numeric required")
     if not (0 <= nf <= 127):
         return error(name, f"MIDI note must be 0-127, got {nf}")
-    actual = 440.0 * (2.0 ** ((nf - 69) / 12.0))
+    actual = LS.inverse(nf - 69, 440.0, k=12.0, base=2)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     diff = abs(actual - c)
     threshold = max(0.01, rel_tol * abs(actual))
     data = {"midi_note": nf, "diff_hz": diff,
-            "formula": "f = 440·2^((n−69)/12); A4 = 440 Hz"}
+            "formula": "f = 440·2^((n−69)/12); A4 = 440 Hz",
+            "shared_law": LS.law(k=12.0, base=2, reference=440.0, inverse=True)}
     return band(name, actual, c, threshold, "freq_hz", data, fmt="{:.4f}", unit="Hz")
 
 

@@ -25,12 +25,12 @@ GEO_VERIFY shape (any subset):
     }
 """
 from __future__ import annotations
-import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
 from . import grav_scale as _grav  # G-anchored surface gravity
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
 
 def verify_radiometric_decay(spec: Dict[str, Any]) -> VerifierResult:
@@ -49,7 +49,7 @@ def verify_radiometric_decay(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"half-life must be positive, got {Tf}")
     if tf < 0 or N0f < 0:
         return error(name, "elapsed_years and initial_amount must be non-negative")
-    actual = N0f * (0.5 ** (tf / Tf))
+    actual = LS.inverse(tf, N0f, k=-Tf, base=2)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     abs_tol = clamp_tol(spec, "tolerance_absolute", 1e-9)
     diff = abs(actual - c)
@@ -57,7 +57,8 @@ def verify_radiometric_decay(spec: Dict[str, Any]) -> VerifierResult:
     data = {"half_life_years": Tf, "elapsed_years": tf,
             "initial_amount": N0f, "diff": diff,
             "n_half_lives": tf / Tf,
-            "formula": "N(t) = N₀ · 2^(−t/T_½)"}
+            "formula": "N(t) = N₀ · 2^(−t/T_½)",
+            "shared_law": LS.law(k=-Tf, base=2, reference=N0f, inverse=True)}
     return band(name, actual, c, threshold, "remaining", data)
 
 
@@ -100,12 +101,13 @@ def verify_richter_amplitude(spec: Dict[str, Any]) -> VerifierResult:
         M1f, M2f, c = float(M1), float(M2), float(claimed)
     except (TypeError, ValueError):
         return error(name, "magnitudes and claimed_amplitude_ratio must be numeric")
-    actual = 10.0 ** (M2f - M1f)
+    actual = LS.inverse(M2f - M1f, base=10)
     rel_tol = clamp_tol(spec, "tolerance_relative", 1e-3)
     diff = abs(actual - c)
     threshold = max(1e-6, rel_tol * abs(actual))
     data = {"M1": M1f, "M2": M2f, "diff": diff,
-            "formula": "A₂/A₁ = 10^(M₂−M₁)"}
+            "formula": "A₂/A₁ = 10^(M₂−M₁)",
+            "shared_law": LS.law(k=1.0, base=10, inverse=True)}
     return band(name, actual, c, threshold, "ratio", data, fmt="{:.4g}")
 
 

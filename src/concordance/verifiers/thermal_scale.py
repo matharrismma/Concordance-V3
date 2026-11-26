@@ -8,7 +8,6 @@ Not a verifier (no run(), not registered) — a shared library the governed doma
 """
 from __future__ import annotations
 
-import math
 from typing import Any, Dict
 
 from .base import VerifierResult
@@ -33,7 +32,7 @@ def thermal_energy_eV(T: float) -> float:
 
 def boltzmann_factor(E_J: float, T: float) -> float:
     """exp(-E / k_B T) — the relative population of a state at energy E."""
-    return math.exp(-E_J / (_kB * T))
+    return LS.inverse(-E_J, k=_kB * T, base=LS.E)
 
 
 def boltzmann_entropy_J_per_K(W: float) -> float:

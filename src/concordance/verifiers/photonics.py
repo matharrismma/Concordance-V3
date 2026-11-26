@@ -54,6 +54,7 @@ from .base import VerifierResult, na, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import alpha_scale as _ascale  # alpha-anchored Compton scale
 from . import planck_scale as _planck  # h-anchored photon energy E = h nu
+from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
 _C = 299792458.0  # speed of light in vacuum, m/s
 
@@ -201,8 +202,9 @@ def verify_beer_lambert(spec: Dict[str, Any]) -> VerifierResult:
         I0, alpha, z, c = _nums(I0, alpha, z, claimed)
     except (TypeError, ValueError):
         return error(name, "input_intensity, coefficient_per_m, path_length_m, claimed_output_intensity must be numeric")
-    I = I0 * math.exp(-alpha * z)  # absorption (alpha>0) or gain (alpha<0)
-    return _band(name, I, c, "output_intensity", {"output_intensity": I, "claimed": c, "formula": "I(z) = I0*exp(-alpha*z)"},
+    I = LS.inverse(-alpha * z, I0, base=LS.E)  # absorption (alpha>0) or gain (alpha<0)
+    return _band(name, I, c, "output_intensity", {"output_intensity": I, "claimed": c, "formula": "I(z) = I0*exp(-alpha*z)",
+                                              "shared_law": LS.law(k=1.0, base=LS.E, reference=I0, inverse=True)},
                  clamp_tol(spec, "tolerance", 1e-2))
 
 
