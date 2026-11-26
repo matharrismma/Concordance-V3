@@ -40,6 +40,9 @@ VERIFIERS: Dict[str, str] = {
     # RH by elimination through the prime count (Schoenfeld 1976) — the same window from another side, routed and
     # run nightly like the Robin check (2026-10-05)
     "schoenfeld": _P + "number_theory", "schoenfelds_inequality": _P + "number_theory",
+    # the zeros give the primes: the explicit formula (von Mangoldt 1895) and Landau's formula (1912) read the prime
+    # powers off the stored zeros and are checked against the sieve (ported from concordance-2, 9735558)
+    "explicit_formula": _P + "number_theory", "zeros_to_primes": _P + "number_theory",
     # the zero count N(T) at a great height (Turing's method) — cheap, counts the zeros in the strip, routed and
     # run nightly like the other number_theory marks (2026-10-05)
     "zero_count": _P + "number_theory", "zeta_zero_count": _P + "number_theory",

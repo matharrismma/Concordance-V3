@@ -4,6 +4,21 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- The zeros give the primes: `number_theory.explicit_formula`, ported from concordance-2 (9735558). From the 10,000
+  stored zeta zeros alone (data/zeta_zeros.jsonl) it reads the prime powers up to X two ways, the explicit formula's
+  staircase (von Mangoldt 1895) and Landau's formula's spectrum (1912), each windowed against the Gibbs ringing, and
+  checks both against the sieve; the step's height names the prime. A reading counts only when it is clearly a
+  prime-power step or clearly none, so with all the zeros it confirms through X = 356 and gives no verdict from 357;
+  100 zeros cannot hear every number to 30. Both formulas are theorems with or without RH, so this shows the stored
+  zeros reproduce the primes and is no evidence for RH. NUM_VERIFY {explicit_formula_to, claimed_zeros_give_primes
+  or claimed_primes, explicit_formula_zeros?}; domain aliases explicit_formula and zeros_to_primes. Its fields read
+  by THE RULE: concordance-2 confirmed explicit_formula_to 100.7 (read as 100), claimed_zeros_give_primes "false" (a
+  non-empty text is true, so a claim that the zeros do not give the primes confirmed) and a claimed list ending 29.5
+  (read as 29); here the first two read SYSTEM_ERROR and the third BROKEN. The roots and powers it names are exact
+  integers (Newton on integers, division), never round(). Fake zero tables with the right density (smooth, jittered,
+  shifted) never confirm. `tests/test_explicit_formula.py` (18). No benchmark case reaches it: a golden pair would
+  grow the cited v2.2.0 count of 1,796 and the measurements MEASURED.md takes over those cases, so it is listed in
+  `tools/unreached.py` with that reason and joins at the next benchmark version.
 - Certificates: a proof of the verdict anyone can re-check without this engine, the pattern bbchallenge sealed BB(5)
   with, ported from concordance-2 (d3c4a0f, cf07081, b369b4f) as `verifiers/certificate.py`. A primality check for
   2 <= n <= 10^12 carries a factor for a composite and a Pratt/Lucas proof for a prime; a polynomial root carries its

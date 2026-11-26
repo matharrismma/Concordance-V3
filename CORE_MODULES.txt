@@ -38,7 +38,7 @@ text                                                205  <- <entry>
 tool_registry                                        82  <- <entry>
 transparency                                        427  <- <entry>
 validate                                            114  <- derivation
-verifiers                                           237  <- <entry>
+verifiers                                           240  <- <entry>
 verifiers._boolean                                   96  <- verifiers.mathematics
 verifiers._integer                                   73  <- verifiers.mathematics
 verifiers.alpha_scale                               117  <- verifiers.periodic_table
@@ -57,4 +57,4 @@ verifiers.si_units                                  190  <- audit
 verifiers.spec                                      379  <- verifiers
 verifiers.thermal_scale                              51  <- verifiers.chemistry
 verifiers.wordcraft                                 900  <- audit
-# 59 modules, 20193 lines (lazy imports)
+# 59 modules, 20196 lines (lazy imports)

@@ -23,6 +23,9 @@ ALLOWED = {
     "wordcraft.morphology": "data-bound: pronunciation/etymology shelves live with the .org app",
     "pressure_fighting.card": "data-bound: the combat grammar's card tables",
     "governance.domain_profile": "called by the engine's gate path, not by a verifier packet",
+    "number_theory.explicit_formula": "added after benchmark v2.2.0 froze (2026-11-26): tests/test_explicit_formula.py "
+                                      "runs it in the suite; a golden case grows the cited 1,796 and the measurements "
+                                      "MEASURED.md takes over them, so it joins at the next benchmark version",
 }
 env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "src"), CONCORDANCE_MEMO="0")   # a measurement is never served from the bucket
 subprocess.run([sys.executable, "-m", "coverage", "run", "--include=src/concordance/verifiers/*",
