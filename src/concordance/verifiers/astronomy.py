@@ -44,6 +44,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 from . import grav_scale as _gscale  # G-anchored escape velocity / Schwarzschild radius
 from . import rela_scale as _rela  # c-anchored light-travel time
 from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
@@ -83,16 +84,16 @@ def verify_kepler_third_law(spec: Dict[str, Any]) -> VerifierResult:
     data = {"orbital_period_years": Tf, "semi_major_axis_au": af,
             "T_squared": T_squared, "a_cubed": a_cubed,
             "relative_diff": rel_diff, "tolerance_relative": tol,
-            "actual_consistent": consistent, "claimed_consistent": bool(claimed),
+            "actual_consistent": consistent, "claimed_consistent": _exact_bool(claimed, "claimed_kepler_consistent"),
             "reference": "Kepler's 3rd law (heliocentric, solar-system units)"}
-    if consistent == bool(claimed):
+    if consistent == _exact_bool(claimed, "claimed_kepler_consistent"):
         return confirm(name,
                        f"T²={T_squared:.4f} vs a³={a_cubed:.4f} (rel diff {rel_diff:.4f}); "
                        f"consistent={consistent} matches claim",
                        data)
     return mismatch(name,
                     f"T²={T_squared:.4f}, a³={a_cubed:.4f}, rel diff {rel_diff:.4f} > tol {tol}; "
-                    f"actual consistent={consistent}, claimed {bool(claimed)}",
+                    f"actual consistent={consistent}, claimed {_exact_bool(claimed, 'claimed_kepler_consistent')}",
                     data)
 
 
@@ -212,7 +213,7 @@ def verify_gravitational_scale(spec: Dict[str, Any]) -> VerifierResult:
         return _gscale.compare(name, _gscale.escape_velocity_m_s(M, r),
                                spec["claimed_escape_velocity_m_s"], 1e-3,
                                {"formula": "v = sqrt(2 G M / r)"}, as_written=lit, unit_factor=factor,
-                               hedged=bool(spec.get("hedged")))
+                               hedged=_exact_bool(spec.get("hedged"), "hedged", default=False))
     if "schwarzschild_mass_kg" in spec and "claimed_schwarzschild_radius_m" in spec:
         try:
             M = float(spec["schwarzschild_mass_kg"])

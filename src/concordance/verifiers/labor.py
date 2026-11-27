@@ -35,6 +35,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 
 # US federal minimum wage (effective 2009, public law)
 _US_FEDERAL_MIN_WAGE = 7.25
@@ -182,7 +183,7 @@ def verify_minimum_wage_check(spec: Dict[str, Any]) -> VerifierResult:
     data = {"claimed_hourly_rate": rf, "minimum_wage_threshold": tf,
             "compliant": actually_compliant,
             "standard": f"US federal minimum wage ${_US_FEDERAL_MIN_WAGE}/hr (FLSA)"}
-    if bool(claimed_compliant) == actually_compliant:
+    if _exact_bool(claimed_compliant, "claimed_compliant") == actually_compliant:
         status = "compliant" if actually_compliant else "non-compliant"
         return confirm(name, f"${rf:.2f}/hr is {status} vs ${tf:.2f} threshold (claim correct)", data)
     return mismatch(name,

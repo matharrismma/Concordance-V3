@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, bound, merge_checks
 from .base import dispatch  # declarative run() driver
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # ── Reference data (public-domain) ─────────────────────────────────────
@@ -238,6 +238,9 @@ def verify_rotation(spec: Dict[str, Any]) -> VerifierResult:
     rotation = spec.get("rotation")
     if not rotation:
         return na(name)
+    # the claim, read as written (2026-11-27): it was never read, so a compatible rotation claimed NOT compatible held
+    # and an incompatible one claimed not compatible read BROKEN. Absent, the claim is that the rotation is compatible.
+    claimed = _exact_bool(spec.get("claimed_rotation_compatible"), "claimed_rotation_compatible", default=True)
     if not isinstance(rotation, (list, tuple)) or len(rotation) < 2:
         return na(name, "rotation must be a list of >= 2 crops")
     crops = [str(c).lower().strip() for c in rotation]
@@ -255,14 +258,14 @@ def verify_rotation(spec: Dict[str, Any]) -> VerifierResult:
     for i in range(len(families) - 1):
         if families[i] and families[i] == families[i + 1]:
             bad_pairs.append((crops[i], crops[i + 1], families[i]))
-    if not bad_pairs:
-        return confirm(name,
-                       f"rotation {crops} has no adjacent same-family pairs",
-                       {"rotation": crops, "families": families})
+    data = {"rotation": crops, "families": families, "bad_pairs": bad_pairs,
+            "actual_compatible": not bad_pairs, "claimed_rotation_compatible": claimed}
     detail = "; ".join(f"{a}→{b} (both {fam})" for a, b, fam in bad_pairs)
-    return mismatch(name,
-                    f"rotation contains adjacent same-family pairs: {detail}",
-                    {"rotation": crops, "families": families, "bad_pairs": bad_pairs})
+    found = (f"rotation {crops} has no adjacent same-family pairs" if not bad_pairs
+             else f"rotation contains adjacent same-family pairs: {detail}")
+    if claimed == (not bad_pairs):
+        return confirm(name, f"{found} (matches claim)", data)
+    return mismatch(name, f"{found}, claimed {'compatible' if claimed else 'not compatible'}", data)
 
 
 def verify_stocking_density(spec: Dict[str, Any]) -> VerifierResult:

@@ -46,6 +46,7 @@ import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 from . import thermal_scale as _thermal  # k_B-anchored thermal energy scale
 
 
@@ -209,15 +210,15 @@ def verify_hardness_comparison(spec: Dict[str, Any]) -> VerifierResult:
     actual = haf > hbf
     data = {"material_a_hardness": haf, "material_b_hardness": hbf,
             "actual_a_harder_than_b": actual,
-            "claimed_a_harder_than_b": bool(claimed),
+            "claimed_a_harder_than_b": _exact_bool(claimed, "claimed_a_harder_than_b"),
             "formula": "actual = material_a_hardness > material_b_hardness",
             "rule": "higher HV/HB number indicates harder material"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_a_harder_than_b"):
         return confirm(name,
                        f"HV/HB {haf} {'>' if actual else '≤'} {hbf} → a_harder={actual} (matches claim)",
                        data)
     return mismatch(name,
-                    f"HV/HB {haf} vs {hbf} → a_harder={actual}, claimed {bool(claimed)}",
+                    f"HV/HB {haf} vs {hbf} → a_harder={actual}, claimed {_exact_bool(claimed, 'claimed_a_harder_than_b')}",
                     data)
 
 

@@ -59,7 +59,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def _close(a: float, b: float, rel: float = 1e-4, abs_: float = 1e-6) -> bool:
@@ -335,7 +335,7 @@ def verify_independence(spec: Dict[str, Any]) -> VerifierResult:
         pa_, pb_, pab_ = float(pa), float(pb), float(pab)
     except (TypeError, ValueError):
         return error(name, "p_a, p_b, p_a_and_b must be numeric")
-    cl = bool(claimed)
+    cl = _exact_bool(claimed, "claimed_independent")
     product = pa_ * pb_
     is_indep = _close(pab_, product, rel=1e-3, abs_=1e-4)
     data = {"p_a": pa_, "p_b": pb_, "p_a_and_b": pab_,

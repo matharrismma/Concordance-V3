@@ -4,6 +4,26 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- A true/false is read as it is written. Verifiers read a claimed or given true/false with `bool()`, which reads every
+  non-empty text as true, so a claim written "false" was read as the claim it denies: "97 is not prime", sent as
+  `claimed_prime: "false"`, read HOLDS "97 is prime (matches claim)" on the public door, and of the 208 true/false
+  claims the benchmark's true cases carry, 188 written as the text of their opposite held, in 38 domains (the benchmark
+  sends only real booleans, so its 0 false positives never saw it). game_theory had met this and fixed it in its own
+  module. Now THE RULE (`verifiers/_integer.py`) has one reader, `_exact_bool`: a JSON true or false, or the text
+  true, false, yes or no (any case, trimmed) read as written; a number (0 and 1 among them), any other text and null are
+  malformed and read SYSTEM_ERROR; an optional flag names the default an absent field takes. Every packet read goes
+  through it: 175 `bool()` reads in 38 files, the reads that went around `bool()` (sound_law's claim by truthiness,
+  linguistics' and scale_base's as an argument, count_residual's trigger), and game_theory's and the explicit
+  formula's own readers, so the explicit formula's text "false" now reads as the claim false, BROKEN, where it read
+  SYSTEM_ERROR. game_theory still reads "no" as false, as its review of 2026-10-02 decided, and no longer takes 0 or
+  1. The named miss in tests/test_number_theory_mode.py (137 claimed_prime "false" read HOLDS) is closed. Two checks
+  never read their claim: `agriculture.rotation_compatible` held a compatible rotation claimed not compatible, and the sound laws
+  held a regular correspondence claimed not regular; both read it now. Measured over the 208 claims: the real opposite
+  and the text of the opposite each read BROKEN 208 of 208, the text of the claim HOLDS 208, a number SYSTEM_ERROR 208;
+  over 2,190 other cases (938 benchmark domain and check cases, every domain empty and with a wrong key, 89 packets
+  given but missing fields, the 765 stick seal steps) no verdict, step status, seal, shared law or certificate moved.
+  `tests/test_exact_booleans.py` pins the reader, those cases, and a walk that no verifier reads a packet field
+  through `bool()` again.
 - A no-verdict step keeps its check's own reason. `derivation._reduce_domain_results` gave every step with no
   applicable check one line, "no applicable secular verifier for this domain/artifact", whatever the check had said:
   the explicit formula past 356 had worked out that the zeros cannot hear that far and to lower X, and calc_chain's

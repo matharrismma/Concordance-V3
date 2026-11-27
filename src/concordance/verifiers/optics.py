@@ -31,6 +31,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from . import alpha_scale as _ascale  # alpha-anchored light-matter scale
 
@@ -100,14 +101,14 @@ def verify_thin_lens(spec: Dict[str, Any]) -> VerifierResult:
     consistent = diff <= threshold
     data = {"focal_length": ff, "object_distance": dof, "image_distance": dif,
             "1_over_f": lhs, "1_over_do_plus_di": rhs, "diff": diff,
-            "actual_consistent": consistent, "claimed_consistent": bool(claimed),
+            "actual_consistent": consistent, "claimed_consistent": _exact_bool(claimed, "claimed_thin_lens_consistent"),
             "formula": "1/f = 1/d_o + 1/d_i"}
-    if consistent == bool(claimed):
+    if consistent == _exact_bool(claimed, "claimed_thin_lens_consistent"):
         return confirm(name,
                        f"1/f = {lhs:.6g}, 1/d_o + 1/d_i = {rhs:.6g}; consistent={consistent} matches claim",
                        data)
     return mismatch(name,
-                    f"1/f = {lhs:.6g}, 1/d_o+1/d_i = {rhs:.6g}, diff {diff:.6g}; actual={consistent}, claimed {bool(claimed)}",
+                    f"1/f = {lhs:.6g}, 1/d_o+1/d_i = {rhs:.6g}, diff {diff:.6g}; actual={consistent}, claimed {_exact_bool(claimed, 'claimed_thin_lens_consistent')}",
                     data)
 
 

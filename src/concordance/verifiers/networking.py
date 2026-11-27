@@ -47,7 +47,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
-from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # Three common MAC formats: colon, hyphen, and Cisco dot-quad nibble.
@@ -71,14 +71,14 @@ def verify_ip_format(spec: Dict[str, Any]) -> VerifierResult:
     except (ValueError, TypeError):
         actual = False
         family = None
-    data = {"address": addr, "actual_valid": actual, "claimed_valid": bool(claimed),
+    data = {"address": addr, "actual_valid": actual, "claimed_valid": _exact_bool(claimed, "claimed_format_valid"),
             "family": family}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_format_valid"):
         return confirm(name,
                        f"{addr!r} valid={actual}{f' ({family})' if family else ''} (matches claim)",
                        data)
     return mismatch(name,
-                    f"{addr!r} valid={actual}, claimed {bool(claimed)}",
+                    f"{addr!r} valid={actual}, claimed {_exact_bool(claimed, 'claimed_format_valid')}",
                     data)
 
 
@@ -103,15 +103,15 @@ def verify_cidr_membership(spec: Dict[str, Any]) -> VerifierResult:
                         {"cidr": str(net), "address": str(addr)})
     actual = addr in net
     data = {"cidr": str(net), "address": str(addr),
-            "actual_in_subnet": actual, "claimed_in_subnet": bool(claimed),
+            "actual_in_subnet": actual, "claimed_in_subnet": _exact_bool(claimed, "claimed_in_subnet"),
             "network_address": str(net.network_address),
             "broadcast_address": str(net.broadcast_address) if net.version == 4 else None}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_in_subnet"):
         return confirm(name,
                        f"{addr} in {net} = {actual} (matches claim)",
                        data)
     return mismatch(name,
-                    f"{addr} in {net} = {actual}, claimed {bool(claimed)}",
+                    f"{addr} in {net} = {actual}, claimed {_exact_bool(claimed, 'claimed_in_subnet')}",
                     data)
 
 
@@ -156,15 +156,15 @@ def verify_mac_format(spec: Dict[str, Any]) -> VerifierResult:
         return na(name)
     s = str(mac).strip()
     actual = any(p.match(s) for p in _MAC_PATTERNS)
-    data = {"mac": s, "actual_valid": actual, "claimed_valid": bool(claimed),
+    data = {"mac": s, "actual_valid": actual, "claimed_valid": _exact_bool(claimed, "claimed_mac_valid"),
             "accepted_formats": ["AA:BB:CC:DD:EE:FF", "AA-BB-CC-DD-EE-FF",
                                  "AABB.CCDD.EEFF", "AABBCCDDEEFF"]}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_mac_valid"):
         return confirm(name,
                        f"MAC {s!r} valid={actual} (matches claim)",
                        data)
     return mismatch(name,
-                    f"MAC {s!r} valid={actual}, claimed {bool(claimed)}",
+                    f"MAC {s!r} valid={actual}, claimed {_exact_bool(claimed, 'claimed_mac_valid')}",
                     data)
 
 

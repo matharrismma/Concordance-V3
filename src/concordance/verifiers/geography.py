@@ -57,7 +57,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
-from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 _EARTH_RADIUS_KM = 6371.0
@@ -85,11 +85,11 @@ def verify_lat_lon_validity(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "lat and lon must be numeric")
     actual = _coord_valid(latf, lonf)
     data = {"lat": latf, "lon": lonf, "actual_valid": actual,
-            "claimed_valid": bool(claimed),
+            "claimed_valid": _exact_bool(claimed, "claimed_coords_valid"),
             "rule": "lat ∈ [-90, 90], lon ∈ [-180, 180]"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_coords_valid"):
         return confirm(name, f"({latf}, {lonf}) valid={actual} (matches claim)", data)
-    return mismatch(name, f"({latf}, {lonf}) valid={actual}, claimed {bool(claimed)}", data)
+    return mismatch(name, f"({latf}, {lonf}) valid={actual}, claimed {_exact_bool(claimed, 'claimed_coords_valid')}", data)
 
 
 def verify_haversine_distance(spec: Dict[str, Any]) -> VerifierResult:
@@ -472,12 +472,12 @@ def verify_point_in_polygon(spec: Dict[str, Any]) -> VerifierResult:
             if plon < xint:
                 inside = not inside
     data = {"point": [plat, plon], "vertices": n, "actual_inside": inside,
-            "claimed_inside": bool(claimed),
+            "claimed_inside": _exact_bool(claimed, "claimed_inside"),
             "method": "even-odd ray casting in the lat/lon plane",
             "valid_when": "boundary does not cross ±180° longitude or enclose a pole"}
-    if inside == bool(claimed):
+    if inside == _exact_bool(claimed, "claimed_inside"):
         return confirm(name, f"({plat}, {plon}) inside={inside} (matches claim)", data)
-    return mismatch(name, f"({plat}, {plon}) inside={inside}, claimed {bool(claimed)}", data)
+    return mismatch(name, f"({plat}, {plon}) inside={inside}, claimed {_exact_bool(claimed, 'claimed_inside')}", data)
 
 
 def verify_polygon_area(spec: Dict[str, Any]) -> VerifierResult:

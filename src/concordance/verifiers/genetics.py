@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
-from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # ── Standard genetic code (NCBI translation table 1) ──────────────────────
@@ -97,7 +97,7 @@ def verify_complementarity(spec: Dict[str, Any]) -> VerifierResult:
     claimed = _normalize_seq(spec.get("claimed_complement"))
     if not seq or not claimed:
         return na(name)
-    rna = bool(spec.get("rna"))
+    rna = _exact_bool(spec.get("rna"), "rna", default=False)
     if not _is_valid_seq(seq, rna=rna):
         return error(name, f"sequence has non-{'RNA' if rna else 'DNA'} characters")
     if not _is_valid_seq(claimed, rna=rna):
@@ -124,7 +124,7 @@ def verify_reverse_complement(spec: Dict[str, Any]) -> VerifierResult:
     claimed = _normalize_seq(spec.get("claimed_reverse_complement"))
     if not seq or not claimed:
         return na(name)
-    rna = bool(spec.get("rna"))
+    rna = _exact_bool(spec.get("rna"), "rna", default=False)
     if not _is_valid_seq(seq, rna=rna):
         return error(name, f"sequence has non-{'RNA' if rna else 'DNA'} characters")
     if not _is_valid_seq(claimed, rna=rna):
@@ -150,7 +150,7 @@ def verify_gc_content(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_gc_fraction")
     if not seq or claimed is None:
         return na(name)
-    rna = bool(spec.get("rna"))
+    rna = _exact_bool(spec.get("rna"), "rna", default=False)
     if not _is_valid_seq(seq, rna=rna):
         return error(name, f"sequence has non-{'RNA' if rna else 'DNA'} characters")
     try:
@@ -185,7 +185,7 @@ def verify_codon_translation(spec: Dict[str, Any]) -> VerifierResult:
     claimed = _normalize_seq(spec.get("claimed_protein"))
     if not seq or not claimed:
         return na(name)
-    rna = bool(spec.get("rna"))
+    rna = _exact_bool(spec.get("rna"), "rna", default=False)
     if not _is_valid_seq(seq, rna=rna):
         return error(name, f"sequence has non-{'RNA' if rna else 'DNA'} characters")
     seq_dna = _to_dna(seq) if rna else seq
@@ -209,7 +209,7 @@ def verify_codon_amino_acid(spec: Dict[str, Any]) -> VerifierResult:
     if not codon_raw or not claimed:
         return na(name)
     codon = _normalize_seq(codon_raw)
-    rna = bool(spec.get("rna"))
+    rna = _exact_bool(spec.get("rna"), "rna", default=False)
     if rna:
         codon = _to_dna(codon)
     if len(codon) != 3:
@@ -239,7 +239,7 @@ def verify_orf_bounds(spec: Dict[str, Any]) -> VerifierResult:
     orf = spec.get("claimed_orf")
     if not seq or not orf:
         return na(name)
-    rna = bool(spec.get("rna"))
+    rna = _exact_bool(spec.get("rna"), "rna", default=False)
     if not _is_valid_seq(seq, rna=rna):
         return error(name, f"sequence has non-{'RNA' if rna else 'DNA'} characters")
     seq_dna = _to_dna(seq) if rna else seq

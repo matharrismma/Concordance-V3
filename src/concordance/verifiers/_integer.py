@@ -19,6 +19,17 @@ Given a field, a refusal names it and says the value is not a whole number, in w
 "malformed number-theory input" sentence), the words are the ones mathematics has always read. The two readers moved
 here from mathematics.py unchanged in what they accept and refuse; tools/integer_probe.py's walk exempts the
 conversion inside these two functions, by name, and nothing else in this module.
+
+A TRUE/FALSE, claimed or given, reads by _exact_bool (run 2026-11-27): a JSON true or false, or the text "true",
+"false", "yes" or "no" (any case, spaces trimmed) read as written, as a text integer reads as its integer (game_theory's
+review of 2026-10-02 read "no" as false, and it still does). bool() reads every non-empty
+text as true, so a claim written "false" read as the claim it denies and held: "97 is not prime" written claimed_prime
+"false" read HOLDS live, and 188 of 208 benchmark claims written as the text of their opposite held, in 38 domains.
+Read as written, that claim is false and reads BROKEN. A number (0 and 1 among them), any other text and null are
+malformed: the reader raises, so the step reads ERROR and the derivation SYSTEM_ERROR. An optional flag names its
+default, which stands for an absent field and for null. game_theory had met this once and fixed it in its own module;
+it reads here now, with the explicit formula. tests/test_exact_booleans.py walks the verifiers so no check reads a
+packet's true/false through bool() again.
 """
 from __future__ import annotations
 
@@ -63,6 +74,26 @@ def _claimed_integer(value, field: Optional[str] = None, *, as_number: bool = Fa
     if isinstance(number, float) and _math.isfinite(number) and not number.is_integer():
         return number if as_number else value
     return _exact_integer(value, field)
+
+
+_TRUE_FALSE = {"true": True, "false": False, "yes": True, "no": False}
+
+
+def _exact_bool(value, field: Optional[str] = None, *, default: Optional[bool] = None) -> bool:
+    """The one way a true/false is read, claimed or given: a JSON true or false, or the text true, false, yes or no read
+    as written. Anything else stops here with a TypeError naming the field, because bool() would read any text, "false"
+    too, as true. A flag the packet may leave out names its default, which stands for an absent field (or a null) and
+    for nothing else."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in _TRUE_FALSE:
+        return _TRUE_FALSE[value.strip().lower()]
+    if value is None and default is not None:
+        return default
+    shown = repr(value)
+    if len(shown) > 60:
+        shown = shown[:57] + "..."
+    raise TypeError(f"{field or 'the field'} must be true or false, not {shown}")
 
 
 def _valid_integer(value, field: Optional[str] = None) -> Optional[int]:

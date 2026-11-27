@@ -40,7 +40,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
-from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def verify_floor_area_ratio(spec: Dict[str, Any]) -> VerifierResult:
@@ -126,17 +126,17 @@ def verify_stair_compliance(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "riser_height_mm and tread_depth_mm must be numeric")
     actual = (102 <= riserf <= 178) and (treadf >= 279)
     data = {"riser_height_mm": riserf, "tread_depth_mm": treadf,
-            "actual_compliant": actual, "claimed_compliant": bool(claimed),
+            "actual_compliant": actual, "claimed_compliant": _exact_bool(claimed, "claimed_compliant"),
             "formula": "102 ≤ riser_mm ≤ 178 AND tread_mm ≥ 279",
             "standard": "IBC-style (public-domain textbook values; not jurisdiction-specific advice)",
             "riser_ok": 102 <= riserf <= 178,
             "tread_ok": treadf >= 279}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_compliant"):
         return confirm(name,
                        f"riser {riserf} mm, tread {treadf} mm → compliant={actual} (matches claim)",
                        data)
     return mismatch(name,
-                    f"riser {riserf} mm, tread {treadf} mm → compliant={actual}, claimed {bool(claimed)}",
+                    f"riser {riserf} mm, tread {treadf} mm → compliant={actual}, claimed {_exact_bool(claimed, 'claimed_compliant')}",
                     data)
 
 

@@ -34,7 +34,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # ---------------------------------------------------------------------------
@@ -60,11 +60,11 @@ def verify_contract_formation(spec: Dict[str, Any]) -> VerifierResult:
     if claimed is None or not all(f in spec for f in fields):
         return na(name)
     try:
-        offer       = bool(spec["has_offer"])
-        acceptance  = bool(spec["has_acceptance"])
-        consideration = bool(spec["has_consideration"])
-        capacity    = bool(spec["has_capacity"])
-        legality    = bool(spec["has_legality"])
+        offer       = _exact_bool(spec["has_offer"], "has_offer")
+        acceptance  = _exact_bool(spec["has_acceptance"], "has_acceptance")
+        consideration = _exact_bool(spec["has_consideration"], "has_consideration")
+        capacity    = _exact_bool(spec["has_capacity"], "has_capacity")
+        legality    = _exact_bool(spec["has_legality"], "has_legality")
     except (TypeError, ValueError):
         return error(name, "has_* fields must be boolean")
     actual_valid = all([offer, acceptance, consideration, capacity, legality])
@@ -80,14 +80,14 @@ def verify_contract_formation(spec: Dict[str, Any]) -> VerifierResult:
         "has_capacity": capacity,
         "has_legality": legality,
         "actual_valid": actual_valid,
-        "claimed_contract_valid": bool(claimed),
+        "claimed_contract_valid": _exact_bool(claimed, "claimed_contract_valid"),
         "missing_elements": missing,
     }
-    if actual_valid == bool(claimed):
+    if actual_valid == _exact_bool(claimed, "claimed_contract_valid"):
         detail = ("all five contract elements present" if actual_valid
                   else f"contract invalid — missing: {missing}")
         return confirm(name, detail, data)
-    if actual_valid and not bool(claimed):
+    if actual_valid and not _exact_bool(claimed, "claimed_contract_valid"):
         return mismatch(name,
                         "all five elements present but claimed_contract_valid=False", data)
     return mismatch(name,
@@ -136,15 +136,15 @@ def verify_constitutional_age_requirement(spec: Dict[str, Any]) -> VerifierResul
         "age": age_int,
         "minimum_age": requirement,
         "actual_meets": actual_meets,
-        "claimed_meets_age_requirement": bool(claimed),
+        "claimed_meets_age_requirement": _exact_bool(claimed, "claimed_meets_age_requirement"),
     }
-    if actual_meets == bool(claimed):
+    if actual_meets == _exact_bool(claimed, "claimed_meets_age_requirement"):
         detail = (f"age {age_int} meets {office_key} minimum ({requirement})"
                   if actual_meets
                   else f"age {age_int} does not meet {office_key} minimum ({requirement})")
         return confirm(name, detail, data)
     return mismatch(name,
-                    f"actual_meets={actual_meets}, claimed={bool(claimed)} "
+                    f"actual_meets={actual_meets}, claimed={_exact_bool(claimed, 'claimed_meets_age_requirement')} "
                     f"(age {age_int}, minimum {requirement} for {office_key})",
                     data)
 
@@ -245,15 +245,15 @@ def verify_miranda_requirements(spec: Dict[str, Any]) -> VerifierResult:
         "keyword_presence": present,
         "missing_keywords": missing,
         "actual_complete": actual_complete,
-        "claimed_miranda_complete": bool(claimed),
+        "claimed_miranda_complete": _exact_bool(claimed, "claimed_miranda_complete"),
         "warning_count": len(warnings),
     }
-    if actual_complete == bool(claimed):
+    if actual_complete == _exact_bool(claimed, "claimed_miranda_complete"):
         detail = ("all four Miranda elements present"
                   if actual_complete
                   else f"Miranda incomplete — missing keyword coverage: {missing}")
         return confirm(name, detail, data)
-    if actual_complete and not bool(claimed):
+    if actual_complete and not _exact_bool(claimed, "claimed_miranda_complete"):
         return mismatch(name,
                         "all four elements present but claimed_miranda_complete=False", data)
     return mismatch(name,

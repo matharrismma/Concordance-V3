@@ -189,13 +189,14 @@ def test_a_packet_reads_the_same_way():
 # MISS 10: the domain number_theory has its own reads, and a request number through int() across the verifier files is a
 # run of its own. Each of these is false or says nothing, and read HOLDS when this step closed. That run, 2026-11-11-exact-
 # integers (step fix-a2), flips the table: the domain reads its numbers by THE RULE (verifiers/_integer.py), so a fraction
-# in an input reads SYSTEM_ERROR and one in a claimed value BROKEN. The fourth row is not an integer read: claimed_prime is
-# read by its truth, so the text 'false' still reads HOLDS, a miss of its own.
+# in an input reads SYSTEM_ERROR and one in a claimed value BROKEN. The fourth row is not an integer read: claimed_prime
+# was read by its truth, so the text 'false' read HOLDS, a miss of its own, until 2026-11-27, when every true/false came
+# to read by THE RULE's _exact_bool: 'false' is the claim that 137 is not prime, BROKEN (tests/test_exact_booleans.py).
 DOMAIN_ROWS = (
     ({"gcd_a": 48.7, "gcd_b": 36, "claimed_gcd": 12}, E),
     ({"gcd_a": 48, "gcd_b": 36, "claimed_gcd": 12.9}, B),
     ({"n_prime": 137.5, "claimed_prime": True}, E),
-    ({"n_prime": 137, "claimed_prime": "false"}, H),
+    ({"n_prime": 137, "claimed_prime": "false"}, B),
     ({"factorial_n": 5.9, "claimed_factorial": 120}, E),
 )
 

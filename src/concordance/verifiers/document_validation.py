@@ -31,7 +31,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def _digits_only(s: str) -> str:
@@ -105,11 +105,11 @@ def verify_isbn10(spec: Dict[str, Any]) -> VerifierResult:
     if s is None or claimed is None:
         return na(name)
     actual = _isbn10_check(str(s))
-    data = {"input": s, "actual_valid": actual, "claimed_valid": bool(claimed),
+    data = {"input": s, "actual_valid": actual, "claimed_valid": _exact_bool(claimed, "claimed_isbn10_valid"),
             "rule": "mod-11 weighted sum (positions 10..1)"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_isbn10_valid"):
         return confirm(name, f"ISBN-10 {s!r} valid={actual} (matches claim)", data)
-    return mismatch(name, f"ISBN-10 {s!r} valid={actual}, claimed {bool(claimed)}", data)
+    return mismatch(name, f"ISBN-10 {s!r} valid={actual}, claimed {_exact_bool(claimed, 'claimed_isbn10_valid')}", data)
 
 
 def verify_isbn13(spec: Dict[str, Any]) -> VerifierResult:
@@ -119,11 +119,11 @@ def verify_isbn13(spec: Dict[str, Any]) -> VerifierResult:
     if s is None or claimed is None:
         return na(name)
     actual = _isbn13_check(str(s))
-    data = {"input": s, "actual_valid": actual, "claimed_valid": bool(claimed),
+    data = {"input": s, "actual_valid": actual, "claimed_valid": _exact_bool(claimed, "claimed_isbn13_valid"),
             "rule": "EAN mod-10 (alternating ×1/×3 weights)"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_isbn13_valid"):
         return confirm(name, f"ISBN-13 {s!r} valid={actual} (matches claim)", data)
-    return mismatch(name, f"ISBN-13 {s!r} valid={actual}, claimed {bool(claimed)}", data)
+    return mismatch(name, f"ISBN-13 {s!r} valid={actual}, claimed {_exact_bool(claimed, 'claimed_isbn13_valid')}", data)
 
 
 def verify_luhn(spec: Dict[str, Any]) -> VerifierResult:
@@ -133,11 +133,11 @@ def verify_luhn(spec: Dict[str, Any]) -> VerifierResult:
     if s is None or claimed is None:
         return na(name)
     actual = _luhn_check(str(s))
-    data = {"input": s, "actual_valid": actual, "claimed_valid": bool(claimed),
+    data = {"input": s, "actual_valid": actual, "claimed_valid": _exact_bool(claimed, "claimed_luhn_valid"),
             "rule": "Luhn mod-10 (double every second digit from right)"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_luhn_valid"):
         return confirm(name, f"Luhn {s!r} valid={actual} (matches claim)", data)
-    return mismatch(name, f"Luhn {s!r} valid={actual}, claimed {bool(claimed)}", data)
+    return mismatch(name, f"Luhn {s!r} valid={actual}, claimed {_exact_bool(claimed, 'claimed_luhn_valid')}", data)
 
 
 def verify_ean_upc(spec: Dict[str, Any]) -> VerifierResult:
@@ -147,11 +147,11 @@ def verify_ean_upc(spec: Dict[str, Any]) -> VerifierResult:
     if s is None or claimed is None:
         return na(name)
     actual = _ean_check(str(s))
-    data = {"input": s, "actual_valid": actual, "claimed_valid": bool(claimed),
+    data = {"input": s, "actual_valid": actual, "claimed_valid": _exact_bool(claimed, "claimed_ean_valid"),
             "rule": "EAN-13 mod-10 (UPC-A accepted via leading-zero pad)"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_ean_valid"):
         return confirm(name, f"EAN/UPC {s!r} valid={actual} (matches claim)", data)
-    return mismatch(name, f"EAN/UPC {s!r} valid={actual}, claimed {bool(claimed)}", data)
+    return mismatch(name, f"EAN/UPC {s!r} valid={actual}, claimed {_exact_bool(claimed, 'claimed_ean_valid')}", data)
 
 
 _RULES = [

@@ -97,6 +97,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from .base import VerifierResult, na, error, clamp_tol, band, bound, merge_checks
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def _num(value: Any) -> Optional[float]:
@@ -310,7 +311,7 @@ def verify_efficiency(spec: Dict[str, Any]) -> VerifierResult:
     if out < 0:
         return error(name, f"output_W must be non-negative; got {out}")
     actual = out / inp
-    is_hp = bool(spec.get("is_heat_pump"))
+    is_hp = _exact_bool(spec.get("is_heat_pump"), "is_heat_pump", default=False)
     if not is_hp and actual > 1.0 + 1e-9:
         return error(name,
                      f"efficiency = {out}/{inp} = {actual:.4f} > 1.0 "

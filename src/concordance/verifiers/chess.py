@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
-from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 _BOOL_CLAIMS = ("check", "checkmate", "stalemate", "legal_move")
 
@@ -73,8 +73,8 @@ def verify_position(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed")
     if claimed is None:
         return na(name, f"claim claimed (the claimed truth of {claim})")
-    if bool(claimed) != computed:
-        return mismatch(name, f"{claim} is {computed} for this position; claimed {bool(claimed)}", data)
+    if _exact_bool(claimed, "claimed_balance") != computed:
+        return mismatch(name, f"{claim} is {computed} for this position; claimed {_exact_bool(claimed, 'claimed_balance')}", data)
     return confirm(name, f"{claim} is {computed} — matches the claim ({res.get('detail')})", data)
 
 

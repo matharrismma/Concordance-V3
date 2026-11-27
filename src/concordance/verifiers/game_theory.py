@@ -47,7 +47,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, band, merge_checks
 from .base import dispatch
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def _num_matrix(M):
@@ -62,21 +62,6 @@ def _num_matrix(M):
         raise ValueError("non-finite entry")
     return rows
 
-
-def _as_bool(v):
-    """A STRICT boolean claim: True/False, 0/1, or the words true/false/yes/no. Anything else is
-    malformed — never bool(\"false\") == True (a claim of 'false' was CONFIRMED as 'true' before)."""
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, (int, float)) and v in (0, 1):
-        return bool(v)
-    if isinstance(v, str):
-        t = v.strip().lower()
-        if t in ("true", "yes", "1"):
-            return True
-        if t in ("false", "no", "0"):
-            return False
-    raise ValueError(f"claim must be a boolean (true/false), got {v!r}")
 
 
 def _index(v):
@@ -125,7 +110,7 @@ def verify_nash_pure(spec: Dict[str, Any]) -> VerifierResult:
     try:
         Af, Bf = _num_matrix(A), _num_matrix(B)
         i, j = _index(prof[0]), _index(prof[1])
-        claimed = _as_bool(claimed)
+        claimed = _exact_bool(claimed, "claimed_is_nash")
     except (TypeError, ValueError, IndexError) as e:
         return error(name, f"payoff matrices must be finite and rectangular, profile a pair of integral indices, claim boolean ({e})")
     if len(Af) != len(Bf) or len(Af[0]) != len(Bf[0]):
@@ -136,10 +121,10 @@ def verify_nash_pure(spec: Dict[str, Any]) -> VerifierResult:
     col_best = all(Bf[i][j] >= Bf[i][l] for l in range(len(Bf[i])))       # col can't gain by deviating
     is_nash = row_best and col_best
     data = {"profile": [i, j], "row_best_response": row_best, "col_best_response": col_best,
-            "is_nash": is_nash, "claimed": bool(claimed)}
-    if is_nash == bool(claimed):
+            "is_nash": is_nash, "claimed": _exact_bool(claimed, "claimed_is_nash")}
+    if is_nash == _exact_bool(claimed, "claimed_is_nash"):
         return confirm(name, f"profile ({i},{j}) is {'a' if is_nash else 'NOT a'} Nash equilibrium (matches claim)", data)
-    return mismatch(name, f"profile ({i},{j}) is {'a' if is_nash else 'not a'} Nash equilibrium; claim said {bool(claimed)}", data)
+    return mismatch(name, f"profile ({i},{j}) is {'a' if is_nash else 'not a'} Nash equilibrium; claim said {_exact_bool(claimed, 'claimed_is_nash')}", data)
 
 
 def verify_dominant_strategy(spec: Dict[str, Any]) -> VerifierResult:
@@ -149,16 +134,16 @@ def verify_dominant_strategy(spec: Dict[str, Any]) -> VerifierResult:
     if any(v is None for v in (M, i, k, claimed)):
         return na(name)
     try:
-        Mf = _num_matrix(M); ii, kk = _index(i), _index(k); claimed = _as_bool(claimed)
+        Mf = _num_matrix(M); ii, kk = _index(i), _index(k); claimed = _exact_bool(claimed, "claimed_dominates")
     except (TypeError, ValueError) as e:
         return error(name, f"matrix must be finite and rectangular, rows integral indices, claim boolean ({e})")
     if not (0 <= ii < len(Mf)) or not (0 <= kk < len(Mf)):
         return error(name, "row indices out of range")
     dominates = all(Mf[ii][j] > Mf[kk][j] for j in range(len(Mf[ii])))
-    data = {"dom_row": ii, "dominated_row": kk, "strictly_dominates": dominates, "claimed": bool(claimed)}
-    if dominates == bool(claimed):
+    data = {"dom_row": ii, "dominated_row": kk, "strictly_dominates": dominates, "claimed": _exact_bool(claimed, "claimed_dominates")}
+    if dominates == _exact_bool(claimed, "claimed_dominates"):
         return confirm(name, f"row {ii} {'strictly dominates' if dominates else 'does NOT dominate'} row {kk} (matches claim)", data)
-    return mismatch(name, f"row {ii} {'dominates' if dominates else 'does not dominate'} row {kk}; claim said {bool(claimed)}", data)
+    return mismatch(name, f"row {ii} {'dominates' if dominates else 'does not dominate'} row {kk}; claim said {_exact_bool(claimed, 'claimed_dominates')}", data)
 
 
 def _pd(spec):
@@ -184,7 +169,7 @@ def verify_iterated(spec: Dict[str, Any]) -> VerifierResult:
         w = float(spec.get("shadow_w", 0.0))
         for k in ("claimed_is_dilemma", "claimed_tft_stable"):
             if k in spec:
-                spec = dict(spec, **{k: _as_bool(spec[k])})
+                spec = dict(spec, **{k: _exact_bool(spec[k], k)})
     except (TypeError, ValueError, KeyError) as e:
         return error(name, f"pd_T, pd_R, pd_P, pd_S and shadow_w must be finite numbers, boolean claims true/false ({e})")
     if not all(math.isfinite(v) for v in (T, R, P, S, w)):
@@ -205,10 +190,10 @@ def verify_iterated(spec: Dict[str, Any]) -> VerifierResult:
                      "A single defection followed by repair is a DIFFERENT sequence, not this number.",
             "formula": "TFT stable iff w >= max((T-R)/(R-S), (T-R)/(T-P)); R/(1-w) vs T + wP/(1-w)"}
     bad = []
-    if "claimed_is_dilemma" in spec and bool(spec["claimed_is_dilemma"]) != dilemma:
-        bad.append(f"is_dilemma is {dilemma}, claim said {bool(spec['claimed_is_dilemma'])}")
-    if "claimed_tft_stable" in spec and bool(spec["claimed_tft_stable"]) != tft_stable:
-        bad.append(f"TIT FOR TAT {'is' if tft_stable else 'is NOT'} stable at w={w:g} (threshold {thr:.4g}); claim said {bool(spec['claimed_tft_stable'])}")
+    if "claimed_is_dilemma" in spec and _exact_bool(spec["claimed_is_dilemma"], "claimed_is_dilemma") != dilemma:
+        bad.append(f"is_dilemma is {dilemma}, claim said {_exact_bool(spec['claimed_is_dilemma'], 'claimed_is_dilemma')}")
+    if "claimed_tft_stable" in spec and _exact_bool(spec["claimed_tft_stable"], "claimed_tft_stable") != tft_stable:
+        bad.append(f"TIT FOR TAT {'is' if tft_stable else 'is NOT'} stable at w={w:g} (threshold {thr:.4g}); claim said {_exact_bool(spec['claimed_tft_stable'], 'claimed_tft_stable')}")
     bands = []
     for key, val in (("claimed_cooperate_forever_payoff", coop), ("claimed_defect_then_punished_payoff", defect_once)):
         if key in spec:

@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Sequence, Tuple, Union
 
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 VerifierStatus = Literal["CONFIRMED", "MISMATCH", "NOT_APPLICABLE", "ERROR"]
 
@@ -316,7 +316,7 @@ def window_for(spec: Dict[str, Any], literal_key: str, default: float, unit_fact
     if lit in (None, ""):
         return default, {}
     exact = 1e-9 * max(1.0, abs(float(actual))) if actual is not None else 1e-9
-    return stated_threshold(lit, default, exact, claimed=claimed, hedged=bool(spec.get("hedged")),
+    return stated_threshold(lit, default, exact, claimed=claimed, hedged=_exact_bool(spec.get("hedged"), "hedged", default=False),
                             unit_factor=unit_factor, literal_factor=literal_factor)
 
 

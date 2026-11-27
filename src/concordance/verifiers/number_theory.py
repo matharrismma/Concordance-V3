@@ -24,7 +24,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
-from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 from . import certificate as _cert  # independently checkable certificates (verifiers/certificate.py)
 
 
@@ -55,15 +55,15 @@ def verify_primality(spec: Dict[str, Any]) -> VerifierResult:
     if nf < 0:
         return error(name, "primality is defined for non-negative integers")
     actual = _is_prime(nf)
-    data = {"n": nf, "actual_prime": actual, "claimed_prime": bool(claimed),
+    data = {"n": nf, "actual_prime": actual, "claimed_prime": _exact_bool(claimed, "claimed_prime"),
             "rule": "primality via trial division up to √n"}
     if 2 <= nf <= _cert.PRODUCE_MAX_N:       # the verdict's proof, checkable without this verifier (certificate.py)
         cert = _cert.primality(nf)
         if (cert["claim"]["verdict"] == "prime") == actual and _cert.check(cert)[0]:
             data["certificate"] = cert
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_prime"):
         return confirm(name, f"{nf} is{' ' if actual else ' NOT '}prime (matches claim)", data)
-    return mismatch(name, f"{nf} is{' ' if actual else ' NOT '}prime, claimed {bool(claimed)}", data)
+    return mismatch(name, f"{nf} is{' ' if actual else ' NOT '}prime, claimed {_exact_bool(claimed, 'claimed_prime')}", data)
 
 
 def verify_gcd(spec: Dict[str, Any]) -> VerifierResult:
@@ -263,7 +263,7 @@ def verify_perfect_number(spec: Dict[str, Any]) -> VerifierResult:
     if nf < 1 or nf > 10_000_000:
         return error(name, "n_perfect out of supported range")
     actual = _is_perfect_number(nf)
-    cl = bool(claimed)
+    cl = _exact_bool(claimed, "claimed_perfect")
     data = {"n": nf, "actual_perfect": actual, "claimed_perfect": cl,
             "source": "OEIS A000396", "rule": "sum of proper divisors equals n"}
     if actual == cl:
@@ -756,8 +756,8 @@ def verify_robin(spec):
     if claimed_holds is None and claimed_n is None:
         return na(name, "claim claimed_robin_holds and/or claimed_closest_approach_n")
     problems = []
-    if claimed_holds is not None and bool(claimed_holds) != holds:
-        problems.append(f"Robin holds to {N} is {holds}, claimed {bool(claimed_holds)}")
+    if claimed_holds is not None and _exact_bool(claimed_holds, "claimed_robin_holds") != holds:
+        problems.append(f"Robin holds to {N} is {holds}, claimed {_exact_bool(claimed_holds, 'claimed_robin_holds')}")
     if claimed_n is not None:
         try:                               # a claimed result (THE RULE)
             cn = _claimed_integer(claimed_n, "claimed_closest_approach_n")
@@ -843,8 +843,8 @@ def verify_schoenfeld(spec):
     if claimed_holds is None and claimed_n is None:
         return na(name, "claim claimed_schoenfeld_holds and/or claimed_closest_approach_n")
     problems = []
-    if claimed_holds is not None and bool(claimed_holds) != holds:
-        problems.append(f"Schoenfeld holds to {X} is {holds}, claimed {bool(claimed_holds)}")
+    if claimed_holds is not None and _exact_bool(claimed_holds, "claimed_schoenfeld_holds") != holds:
+        problems.append(f"Schoenfeld holds to {X} is {holds}, claimed {_exact_bool(claimed_holds, 'claimed_schoenfeld_holds')}")
     if claimed_n is not None:
         try:                               # a claimed result (THE RULE)
             cn = _claimed_integer(claimed_n, "claimed_closest_approach_n")
@@ -906,8 +906,8 @@ def verify_lagarias(spec):
     if claimed_holds is None and claimed_n is None:
         return na(name, "claim claimed_lagarias_holds and/or claimed_closest_approach_n")
     problems = []
-    if claimed_holds is not None and bool(claimed_holds) != holds:
-        problems.append(f"Lagarias holds to {N} is {holds}, claimed {bool(claimed_holds)}")
+    if claimed_holds is not None and _exact_bool(claimed_holds, "claimed_lagarias_holds") != holds:
+        problems.append(f"Lagarias holds to {N} is {holds}, claimed {_exact_bool(claimed_holds, 'claimed_lagarias_holds')}")
     if claimed_n is not None:
         try:                               # a claimed result (THE RULE)
             cn = _claimed_integer(claimed_n, "claimed_closest_approach_n")
@@ -974,8 +974,8 @@ def verify_nicolas(spec):
     if claimed_holds is None and claimed_prime is None:
         return na(name, "claim claimed_nicolas_holds and/or claimed_closest_prime")
     problems = []
-    if claimed_holds is not None and bool(claimed_holds) != holds:
-        problems.append(f"Nicolas holds to {P} is {holds}, claimed {bool(claimed_holds)}")
+    if claimed_holds is not None and _exact_bool(claimed_holds, "claimed_nicolas_holds") != holds:
+        problems.append(f"Nicolas holds to {P} is {holds}, claimed {_exact_bool(claimed_holds, 'claimed_nicolas_holds')}")
     if claimed_prime is not None:
         try:                               # a claimed result (THE RULE)
             cp = _claimed_integer(claimed_prime, "claimed_closest_prime")
@@ -1052,8 +1052,8 @@ def verify_li_criterion(spec):
     claimed = spec.get("claimed_li_positive")
     if claimed is None:
         return na(name, "claim claimed_li_positive")
-    if bool(claimed) != holds:
-        return mismatch(name, f"lambda_n > 0 for all n <= {N} is {holds}, claimed {bool(claimed)}", data)
+    if _exact_bool(claimed, "claimed_li_positive") != holds:
+        return mismatch(name, f"lambda_n > 0 for all n <= {N} is {holds}, claimed {_exact_bool(claimed, 'claimed_li_positive')}", data)
     return confirm(name, f"Li's criterion holds for n <= {N}: every lambda_n > 0 (lambda_1 = {values[0]:.12f} = its closed form, "
                          f"lambda_{N} = {values[-1]:.6f}); no RH counterexample by this route below {N}", data)
 
@@ -1144,6 +1144,8 @@ def verify_count_residual(spec):
       NUM_VERIFY: {"residual_check": true, "claimed_residual_consistent": true}"""
     import math
     name = "number_theory.count_residual"
+    if not _exact_bool(spec.get("residual_check"), "residual_check", default=False):
+        return na(name, "residual_check is false: the residual check was not asked for")
     g = _load_zeta_gammas()
     if not g or len(g) < 1000:
         return na(name, "the residual check needs data/zeta_zeros.jsonl (the zeta zeros table)")
@@ -1174,9 +1176,9 @@ def verify_count_residual(spec):
     claimed = spec.get("claimed_residual_consistent")
     if claimed is None:
         return na(name, "claim claimed_residual_consistent", data)
-    if bool(claimed) != consistent:
+    if _exact_bool(claimed, "claimed_residual_consistent") != consistent:
         return mismatch(name, f"residual-consistent-with-RH is {consistent} (mean {mean:+.4f}, sd {sd:.4f} vs "
-                              f"Selberg {selberg:.4f}, max|S| {mx:.3f} vs ln T {envelope:.2f}), claimed {bool(claimed)}", data)
+                              f"Selberg {selberg:.4f}, max|S| {mx:.3f} vs ln T {envelope:.2f}), claimed {_exact_bool(claimed, 'claimed_residual_consistent')}", data)
     return confirm(name, f"the count residual S(T) over [50, {Thi:.0f}]: mean {mean:+.4f} (centered), sd {sd:.4f} "
                          f"(Selberg order {selberg:.4f}), max|S| {mx:.3f} << ln T {envelope:.2f} — the misses balance "
                          f"and never walk off, as RH requires. Evidence, not a proof.", data)
@@ -1272,8 +1274,11 @@ def verify_explicit_formula(spec):
             claimed_primes = [_claimed_integer(v, "claimed_primes") for v in claimed_primes]   # a fraction stands
     except (TypeError, ValueError) as e:
         return error(name, str(e))
-    if claimed is not None and not isinstance(claimed, bool):
-        return error(name, "claimed_zeros_give_primes must be true or false")
+    if claimed is not None:
+        try:
+            claimed = _exact_bool(claimed, "claimed_zeros_give_primes")
+        except TypeError as e:
+            return error(name, str(e))
     if not (2 <= X <= _EF_MAX_X):
         return error(name, f"explicit_formula_to {X} out of range: 2 .. {_EF_MAX_X} (with the stored zeros the "
                            f"readings stay clear only to about 356)")

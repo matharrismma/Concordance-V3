@@ -30,6 +30,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 from . import thermal_scale as _thermal  # k_B-anchored barometric scale height
 
@@ -171,7 +172,7 @@ def verify_wind_chill_metric(spec: Dict[str, Any]) -> VerifierResult:
         except (TypeError, ValueError):
             return error(name, "claimed_below_c must be numeric")
         is_below = wc < thresh
-        claimed_is_below = bool(spec.get("is_below", True))
+        claimed_is_below = _exact_bool(spec.get("is_below"), "is_below", default=True)
         if is_below == claimed_is_below:
             return confirm(name,
                            f"WC = {wc:.2f}°C {'<' if is_below else '>='} {thresh}°C "

@@ -25,7 +25,7 @@ from . import alpha_scale as _ascale  # alpha-anchored atomic energy scale
 from . import thermal_scale as _thermal  # k_B-anchored Boltzmann factor
 from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 from . import molar_scale as _molar  # N_A-anchored particle count
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 # regex pieces ---------------------------------------------------------------
 
@@ -354,16 +354,16 @@ def verify_thermodynamic_feasibility(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"temperature must be > 0 K, got {T_f}")
     dG = dH_f - T_f * dS_f
     spontaneous = dG < 0
-    if spontaneous == bool(claimed):
+    if spontaneous == _exact_bool(claimed, "claimed_spontaneous"):
         return confirm(name,
                        f"ΔG = {dG:.3f} kJ/mol at T={T_f} K (spontaneous={spontaneous}, matches claim)",
                        {"delta_G_kJ_mol": dG, "spontaneous": spontaneous,
-                        "claimed": bool(claimed), "delta_H": dH_f,
+                        "claimed": _exact_bool(claimed, "claimed_spontaneous"), "delta_H": dH_f,
                         "delta_S_kJ_mol_K": dS_f, "temperature_K": T_f})
     return mismatch(name,
-                    f"ΔG = {dG:.3f} kJ/mol → spontaneous={spontaneous}, claimed {bool(claimed)}",
+                    f"ΔG = {dG:.3f} kJ/mol → spontaneous={spontaneous}, claimed {_exact_bool(claimed, 'claimed_spontaneous')}",
                     {"delta_G_kJ_mol": dG, "spontaneous": spontaneous,
-                     "claimed": bool(claimed)})
+                     "claimed": _exact_bool(claimed, "claimed_spontaneous")})
 
 
 def verify_ph_classification(spec: Dict[str, Any]) -> VerifierResult:
@@ -695,10 +695,10 @@ def verify_chiral_amplification(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, "enantiomeric excess must be between 0% and 100%")
     amplified = prod_f > seed_f + 1e-9
     data = {"seed_ee_percent": seed_f, "product_ee_percent": prod_f,
-            "actual_amplification": amplified, "claimed_amplification": bool(claimed),
+            "actual_amplification": amplified, "claimed_amplification": _exact_bool(claimed, "claimed_amplification"),
             "delta_ee_pp": prod_f - seed_f,
             "mechanism": "non-linear effect (Kagan) / asymmetric autocatalysis (Soai)"}
-    if amplified == bool(claimed):
+    if amplified == _exact_bool(claimed, "claimed_amplification"):
         if amplified:
             msg = (f"product ee {prod_f:g}% exceeds seed ee {seed_f:g}% (+{prod_f - seed_f:g} pp) — "
                    f"handedness amplified (matches claim)")
@@ -708,4 +708,4 @@ def verify_chiral_amplification(spec: Dict[str, Any]) -> VerifierResult:
         return confirm(name, msg, data)
     return mismatch(name,
                     f"product ee {prod_f:g}% vs seed ee {seed_f:g}%: amplified={amplified}, "
-                    f"claimed {bool(claimed)}", data)
+                    f"claimed {_exact_bool(claimed, 'claimed_amplification')}", data)

@@ -25,7 +25,7 @@ from typing import Any, Dict, List
 import math
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 # numpy + scipy.stats are heavy imports (scipy.stats ~1.5s). They load on
 # first use (via _ensure_stats) so the engine's cold start stays fast.
@@ -758,9 +758,9 @@ def verify_gue_spacing(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_consistent_with_gue")
     if claimed is None:
         return na(name, "claim claimed_consistent_with_gue", data)
-    if bool(claimed) != consistent:
+    if _exact_bool(claimed, "claimed_consistent_with_gue") != consistent:
         return mismatch(name, f"GUE-consistent is {consistent} (variance {var:.4f} vs Poisson 1.0, "
-                              f"{frac_small*100:.1f}% of spacings below half-mean), claimed {bool(claimed)}", data)
+                              f"{frac_small*100:.1f}% of spacings below half-mean), claimed {_exact_bool(claimed, 'claimed_consistent_with_gue')}", data)
     return confirm(name, f"the first {len(gam):,} zeta zeros: unfolded spacing variance {var:.4f} (random-matrix "
                          f"GUE-like, far from the Poisson value 1.0), {frac_small*100:.1f}% below half-mean "
                          f"(level repulsion) — consistent with GUE. Evidence for Hilbert-Polya, not a proof.", data)

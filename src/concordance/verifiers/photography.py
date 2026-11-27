@@ -33,6 +33,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference)
 
 
@@ -88,15 +89,15 @@ def verify_reciprocity_equivalent(spec: Dict[str, Any]) -> VerifierResult:
     data = {"settings_a": [Na, ta], "ev_a": eva,
             "settings_b": [Nb, tb], "ev_b": evb,
             "ev_diff": abs(eva - evb), "tolerance_ev": tol,
-            "actual_equivalent": actual, "claimed_equivalent": bool(claimed),
+            "actual_equivalent": actual, "claimed_equivalent": _exact_bool(claimed, "claimed_equivalent"),
             "rule": "equivalent iff EV_a = EV_b within tolerance",
             "shared_law": LS.law(k=1.0, base=2)}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_equivalent"):
         return confirm(name,
                        f"EV_a={eva:.3f} EV_b={evb:.3f} equivalent={actual} (matches claim)",
                        data)
     return mismatch(name,
-                    f"EV_a={eva:.3f} EV_b={evb:.3f} equivalent={actual}, claimed {bool(claimed)}",
+                    f"EV_a={eva:.3f} EV_b={evb:.3f} equivalent={actual}, claimed {_exact_bool(claimed, 'claimed_equivalent')}",
                     data)
 
 

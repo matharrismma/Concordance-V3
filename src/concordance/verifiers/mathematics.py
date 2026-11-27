@@ -25,7 +25,7 @@ from typing import Any, Dict, List
 from .base import VerifierResult, band, clamp_tol, confirm, error, mismatch, na
 from .base import literal_is_claim, stated_precision, stated_window, window_for
 from .base import dispatch  # declarative run() driver
-from ._integer import _claimed_integer, _exact_integer  # THE RULE's two readers (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE's two readers (verifiers/_integer.py)
 
 simplify = diff = integrate = limit = solve = None
 Symbol = oo = S = expand = _SympifyError = None
@@ -1331,7 +1331,7 @@ def verify_equality(spec: Dict[str, Any]) -> VerifierResult:
             except _PARSE_ERRORS:
                 pass
             lit = spec.get("claimed_literal")
-            tol = stated_window(lit, bool(spec.get("hedged"))) if lit not in (None, "") else None
+            tol = stated_window(lit, _exact_bool(spec.get("hedged"), "hedged", default=False)) if lit not in (None, "") else None
             foreign: Dict[str, Any] = {}
             if tol is not None:
                 try:
@@ -1599,7 +1599,7 @@ def verify_set_algebra(spec: Dict[str, Any]) -> VerifierResult:
         return _refused(name, e, "set expression")
     except Exception as e:  # noqa: BLE001
         return error(name, f"computation failure: {e}")
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_equal")
     if equal == claimed_b:
         return confirm(name, f"sets {a!r} and {b!r} equal-for-all={equal}, matches claim",
                        {"set_a": a, "set_b": b, "actual": equal, "claimed": claimed_b})

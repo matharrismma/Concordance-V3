@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 from .base import VerifierResult, na, confirm, mismatch, error, band
 from .base import dispatch  # declarative run() driver
 from . import alpha_scale as _ascale  # alpha-anchored energy levels / spectral lines
-from ._integer import _claimed_integer, _exact_integer, _valid_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _valid_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 # Madelung (n+l, then n) fill order, covering Z = 1..118.
 _MADELUNG = [
@@ -157,7 +157,7 @@ def verify_quantum_numbers(spec: Dict[str, Any]) -> VerifierResult:
     detail = "valid quantum-number set" if valid else "; ".join(reasons)
     if claimed is None:
         return confirm(name, detail) if valid else mismatch(name, detail)
-    if bool(claimed) == valid:
+    if _exact_bool(claimed, "claimed_valid_quantum_numbers") == valid:
         return confirm(name, f"validity {valid} matches claim; {detail}")
     return mismatch(name, f"claimed valid={claimed} but set is {'valid' if valid else 'invalid'}: {detail}")
 

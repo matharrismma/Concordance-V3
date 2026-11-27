@@ -47,7 +47,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 _WEEKDAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -76,11 +76,11 @@ def verify_leap_year(spec: Dict[str, Any]) -> VerifierResult:
     except (TypeError, ValueError) as e:
         return error(name, str(e))
     actual = _is_leap_gregorian(y)
-    data = {"year": y, "actual_leap": actual, "claimed_leap": bool(claimed),
+    data = {"year": y, "actual_leap": actual, "claimed_leap": _exact_bool(claimed, "claimed_is_leap_year"),
             "rule": "Gregorian: divisible by 4, except century not divisible by 400"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_is_leap_year"):
         return confirm(name, f"{y} leap year = {actual} (matches claim)", data)
-    return mismatch(name, f"{y} leap year = {actual}, claimed {bool(claimed)}", data)
+    return mismatch(name, f"{y} leap year = {actual}, claimed {_exact_bool(claimed, 'claimed_is_leap_year')}", data)
 
 
 def verify_iso8601_valid(spec: Dict[str, Any]) -> VerifierResult:
@@ -98,12 +98,12 @@ def verify_iso8601_valid(spec: Dict[str, Any]) -> VerifierResult:
     except (ValueError, TypeError):
         dt = None
         actual = False
-    data = {"input": s, "actual_valid": actual, "claimed_valid": bool(claimed),
+    data = {"input": s, "actual_valid": actual, "claimed_valid": _exact_bool(claimed, "claimed_iso8601_valid"),
             "parsed": dt.isoformat() if dt else None}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_iso8601_valid"):
         return confirm(name, f"ISO 8601 valid = {actual} (matches claim)", data)
     return mismatch(name,
-                    f"ISO 8601 valid = {actual}, claimed {bool(claimed)} for {s!r}",
+                    f"ISO 8601 valid = {actual}, claimed {_exact_bool(claimed, 'claimed_iso8601_valid')} for {s!r}",
                     data)
 
 

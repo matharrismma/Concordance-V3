@@ -25,6 +25,7 @@ from __future__ import annotations
 from keyword import iskeyword
 from typing import Any, Dict, List, Optional
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 from .mathematics import ExpressionRefused, parse_expression  # the one way a text reaches sympy
 from . import rela_scale as _rela  # c-anchored mass-energy / Lorentz factor
 from . import grav_scale as _grav  # G-anchored Newtonian gravitation
@@ -249,7 +250,7 @@ def verify_relativistic_speed_limit(spec: Dict[str, Any]) -> VerifierResult:
         return error(name, f"speed must be non-negative, got {v_f}")
     massive = spec.get("massive", True)
     c = _SPEED_OF_LIGHT_M_PER_S
-    data = {"speed_m_per_s": v_f, "c_m_per_s": c, "fraction_of_c": v_f / c, "massive": bool(massive)}
+    data = {"speed_m_per_s": v_f, "c_m_per_s": c, "fraction_of_c": v_f / c, "massive": _exact_bool(massive, "massive")}
     if not massive:
         # massless particles travel at exactly c.
         if abs(v_f - c) < 1.0:

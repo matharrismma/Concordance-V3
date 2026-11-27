@@ -22,7 +22,7 @@ import time
 from typing import Any, Callable, Dict, List, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # ----- Static checks (AST-based) -------------------------------------------
@@ -456,7 +456,7 @@ def verify_logic_gate(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, f"cannot parse gate network: {e}")
     except Exception as e:  # noqa: BLE001
         return error(name, f"computation failure: {type(e).__name__}: {e}")
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_equivalent")
     if is_equiv == claimed_b:
         return confirm(name,
                        f"gate networks {a!r} and {b!r} equivalent={is_equiv}, matches claim",

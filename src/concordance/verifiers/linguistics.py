@@ -43,7 +43,7 @@ import unicodedata
 from typing import Any, Dict, List, Optional
 
 from .base import VerifierResult, na, confirm, mismatch, error, band
-from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 _STRONGS_PATTERN = re.compile(r"^[GHgh]\d+$")
@@ -570,7 +570,7 @@ def verify_syntax(sentence: str, claimed_grammatical: Any = True) -> VerifierRes
     if not r.get("ok"):
         return na(name, r.get("reason", "could not tag the sentence"))
     g = bool(r.get("grammatical"))
-    claimed = True if claimed_grammatical is None else bool(claimed_grammatical)
+    claimed = _exact_bool(claimed_grammatical, "claimed_grammatical", default=True)
     data = {"sentence": sentence, "grammatical": g, "pos": r.get("pos"),
             "bracket": r.get("bracket"), "grammar": "the engine's English CFG (closed-class pinned, "
             "open-class heuristic); a valid parse is a structural fact, not a truth or style judgment"}

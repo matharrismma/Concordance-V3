@@ -49,7 +49,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch
-from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def _ids(v: Any) -> List[str]:
@@ -177,7 +177,7 @@ def verify_no_false_silence(spec: Dict[str, Any]) -> VerifierResult:
         return mismatch(name, f"a result count is a whole number; claimed {n}",
                         {"query": spec.get("query"), "claimed_result_count": n})
 
-    held = bool(contains)
+    held = _exact_bool(contains, "corpus_contains_match")
     silent = (n == 0)
     data = {"query": spec.get("query"), "claimed_result_count": n,
             "corpus_contains_match": held, "silent": silent,

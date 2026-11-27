@@ -49,7 +49,7 @@ def _window(spec: Dict[str, Any], threshold: float, actual: float, claimed: floa
         data.update({k: info[k] for k in ("stated_literal", "literal_not_the_claim")})
     return thr
 from .base import dispatch  # declarative run() driver
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def verify_triangle_inequality(spec: Dict[str, Any]) -> VerifierResult:
@@ -67,13 +67,13 @@ def verify_triangle_inequality(spec: Dict[str, Any]) -> VerifierResult:
     else:
         actual = (af + bf > cf) and (af + cf > bf) and (bf + cf > af)
     data = {"a": af, "b": bf, "c": cf, "actual_valid": actual,
-            "claimed_valid": bool(claimed),
+            "claimed_valid": _exact_bool(claimed, "claimed_valid_triangle"),
             "rule": "triangle iff each pair of sides sums > the third (and all > 0)"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_valid_triangle"):
         return confirm(name,
                        f"({af},{bf},{cf}) valid={actual} (matches claim)", data)
     return mismatch(name,
-                    f"({af},{bf},{cf}) valid={actual}, claimed {bool(claimed)}",
+                    f"({af},{bf},{cf}) valid={actual}, claimed {_exact_bool(claimed, 'claimed_valid_triangle')}",
                     data)
 
 
@@ -102,21 +102,21 @@ def verify_pythagorean(spec: Dict[str, Any]) -> VerifierResult:
         # the smaller window, and "is not right", which a wider window refutes, the larger.
         from .base import window_for
         narrowed, literal = window_for(spec, key, threshold, 1.0, c_squared, claimed=None)
-        threshold = narrowed if bool(claimed) else max(threshold, literal["literal_asked"])
+        threshold = narrowed if _exact_bool(claimed, "claimed_right_triangle") else max(threshold, literal["literal_asked"])
         literal = {k: literal[k] for k in ("stated_literal", "literal_not_the_claim")}
     actual = (diff <= threshold) and (cf >= af and cf >= bf)
     data = {"a": af, "b": bf, "c": cf, **literal,
             "a_sq_plus_b_sq": sides_squared_sum,
             "c_sq": c_squared, "diff": diff,
             "actual_right_triangle": actual,
-            "claimed_right_triangle": bool(claimed),
+            "claimed_right_triangle": _exact_bool(claimed, "claimed_right_triangle"),
             "rule": "a² + b² = c² with c the hypotenuse"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_right_triangle"):
         return confirm(name,
                        f"({af},{bf},{cf}) right-triangle={actual} (matches claim)",
                        data)
     return mismatch(name,
-                    f"({af},{bf},{cf}) right-triangle={actual}, claimed {bool(claimed)}",
+                    f"({af},{bf},{cf}) right-triangle={actual}, claimed {_exact_bool(claimed, 'claimed_right_triangle')}",
                     data)
 
 

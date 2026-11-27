@@ -54,7 +54,7 @@ from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
 from . import planck_scale as _planck  # h-anchored qubit energy E = h f
 from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
-from ._integer import _claimed_integer, _exact_integer, _valid_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _valid_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # ── qubit state normalization ────────────────────────────────────────────────
@@ -77,14 +77,14 @@ def verify_qubit_normalization(spec: Dict[str, Any]) -> VerifierResult:
     is_normalized = abs(norm_sq - 1.0) <= tol
     data = {"n_amplitudes": len(vals), "norm_squared": norm_sq,
             "tolerance": tol, "is_normalized": is_normalized}
-    if is_normalized == bool(claimed):
+    if is_normalized == _exact_bool(claimed, "claimed_normalized"):
         verdict = "normalized" if is_normalized else "not normalized"
         return confirm(name,
                        f"Σ|aᵢ|² = {norm_sq:.8f} → state is {verdict} (matches claim)",
                        data)
     return mismatch(name,
                     f"Σ|aᵢ|² = {norm_sq:.8f} → normalized={is_normalized}, "
-                    f"claimed={bool(claimed)}",
+                    f"claimed={_exact_bool(claimed, 'claimed_normalized')}",
                     data)
 
 
@@ -197,11 +197,11 @@ def verify_shor_period(spec: Dict[str, Any]) -> VerifierResult:
         data = {"a": ai, "N": Ni, "r": ri,
                 "a_pow_r_mod_N": pow(ai, ri, Ni) if ri > 0 else None,
                 "failures": failures, **factors}
-    if valid == bool(claimed):
+    if valid == _exact_bool(claimed, "claimed_period_valid"):
         msg = f"a={ai}, N={Ni}, r={ri}: period valid" if valid else f"failures: {failures}"
         return confirm(name, f"{msg} (matches claim {claimed})", data)
     return mismatch(name,
-                    f"period valid={valid}, claimed={bool(claimed)}; "
+                    f"period valid={valid}, claimed={_exact_bool(claimed, 'claimed_period_valid')}; "
                     f"failures: {failures}",
                     data)
 
@@ -215,9 +215,9 @@ def verify_bb84_security(spec: Dict[str, Any]) -> VerifierResult:
     claimed = spec.get("claimed_secure")
     if qber is None or claimed is None:
         return na(name)
+    c = _exact_bool(claimed, "claimed_secure")
     try:
         q = float(qber)
-        c = bool(claimed)
     except (TypeError, ValueError):
         return error(name, "qber must be numeric")
     if not (0.0 <= q <= 1.0):

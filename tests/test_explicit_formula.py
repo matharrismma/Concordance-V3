@@ -7,7 +7,8 @@ zeros are fakes with the right density: a check that confirmed on any table woul
 
 The port reads its fields by THE RULE (verifiers/_integer.py). Concordance-2 confirmed three claims it should not,
 measured 2026-11-26: explicit_formula_to 100.7 (read as 100), claimed_zeros_give_primes "false" (a non-empty text is
-true), and a claimed list ending 29.5 (read as 29). Each is pinned here.
+true), and a claimed list ending 29.5 (read as 29). Each is pinned here. Since 2026-11-27 the text "false" reads as the
+claim false, by the one true/false reader every verifier shares, so it reads BROKEN where it first read ERROR.
 """
 from __future__ import annotations
 
@@ -137,7 +138,9 @@ def test_the_check_is_routed_through_the_packet_and_named(real_zeros):
     ({"explicit_formula_to": True, "claimed_zeros_give_primes": True}, "ERROR", "explicit_formula_to"),
     ({"explicit_formula_to": "100", "claimed_zeros_give_primes": True}, "CONFIRMED", "The zeros give the primes"),
     ({"explicit_formula_to": 100.0, "claimed_zeros_give_primes": True}, "CONFIRMED", "The zeros give the primes"),
-    ({"explicit_formula_to": 30, "claimed_zeros_give_primes": "false"}, "ERROR", "must be true or false"),
+    # the text "false" reads as written (verifiers/_integer.py _exact_bool, 2026-11-27): the claim that they do not
+    ({"explicit_formula_to": 30, "claimed_zeros_give_primes": "false"}, "MISMATCH", "claimed they do not"),
+    ({"explicit_formula_to": 30, "claimed_zeros_give_primes": "true"}, "CONFIRMED", "The zeros give the primes"),
     ({"explicit_formula_to": 30, "claimed_zeros_give_primes": 1}, "ERROR", "must be true or false"),
     ({"explicit_formula_to": 30, "claimed_primes": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29.5]}, "MISMATCH", "not prime: [29.5]"),
     ({"explicit_formula_to": 30, "claimed_primes": [2, 3, 5, 7, 11, 13, 17, 19, 23, "29"]}, "CONFIRMED", "10 primes"),

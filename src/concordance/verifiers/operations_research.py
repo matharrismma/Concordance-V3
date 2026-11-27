@@ -46,7 +46,7 @@ from typing import Any, Dict, List, Optional
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def verify_lp_feasibility(spec: Dict[str, Any]) -> VerifierResult:
             violated.append({"constraint_index": i, "lhs": lhs, "operator": op, "rhs": rhs_f})
 
     actual_feasible = len(violated) == 0
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_feasible")
 
     data = {
         "variable_values":    var_vals,

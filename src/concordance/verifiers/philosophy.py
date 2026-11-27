@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # ---------------------------------------------------------------------------
@@ -51,11 +52,11 @@ def verify_modal_logic_validity(spec: Dict[str, Any]) -> VerifierResult:
     if any(v is None for v in (is_nec, is_pos, claimed)):
         return na(name)
 
-    nec = bool(is_nec)
-    pos = bool(is_pos)
+    nec = _exact_bool(is_nec, "is_necessarily_true")
+    pos = _exact_bool(is_pos, "is_possibly_true")
     # Inconsistent iff □P and ¬◇P simultaneously.
     actual_consistent = not (nec and not pos)
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_consistent")
 
     data = {
         "is_necessarily_true": nec,
@@ -116,7 +117,7 @@ def verify_ethical_framework(spec: Dict[str, Any]) -> VerifierResult:
                         f"(known: {', '.join(_FRAMEWORKS)})")
 
     actual_focuses, definition = entry
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_focuses_on_outcomes")
     data = {
         "framework_name":            fw_name,
         "definition":                definition,
@@ -149,9 +150,9 @@ def verify_epistemic_claim_type(spec: Dict[str, Any]) -> VerifierResult:
     if requires_obs is None or claimed is None:
         return na(name)
 
-    obs = bool(requires_obs)
+    obs = _exact_bool(requires_obs, "claim_requires_observation")
     actual_a_priori = not obs
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_is_a_priori")
 
     data = {
         "claim_requires_observation": obs,
@@ -190,7 +191,7 @@ def verify_identity_principle(spec: Dict[str, Any]) -> VerifierResult:
     set_a: Set[str] = {str(p).strip().lower() for p in props_a}
     set_b: Set[str] = {str(p).strip().lower() for p in props_b}
     actual_identical = (set_a == set_b)
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_are_identical")
 
     only_in_a = sorted(set_a - set_b)
     only_in_b = sorted(set_b - set_a)

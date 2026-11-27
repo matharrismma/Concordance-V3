@@ -29,6 +29,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 from . import grav_scale as _grav  # G-anchored surface gravity
 from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
@@ -78,14 +79,14 @@ def verify_mohs_scratch(spec: Dict[str, Any]) -> VerifierResult:
     actual = hf > sf  # strictly harder
     data = {"harder_mohs": hf, "softer_mohs": sf,
             "actual_can_scratch": actual,
-            "claimed_can_scratch": bool(claimed),
+            "claimed_can_scratch": _exact_bool(claimed, "claimed_can_scratch"),
             "rule": "harder mineral scratches softer mineral (strict inequality)"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_can_scratch"):
         return confirm(name,
                        f"Mohs {hf} {'>' if actual else '≤'} {sf} → can_scratch={actual} (matches claim)",
                        data)
     return mismatch(name,
-                    f"Mohs {hf} vs {sf} → can_scratch={actual}, claimed {bool(claimed)}",
+                    f"Mohs {hf} vs {sf} → can_scratch={actual}, claimed {_exact_bool(claimed, 'claimed_can_scratch')}",
                     data)
 
 

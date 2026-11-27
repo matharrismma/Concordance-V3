@@ -29,7 +29,7 @@ import math
 from typing import Any, Dict, List
 
 from .base import VerifierResult, band, clamp_tol, confirm, dispatch, error, mismatch, na
-from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def _primes(n: int) -> List[int]:
@@ -311,9 +311,9 @@ def verify_bsd_formula(spec: Dict[str, Any]) -> VerifierResult:
     tol = clamp_tol(spec, "tolerance_relative", 1e-4)
     holds = abs(left - right) <= tol * max(abs(right), 1e-12)
     data["bsd_holds"] = holds
-    if bool(spec.get("claimed_bsd_holds")) != holds:
+    if _exact_bool(spec.get("claimed_bsd_holds"), "claimed_bsd_holds") != holds:
         return mismatch(name, f"{data['formula']}: left {left:.8f}, right {right:.8f} ({'equal' if holds else 'NOT equal'} to {tol:g}); "
-                              f"claimed {bool(spec.get('claimed_bsd_holds'))}", data)
+                              f"claimed {_exact_bool(spec.get('claimed_bsd_holds'), 'claimed_bsd_holds')}", data)
     return confirm(name, f"{data['formula']} holds for this curve to {tol:g}: {left:.8f} = {right:.8f} (L computed by the AFE, "
                          f"Omega = {omega:.10f} computed by integration; Tamagawa {cp}, torsion {tors}, Sha {sha}"
                          f"{', regulator ' + format(data['cited']['regulator'], '.10f') if rank == 1 else ''} cited from {source}); {data['theorem']}", data)

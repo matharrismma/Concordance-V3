@@ -13,6 +13,7 @@ import math
 from typing import Any, Dict, Optional, Tuple
 
 from .base import VerifierResult, band, error, stated_threshold
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def compare(name: str, actual: float, claimed: Any, rel_tol: float, data: Dict[str, Any],
@@ -45,7 +46,7 @@ def compare(name: str, actual: float, claimed: Any, rel_tol: float, data: Dict[s
         # one-figure claim without one — and the flat rel_tol no longer passes a prose claim first.
         # the band is the stated window, or float noise only (1e-9 relative) when the claim earned none
         tol, info = stated_threshold(as_written, rel_tol * abs(actual), 1e-9 * abs(actual), claimed=cl,
-                                     hedged=bool(hedged), unit_factor=unit_factor, literal_factor=unit_factor)
+                                     hedged=_exact_bool(hedged, "hedged", default=False), unit_factor=unit_factor, literal_factor=unit_factor)
         d["stated_sigfigs"] = info["stated_sigfigs"]
         d["hedged"] = info["hedged"]
         d["stated_tolerance"] = info["stated_window"]

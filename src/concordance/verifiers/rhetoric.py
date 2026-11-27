@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 
 # ---------------------------------------------------------------------------
 # Fallacy catalogue
@@ -76,7 +77,7 @@ def verify_fallacy_classification(spec: Dict[str, Any]) -> VerifierResult:
     if entry is None:
         return na(name, f"fallacy {fallacy_name!r} not in known catalogue")
     actual_is_formal, definition = entry
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_is_formal_fallacy")
     data = {
         "fallacy_name": fallacy_name,
         "definition": definition,
@@ -227,7 +228,7 @@ def verify_syllogism_validity(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, "could not determine syllogistic figure (no shared middle term found)")
 
     actual_valid = (figure, mood) in _VALID_SYLLOGISMS
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_valid")
     data = {
         "major_premise": major_text,
         "minor_premise": minor_text,
@@ -259,11 +260,11 @@ def verify_argument_structure(spec: Dict[str, Any]) -> VerifierResult:
     if any(v is None for v in (has_premise, has_conclusion, claimed)):
         return na(name)
 
-    hp = bool(has_premise)
-    hc = bool(has_conclusion)
-    hw = bool(spec.get("has_warrant", False))
+    hp = _exact_bool(has_premise, "has_premise")
+    hc = _exact_bool(has_conclusion, "has_conclusion")
+    hw = _exact_bool(spec.get("has_warrant"), "has_warrant", default=False)
     actual = hp and hc
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_is_complete_argument")
 
     data = {
         "has_premise":    hp,

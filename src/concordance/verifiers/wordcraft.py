@@ -29,7 +29,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, dispatch, band, merge_checks
-from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py): every count claimed here is a claimed result
+from ._integer import _claimed_integer, _exact_bool  # THE RULE (verifiers/_integer.py): every count claimed here is a claimed result
 
 # the explicit golden the domain gate derives its true/false pair from (numbers and booleans only: a string claim
 # such as a plural cannot be falsified by scaling); every check here confirms, and its perturbed twin must not
@@ -237,9 +237,9 @@ def verify_anagram(spec: Dict[str, Any]) -> VerifierResult:
     if a is None or b is None or claimed is None:
         return na(name)
     actual = sorted(_letters(a)) == sorted(_letters(b)) and _letters(a) != ""
-    data = {"word_a": a, "word_b": b, "actual_anagram": actual, "claimed_anagram": bool(claimed),
+    data = {"word_a": a, "word_b": b, "actual_anagram": actual, "claimed_anagram": _exact_bool(claimed, "claimed_anagram"),
             "convention": "letters only, case ignored, spaces and hyphens ignored"}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_anagram"):
         return confirm(name, f"{a!r} and {b!r} {'are' if actual else 'are not'} anagrams (matches claim)", data)
     return mismatch(name, f"{a!r} and {b!r} {'are' if actual else 'are not'} anagrams, claimed {'are' if claimed else 'are not'}", data)
 
@@ -251,8 +251,8 @@ def verify_palindrome(spec: Dict[str, Any]) -> VerifierResult:
         return na(name)
     ls = _letters(w)
     actual = bool(ls) and ls == ls[::-1]
-    data = {"word": w, "actual_palindrome": actual, "claimed_palindrome": bool(claimed), "convention": "letters only, case ignored"}
-    if actual == bool(claimed):
+    data = {"word": w, "actual_palindrome": actual, "claimed_palindrome": _exact_bool(claimed, "claimed_palindrome"), "convention": "letters only, case ignored"}
+    if actual == _exact_bool(claimed, "claimed_palindrome"):
         return confirm(name, f"{w!r} {'is' if actual else 'is not'} a palindrome (matches claim)", data)
     return mismatch(name, f"{w!r} {'is' if actual else 'is not'} a palindrome, claimed {'is' if claimed else 'is not'}", data)
 
@@ -543,10 +543,10 @@ def verify_rhyme(spec: Dict[str, Any]) -> VerifierResult:
     identical = strip_stress(x) == strip_stress(y)
     ta, tb = " ".join(rhyme_tail(x)), " ".join(rhyme_tail(y))
     data = {"word_a": a, "word_b": b, "pronunciation_a": x, "pronunciation_b": y, "tail_a": ta, "tail_b": tb,
-            "actual_rhyme": actual, "claimed_rhyme": bool(claimed), "identical_rhyme": actual and identical, "source": sa,
+            "actual_rhyme": actual, "claimed_rhyme": _exact_bool(claimed, "claimed_rhyme"), "identical_rhyme": actual and identical, "source": sa,
             "convention": "ARPABET (CMU): a rhyme shares the tail from the last primary-stressed vowel; any held variant counts"}
     how = f"{a!r} = {x}, {b!r} = {y}: tails {ta!r} / {tb!r}"
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_rhyme"):
         note = " — the same pronunciation (an identical rhyme)" if actual and identical else ""
         return confirm(name, how + note + f" ({'they rhyme' if actual else 'no rhyme'}; matches claim; {sa})", data)
     return mismatch(name, how + f" — {'they rhyme' if actual else 'they do not rhyme'}, claimed {'rhyme' if claimed else 'no rhyme'} ({sa})", data)
@@ -567,10 +567,10 @@ def verify_homophone(spec: Dict[str, Any]) -> VerifierResult:
     actual = bool(pairs)
     x, y = pairs[0] if pairs else (pa[0], pb[0])
     data = {"word_a": a, "word_b": b, "pronunciation_a": x, "pronunciation_b": y, "actual_homophone": actual,
-            "claimed_homophone": bool(claimed), "source": sa,
+            "claimed_homophone": _exact_bool(claimed, "claimed_homophone"), "source": sa,
             "convention": "ARPABET (CMU): homophones share the phoneme string, stress ignored; any held variant counts"}
     how = f"{a!r} = {x}, {b!r} = {y}"
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_homophone"):
         return confirm(name, how + f": {'the same sounds' if actual else 'different sounds'} (matches claim; {sa})", data)
     return mismatch(name, how + f": {'the same sounds' if actual else 'different sounds'}, claimed {'homophones' if claimed else 'not homophones'} ({sa})", data)
 
@@ -651,13 +651,13 @@ def verify_silent_letter(spec: Dict[str, Any]) -> VerifierResult:
         return _declined_word(name, w)
     verdicts = [(p, _silent_in(str(w), L, p)) for p in prons]
     known = [(p, v) for p, v in verdicts if v is not None]
-    data = {"word": w, "letter": L, "pronunciations": prons, "claimed_silent": bool(claimed), "source": src,
+    data = {"word": w, "letter": L, "pronunciations": prons, "claimed_silent": _exact_bool(claimed, "claimed_silent"), "source": src,
             "convention": ("ARPABET (CMU): a letter is silent when the spelling has more of it than the pronunciation sounds; "
                            "letters inside a digraph (ch sh th ph wh gh ck qu ng dg), vowel letters other than a final e after a "
                            "consonant, y or w as vowels, and a letter whose sound another letter also makes are declined")}
     if not known:
         return na(name, f"the {L!r} in {w!r} ({prons[0]}) is not judged by the convention — declined, not judged", data)
-    want = bool(claimed)
+    want = _exact_bool(claimed, "claimed_silent")
     hit = [(p, v) for p, v in known if v == want]
     if hit:
         p, v = hit[0]
@@ -697,9 +697,9 @@ def verify_vowel_sound(spec: Dict[str, Any]) -> VerifierResult:
     hits = [p for p in prons if has(p)]
     actual = bool(hits)
     p = hits[0] if hits else prons[0]
-    data = {"word": w, "pronunciation": p, "sound": key, "arpabet": list(want), "actual": actual, "claimed": bool(claimed),
+    data = {"word": w, "pronunciation": p, "sound": key, "arpabet": list(want), "actual": actual, "claimed": _exact_bool(claimed, "claimed"),
             "source": src, "convention": VOWEL_CONVENTION}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed"):
         return confirm(name, f"{w!r} = {p}: {'has' if actual else 'has no'} {key} sound ({'/'.join(want)}; matches claim; {src})", data)
     return mismatch(name, f"{w!r} = {p}: {'has' if actual else 'has no'} {key} sound ({'/'.join(want)}), claimed {'has' if claimed else 'has not'} ({src})", data)
 
@@ -723,10 +723,10 @@ def verify_edge_sound(spec: Dict[str, Any]) -> VerifierResult:
     p = hits[0] if hits else prons[0]
     edge = (strip_stress(p)[-1] if pos == "last" else strip_stress(p)[0]) if strip_stress(p) else ""
     data = {"word": w, "pronunciation": p, "position": pos, "sound": key, "arpabet": list(want), "edge_phoneme": edge,
-            "actual": actual, "claimed": bool(claimed), "source": src,
+            "actual": actual, "claimed": _exact_bool(claimed, "claimed"), "source": src,
             "convention": "ARPABET (CMU): the first/last phoneme; sound names mapped to ARPABET consonants"}
     where = "ends" if pos == "last" else "begins"
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed"):
         return confirm(name, f"{w!r} = {p}: {where} with {edge} ({'the ' + key + ' sound' if actual else 'not the ' + key + ' sound'}; matches claim; {src})", data)
     return mismatch(name, f"{w!r} = {p}: {where} with {edge}, claimed {'' if claimed else 'not '}the {key} sound ({src})", data)
 
@@ -843,7 +843,7 @@ def verify_origin(spec: Dict[str, Any]) -> VerifierResult:
     key = re.sub(r"\s+", " ", str(lang).strip().lower())
     if key not in LANG_ABBR:
         return na(name, f"{lang!r} is not a language the convention names — declined")
-    claimed = bool(spec.get("claimed_origin", True))
+    claimed = _exact_bool(spec.get("claimed_origin"), "claimed_origin", default=True)
     form = spec.get("claimed_source_word")
     gloss = spec.get("claimed_gloss")
     given = spec.get("etymology")

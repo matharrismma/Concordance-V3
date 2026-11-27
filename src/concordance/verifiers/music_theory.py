@@ -32,7 +32,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band
 from .base import dispatch  # declarative run() driver
-from ._integer import _claimed_integer, _exact_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 from . import log_scale as LS  # the one log-scale law: level = k * log_b(value / reference), and back
 
 
@@ -205,14 +205,14 @@ def verify_scale_membership(spec: Dict[str, Any]) -> VerifierResult:
     actual = interval in intervals
     data = {"key": key, "mode": mode, "note": note,
             "interval_from_tonic": interval,
-            "actual_in_scale": actual, "claimed_in_scale": bool(claimed),
+            "actual_in_scale": actual, "claimed_in_scale": _exact_bool(claimed, "claimed_in_scale"),
             "scale_intervals": list(intervals)}
-    if actual == bool(claimed):
+    if actual == _exact_bool(claimed, "claimed_in_scale"):
         return confirm(name,
                        f"{note} is{'  ' if actual else ' NOT '}in {key} {mode} (matches claim)",
                        data)
     return mismatch(name,
-                    f"{note} {'in' if actual else 'NOT in'} {key} {mode}, claimed {bool(claimed)}",
+                    f"{note} {'in' if actual else 'NOT in'} {key} {mode}, claimed {_exact_bool(claimed, 'claimed_in_scale')}",
                     data)
 
 

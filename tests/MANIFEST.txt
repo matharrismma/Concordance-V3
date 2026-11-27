@@ -64,6 +64,7 @@ test_elliptic_curves.py
 test_energy.py
 test_ephemeris.py
 test_equation_audit_2026_10_01.py
+test_exact_booleans.py
 test_exact_integers.py
 test_exact_integers_rest.py
 test_explicit_formula.py

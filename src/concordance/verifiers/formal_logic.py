@@ -65,7 +65,7 @@ from typing import Any, Dict, List, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error
 from ._boolean import boolean_equivalent, satisfiable, truth_rows, BooleanParseError
-from ._integer import _claimed_integer  # THE RULE (verifiers/_integer.py)
+from ._integer import _claimed_integer, _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def _vars_of(spec: Dict[str, Any], *formulas) -> list:
@@ -96,7 +96,7 @@ def verify_satisfiability(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, f"cannot parse formula: {e}")
     except Exception as e:  # noqa: BLE001
         return error(name, f"computation failure: {type(e).__name__}: {e}")
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_satisfiable")
     if actual == claimed_b:
         return confirm(name,
                        f"formula {formula!r} satisfiable={actual}, matches claim",
@@ -120,7 +120,7 @@ def verify_tautology(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, f"cannot parse formula: {e}")
     except Exception as e:  # noqa: BLE001
         return error(name, f"computation failure: {type(e).__name__}: {e}")
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_tautology")
     if is_taut == claimed_b:
         return confirm(name,
                        f"formula {formula!r} tautology={is_taut}, matches claim",
@@ -144,7 +144,7 @@ def verify_contradiction(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, f"cannot parse formula: {e}")
     except Exception as e:  # noqa: BLE001
         return error(name, f"computation failure: {type(e).__name__}: {e}")
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_contradiction")
     if is_contradiction == claimed_b:
         return confirm(name,
                        f"formula {formula!r} contradiction={is_contradiction}, matches claim",
@@ -170,7 +170,7 @@ def verify_entailment(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, f"cannot parse formula: {e}")
     except Exception as e:  # noqa: BLE001
         return error(name, f"computation failure: {type(e).__name__}: {e}")
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_entailment")
     if entails == claimed_b:
         return confirm(name,
                        f"premises |= conclusion = {entails}, matches claim",
@@ -196,7 +196,7 @@ def verify_equivalence(spec: Dict[str, Any]) -> VerifierResult:
         return na(name, f"cannot parse formula: {e}")
     except Exception as e:  # noqa: BLE001
         return error(name, f"computation failure: {type(e).__name__}: {e}")
-    claimed_b = bool(claimed)
+    claimed_b = _exact_bool(claimed, "claimed_equivalent")
     if is_equiv == claimed_b:
         return confirm(name,
                        f"{a!r} === {b!r} = {is_equiv}, matches claim",

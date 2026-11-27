@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, bound, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # ── Crop pH tolerance (public-domain, USDA / FAO) ────────────────────────────
@@ -142,7 +143,7 @@ def verify_ph_suitability(spec: Dict[str, Any]) -> VerifierResult:
     data = {"crop": crop, "soil_ph": phf, "preferred_min": ph_min,
             "preferred_max": ph_max, "suitable": actually_suitable,
             "source": "USDA/FAO crop pH tolerance guidelines"}
-    if bool(claimed) == actually_suitable:
+    if _exact_bool(claimed, "claimed_ph_suitable") == actually_suitable:
         status = "suitable" if actually_suitable else "not suitable"
         return confirm(name, f"pH {phf} is {status} for {crop} (claim correct)", data)
     return mismatch(name,

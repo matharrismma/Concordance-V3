@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base import VerifierResult, confirm, dispatch, error, mismatch, na
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 def _onset(word: str) -> str:
@@ -56,13 +57,15 @@ def verify_sound_law(a: Dict[str, Any]) -> VerifierResult:
             exceptions.append(f"{p[0]}->{p[1]} (onset {got_s}->{got_d}, not {so}->{to})")
     data = {"law": law, "source_onset": so, "target_onset": to, "n_pairs": len(pairs),
             "holds": len(holds), "exceptions": exceptions, "examples": holds[:8]}
-    claimed_regular = a.get("claimed_regular", True)
+    claimed_regular = _exact_bool(a.get("claimed_regular"), "claimed_regular", default=True)
     if exceptions and claimed_regular:
         return mismatch(name, f"{law}: claimed regular, but {len(exceptions)} of {len(pairs)} cited pairs do not show "
                               f"the correspondence — {'; '.join(exceptions[:4])}", data)
     if exceptions:
         return na(name, f"{law}: {len(exceptions)} of {len(pairs)} pairs are exceptions; the correspondence is not "
                         f"regular on this set", data)
+    if not claimed_regular:
+        return mismatch(name, f"{law}: claimed not regular, but all {len(pairs)} cited pairs follow it", data)
     return confirm(name, f"{law}: the correspondence {so} -> {to} holds at the onset on all {len(pairs)} cited cognate "
                          f"pairs ({', '.join(holds[:6])}{'...' if len(holds) > 6 else ''}) — a regular sound "
                          f"correspondence. The cognate pairs are attested; the proto-form is a cited reconstruction.", data)
@@ -102,12 +105,14 @@ def verify_vowel_shift(a: Dict[str, Any]) -> VerifierResult:
                       "independently reconstruct the vowel values (no pronunciation anchor is in the packet); "
                       "those are the cited comparative record. CONFIRM attests the regularity of the cited set, "
                       "not the historical vowel facts, so it is CITED, never sealed as a verified instance.")}
-    claimed = a.get("claimed_regular", True)
+    claimed = _exact_bool(a.get("claimed_regular"), "claimed_regular", default=True)
     if exceptions and claimed:
         return mismatch(name, f"{law}: claimed regular, but {len(exceptions)} of {len(pairs)} cited rows contradict "
                               f"the shift map — {'; '.join(exceptions[:4])}", data)
     if exceptions:
         return na(name, f"{law}: {len(exceptions)} of {len(pairs)} rows are exceptions to the map", data)
+    if not claimed:
+        return mismatch(name, f"{law}: claimed not regular, but all {len(pairs)} cited pairs follow it", data)
     return confirm(name, f"{law}: the {len(pairs)} cited correspondences are REGULAR — each follows one shift map "
                          f"({', '.join(holds[:6])}{'...' if len(holds) > 6 else ''}), a real change with no internal "
                          f"exception. This checks the regularity/consistency of the CITED set; the vowel values are "
@@ -161,12 +166,14 @@ def verify_dissimilation(a: Dict[str, Any]) -> VerifierResult:
             exceptions.append(f"{u}->{att} (dissimilation predicts {predicted})")
     data = {"law": law, "aspirates": aspirates, "n_forms": len(forms), "holds": len(holds),
             "exceptions": exceptions, "examples": holds[:8]}
-    claimed = a.get("claimed_regular", True)
+    claimed = _exact_bool(a.get("claimed_regular"), "claimed_regular", default=True)
     if exceptions and claimed:
         return mismatch(name, f"{law}: claimed regular, but {len(exceptions)} of {len(forms)} cited forms do not "
                               f"dissimilate as the law predicts — {'; '.join(exceptions[:4])}", data)
     if exceptions:
         return na(name, f"{law}: {len(exceptions)} of {len(forms)} forms are exceptions", data)
+    if not claimed:
+        return mismatch(name, f"{law}: claimed not regular, but all {len(forms)} cited forms follow it", data)
     return confirm(name, f"{law}: in every one of the {len(forms)} cited forms the first of two aspirates loses its "
                          f"aspiration, the rest unchanged ({', '.join(holds[:6])}) — a regular dissimilation. The "
                          f"forms are attested; the rule is the verified correspondence.", data)
@@ -205,12 +212,14 @@ def verify_voicing(a: Dict[str, Any]) -> VerifierResult:
             "scope": ("checks the cited rows are CONSISTENT with the accent-conditioning rule; all fields are "
                       "caller-supplied, so it does NOT independently reconstruct the accent positions or the forms. "
                       "CONFIRM attests regularity of the cited set, not the historical facts — CITE, never seal.")}
-    claimed = a.get("claimed_regular", True)
+    claimed = _exact_bool(a.get("claimed_regular"), "claimed_regular", default=True)
     if exceptions and claimed:
         return mismatch(name, f"{law}: claimed regular, but {len(exceptions)} of {len(rows)} cited rows do not follow "
                               f"the accent conditioning — {'; '.join(exceptions[:4])}", data)
     if exceptions:
         return na(name, f"{law}: {len(exceptions)} of {len(rows)} rows are exceptions", data)
+    if not claimed:
+        return mismatch(name, f"{law}: claimed not regular, but all {len(rows)} cited rows follow it", data)
     return confirm(name, f"{law}: in every one of the {len(rows)} cited rows the fricative is voiced exactly when the "
                          f"accent did NOT precede it, voiceless when it did ({', '.join(holds[:5])}) — a regular "
                          f"conditioning on the CITED set. The accent positions and forms are the cited reconstruction, "

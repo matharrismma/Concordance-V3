@@ -54,6 +54,7 @@ from typing import Any, Dict, List
 
 from .base import VerifierResult, na, confirm, mismatch, error, clamp_tol, band, merge_checks
 from .base import dispatch  # declarative run() driver
+from ._integer import _exact_bool  # THE RULE (verifiers/_integer.py)
 
 
 # Sigma-level → DPMO table (public-domain, 1.5σ shift convention).
@@ -180,14 +181,14 @@ def verify_process_capability(spec: Dict[str, Any]) -> VerifierResult:
     threshold = float(spec.get("capable_threshold", 1.33))
     capable = cp >= threshold and cpk >= threshold
     data = {"cp": cp, "cpk": cpk, "capable": capable,
-            "claimed_capable": bool(claimed_capable),
+            "claimed_capable": _exact_bool(claimed_capable, "claimed_cp_capable"),
             "threshold": threshold}
-    if capable == bool(claimed_capable):
+    if capable == _exact_bool(claimed_capable, "claimed_cp_capable"):
         return confirm(name,
                        f"Cp={cp:.3f}, Cpk={cpk:.3f}, capable={capable} (matches claim, threshold {threshold})",
                        data)
     return mismatch(name,
-                    f"Cp={cp:.3f}, Cpk={cpk:.3f} → capable={capable}, claimed {bool(claimed_capable)}",
+                    f"Cp={cp:.3f}, Cpk={cpk:.3f} → capable={capable}, claimed {_exact_bool(claimed_capable, 'claimed_cp_capable')}",
                     data)
 
 
