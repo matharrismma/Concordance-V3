@@ -22,7 +22,8 @@ Four independent checks, each printed with its own verdict:
 A step that carries a CERTIFICATE (data.certificate: a primality, polynomial-root or linear-system proof) is
 re-checked here by arithmetic alone, so the stranger re-confirms the verdict itself, not only that the record is the
 one sealed. Give the spec a step checked with --spec (the packet you submitted, or the one the receipt page shows):
-when it re-hashes to the step's spec_hash, the certificate must state exactly its inputs (BIND).
+when it re-hashes to the step's spec_hash, the certificate must state exactly its inputs, and a step that reads
+CONFIRMED must claim what the certificate proves (BIND).
 A document root is walked: every step's spec_hash and the derivation seal are listed so you can fetch
 and re-check each one the same way.
 """
@@ -320,12 +321,25 @@ def _in_exact(v):
     raise ValueError(f"not a number: {v!r}"[:120])
 
 
-_CERT_FIELDS = {"primality": ("n_prime",), "polynomial_root": ("coeffs", "claimed_root"),
+def _in_bool(v):
+    """A true/false as a verifier reads it: a JSON true or false, or the text true, false, yes or no; nothing else."""
+    if isinstance(v, bool):
+        return v
+    t = v.strip().lower() if isinstance(v, str) else None
+    if t in ("true", "yes"):
+        return True
+    if t in ("false", "no"):
+        return False
+    raise ValueError(f"not true or false: {v!r}"[:120])
+
+
+_CERT_FIELDS = {"primality": ("n_prime", "claimed_prime"), "polynomial_root": ("coeffs", "claimed_root"),
                 "linear_system": ("matrix", "vec_b", "claimed_solution")}
 
 
-def bind_certificate(cert, spec):
-    """Whether the certificate states exactly the inputs this spec gave its check. Returns (ok, why)."""
+def bind_certificate(cert, spec, status=None):
+    """Whether the certificate states exactly the inputs this spec gave its check, and whether a step that reads
+    CONFIRMED claims what the certificate proves. Returns (ok, why)."""
     kind = cert.get("kind") if isinstance(cert, dict) else None
     fields = _CERT_FIELDS.get(kind)
     if fields is None:
@@ -336,8 +350,10 @@ def bind_certificate(cert, spec):
         return False, f"the spec holds no packet with {', '.join(fields)}"
     try:
         claim, proof = cert["claim"], cert["proof"]
+        agrees = True
         if kind == "primality":
             same = _in_integer(pk["n_prime"]) == claim["n"]
+            agrees = _in_bool(pk["claimed_prime"]) == (claim["verdict"] == "prime")
         elif kind == "polynomial_root":
             same = [_in_integer(v) for v in pk["coeffs"]] == claim["coeffs"] and _in_root(pk["claimed_root"]) == _c_rational(proof["root"])
         else:
@@ -346,8 +362,12 @@ def bind_certificate(cert, spec):
                     and [_in_exact(v) for v in pk["claimed_solution"]] == [_c_rational(v) for v in proof["x"]])
     except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
         return False, f"the spec or the certificate does not read: {e}"[:160]
-    return (True, "the certificate states the checked inputs") if same else \
-        (False, "the certificate is about other inputs than the ones checked")
+    if not same:
+        return False, "the certificate is about other inputs than the ones checked"
+    if status == "CONFIRMED" and not agrees:
+        return False, (f"the certificate proves {claim['n']} {claim['verdict']}, the step claims the opposite, and it reads "
+                       f"CONFIRMED")
+    return True, "the certificate states the checked inputs" + ("" if agrees else ", and refutes the claim")
 
 
 def main() -> int:
@@ -411,7 +431,7 @@ def main() -> int:
         results.append(("CERT", ok, f"{vr.get('name')}: {why}"))
         sp = specs.get(d.get("spec_hash"))
         if sp is not None:
-            ok, why = bind_certificate(cert, sp)
+            ok, why = bind_certificate(cert, sp, vr.get("status"))
             results.append(("BIND", ok, f"{vr.get('name')}: {why}"))
         elif a.spec:
             results.append(("BIND", None, f"{vr.get('name')}: no --spec re-hashes to this step's spec_hash"))

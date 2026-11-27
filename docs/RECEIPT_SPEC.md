@@ -224,7 +224,9 @@ A x = b exactly in rationals). Inside a certificate an integer is a JSON integer
 600 digits) rather than working on it. `docs/verify_receipt.py` re-checks every certificate by arithmetic alone
 (`CERT`), and with `--spec` the packet a step checked, re-hashed to the step's `spec_hash`, it requires the
 certificate to state exactly those inputs (`BIND`), so a proof about one number cannot stand for a claim about
-another. The field is absent where a check makes no certificate (a minor change under VERSIONING.md).
+another; and a step whose status is `CONFIRMED` must claim what its certificate proves, the claim read as the verifier
+reads a true/false (a JSON true or false, or the text true, false, yes or no), so a valid proof that 97 is prime cannot
+stand under a claim that it is not. The field is absent where a check makes no certificate (a minor change under VERSIONING.md).
 
 ## 5. Documents
 

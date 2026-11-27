@@ -4,6 +4,15 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- A certificate binds the claim's direction. `certificate.binds` bound a certificate to the inputs its check read, so
+  a valid proof that 97 is prime under a claim that 97 is NOT prime bound as well as under the true claim; until
+  cb7177a the engine read claimed_prime "false" as true and sealed exactly that receipt as HOLDS, and the stranger's
+  file passed it (CERT ok, BIND ok). Now, given the step's status, a step that reads CONFIRMED must claim what its
+  certificate proves, the claim read by the verifier's own true/false rule; a MISMATCH step may still carry a proof
+  its claim agrees with, since another check in the step can refute it. `docs/verify_receipt.py` binds the same way
+  with its own copy of the reader, importing nothing; the two agree on all 72 combinations of certificate, claim and
+  status in `tests/test_certificate.py`, and the old receipt, re-made and re-hashed, reads CERT ok and BIND FAIL.
+  RECEIPT_SPEC §4d says so. A root or a solution is its own claim, bound by its value as before.
 - A true/false is read as it is written. Verifiers read a claimed or given true/false with `bool()`, which reads every
   non-empty text as true, so a claim written "false" was read as the claim it denies: "97 is not prime", sent as
   `claimed_prime: "false"`, read HOLDS "97 is prime (matches claim)" on the public door, and of the 208 true/false

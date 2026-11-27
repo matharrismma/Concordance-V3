@@ -16,9 +16,13 @@ Three kinds, each attached by its own check and only when the check can stand be
 
 Every number is read exactly. In a certificate an integer is a JSON integer and a rational is the text "p" or "p/q";
 nothing else reads, so 17.9 is never 17, -2.5 never -2 and true never 1 (concordance-2's checker read all three).
-A certificate is also BOUND to the check it rides on: `binds(cert, spec)` reads the checked packet the way the
-verifier read it and requires the certificate to state those same inputs, so a valid proof that 17 is prime cannot
-stand in for a claim about 19. The checker refuses what is too large to check cheaply (`MAX_*` below) instead of
+A certificate is also BOUND to the check it rides on: `binds(cert, spec, status)` reads the checked packet the way
+the verifier read it and requires the certificate to state those same inputs, so a valid proof that 17 is prime cannot
+stand in for a claim about 19; and, given the step's status, it requires a step that reads CONFIRMED to claim what the
+certificate proves (2026-11-27). Until cb7177a the engine read claimed_prime "false" as true, so a receipt sealed then
+could carry a valid proof that 97 is prime under a claim that it is not, and read HOLDS; the inputs bound, so the
+certificate passed too. The binding reads the claim itself, by the same rule the verifier now reads it, and refuses that
+receipt without trusting the engine's reading. A root or a solution is its own claim, bound already by its value. The checker refuses what is too large to check cheaply (`MAX_*` below) instead of
 working on it. docs/verify_receipt.py carries its own copy of the checker and the binding, importing nothing from
 here, so a stranger runs it with no part of this engine; tests/test_certificate.py holds the two to the same answers.
 
@@ -31,7 +35,7 @@ import re
 from fractions import Fraction
 from typing import Any, Dict, List, Optional, Tuple
 
-from ._integer import _exact_integer  # THE RULE (verifiers/_integer.py): the one integer reader
+from ._integer import _exact_bool, _exact_integer  # THE RULE (verifiers/_integer.py): the one integer and true/false reader
 
 SCHEMA = 1
 PRODUCE_MAX_N = 10 ** 12          # the largest n a primality check attaches a certificate for (trial division to 10**6)
@@ -292,7 +296,7 @@ def check(cert: Any) -> Tuple[bool, str]:
 
 
 # ── the binding: the certificate states the inputs the check read ───────────────────────────────────────────────
-_FIELDS = {"primality": ("n_prime",), "polynomial_root": ("coeffs", "claimed_root"),
+_FIELDS = {"primality": ("n_prime", "claimed_prime"), "polynomial_root": ("coeffs", "claimed_root"),
            "linear_system": ("matrix", "vec_b", "claimed_solution")}
 
 
@@ -305,8 +309,11 @@ def _packet(spec: Any, fields: Tuple[str, ...]) -> Optional[Dict[str, Any]]:
     return None
 
 
-def binds(cert: Any, spec: Any) -> Tuple[bool, str]:
-    """Whether the certificate states exactly the inputs this spec gave its check, read as the verifier reads them."""
+def binds(cert: Any, spec: Any, status: Optional[str] = None) -> Tuple[bool, str]:
+    """Whether the certificate states exactly the inputs this spec gave its check, read as the verifier reads them, and,
+    given the step's `status`, whether that status can stand on it: a CONFIRMED step must claim what the certificate
+    proves. A step that reads MISMATCH may still carry a proof its claim agrees with, since another check in the same
+    step can refute the step, so only CONFIRMED is held to the claim."""
     kind = cert.get("kind") if isinstance(cert, dict) else None
     fields = _FIELDS.get(kind)
     if fields is None:
@@ -316,8 +323,10 @@ def binds(cert: Any, spec: Any) -> Tuple[bool, str]:
         return False, f"the spec holds no packet with {', '.join(fields)}"
     try:
         claim, proof = cert["claim"], cert["proof"]
+        agrees = True
         if kind == "primality":
             same = _input_integer(pk["n_prime"]) == claim["n"]
+            agrees = _exact_bool(pk["claimed_prime"], "claimed_prime") == (claim["verdict"] == "prime")
         elif kind == "polynomial_root":
             same = ([_input_integer(v) for v in pk["coeffs"]] == claim["coeffs"]
                     and _input_root(pk["claimed_root"]) == _rational_text(proof["root"]))
@@ -328,8 +337,12 @@ def binds(cert: Any, spec: Any) -> Tuple[bool, str]:
                     and [_input_exact(v) for v in pk["claimed_solution"]] == [_rational_text(v) for v in proof["x"]])
     except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
         return False, f"the spec or the certificate does not read: {e}"[:160]
-    return (True, "the certificate states the checked inputs") if same else \
-        (False, "the certificate is about other inputs than the ones checked")
+    if not same:
+        return False, "the certificate is about other inputs than the ones checked"
+    if status == "CONFIRMED" and not agrees:
+        return False, (f"the certificate proves {claim['n']} {claim['verdict']}, the step claims the opposite, and it reads "
+                       f"CONFIRMED")
+    return True, "the certificate states the checked inputs" + ("" if agrees else ", and refutes the claim")
 
 
 def recheck(record: Dict[str, Any], specs: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -345,7 +358,7 @@ def recheck(record: Dict[str, Any], specs: Optional[Dict[str, Any]] = None) -> L
         bound = None
         spec = (specs or {}).get(d.get("spec_hash"))
         if spec is not None:
-            bound = binds(cert, spec)[0]
+            bound = binds(cert, spec, vr.get("status"))[0]
         out.append({"name": vr.get("name"), "kind": cert.get("kind"), "ok": ok, "detail": detail, "bound": bound})
     return out
 

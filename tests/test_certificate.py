@@ -204,3 +204,46 @@ def test_the_strangers_file_rechecks_and_binds_the_certificate(tmp_path):
     forged["content_hash"] = VR.sha256(VR.canonical({k: v for k, v in forged.items() if k != "content_hash"}))
     code, out = _run_stranger(tmp_path, forged, SPEC)
     assert code == 1 and "CERT       FAIL" in out, out                  # re-hashed so HASH passes: the CERT line fails it
+
+
+# ── the binding reads the claim's direction (2026-11-27) ───────────────────────────────────────────────────────
+# Until cb7177a the engine read claimed_prime "false" as true, so 97 claimed not prime read HOLDS with a valid proof
+# that 97 is prime; its inputs bound, so CERT and BIND both passed. A CONFIRMED step must now claim what its
+# certificate proves, the claim read by the verifier's own rule; both checkers give the same answer on every case.
+P97 = C.primality(97)
+CLAIMS = [True, False, "true", "false", "TRUE", " no ", "yes", 1, 0, None, "maybe", [True]]
+
+
+@pytest.mark.parametrize("claimed", CLAIMS, ids=repr)
+@pytest.mark.parametrize("status", ["CONFIRMED", "MISMATCH", None])
+@pytest.mark.parametrize("cert, n", [(P97, 97), (C91, 91)], ids=["97 prime", "91 composite"])
+def test_both_checkers_bind_the_claims_direction_alike(cert, n, status, claimed):
+    spec = {"NUM_VERIFY": {"n_prime": n, "claimed_prime": claimed}}
+    a, b = C.binds(cert, spec, status), VR.bind_certificate(cert, spec, status)
+    assert a[0] == b[0], (a, b)
+    readable = isinstance(claimed, bool) or (isinstance(claimed, str) and claimed.strip().lower() in
+                                             ("true", "false", "yes", "no"))
+    if not readable:
+        assert a[0] is False and "does not read" in a[1]
+        return
+    says_prime = claimed is True or (isinstance(claimed, str) and claimed.strip().lower() in ("true", "yes"))
+    agrees = says_prime == (cert["claim"]["verdict"] == "prime")
+    assert a[0] is (agrees or status != "CONFIRMED"), (a, agrees, status)
+    if not agrees and status == "CONFIRMED":
+        assert "the step claims the opposite" in a[1]
+
+
+def test_a_receipt_sealed_under_the_old_reading_is_refused(tmp_path):
+    """The receipt the old engine sealed: 97 claimed "false", the step CONFIRMED, the derivation HOLDS."""
+    spec = {"NUM_VERIFY": {"n_prime": 97, "claimed_prime": "false"}}
+    res, rec = _record(spec)
+    assert res["verdict"] == "BROKEN" and rec["verifier_results"][0]["data"]["certificate"] == P97   # read now
+    code, out = _run_stranger(tmp_path, rec, spec)
+    assert "BIND       ok" in out and "refutes the claim" in out, out          # the record as sealed today stands
+    old = copy.deepcopy(rec)
+    old["verifier_results"][0]["status"] = "CONFIRMED"
+    old["gate_results"][0]["details"]["verdict"] = "HOLDS"
+    old["content_hash"] = VR.sha256(VR.canonical({k: v for k, v in old.items() if k != "content_hash"}))
+    code, out = _run_stranger(tmp_path, old, spec)
+    assert code == 1 and "CERT       ok" in out and "BIND       FAIL" in out and "claims the opposite" in out, out
+    assert C.recheck(old, {old["verifier_results"][0]["data"]["spec_hash"]: spec})[0]["bound"] is False
