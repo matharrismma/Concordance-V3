@@ -4,6 +4,18 @@ This project versions three surfaces together under semver — the Python librar
 and the receipt format. See `docs/VERSIONING.md`.
 
 ## Unreleased
+- A no-verdict step keeps its check's own reason. `derivation._reduce_domain_results` gave every step with no
+  applicable check one line, "no applicable secular verifier for this domain/artifact", whatever the check had said:
+  the explicit formula past 356 had worked out that the zeros cannot hear that far and to lower X, and calc_chain's
+  Kind B framing (its question, the structure it needs, an example and the route) never reached the trail's
+  `guidance`. Now the step names each check and its reason, as a verdict's detail does, with its data and its
+  refutations; only a domain no check answered at all keeps the generic line. `verifiers.base.dispatch` no longer
+  calls a given artifact absent: one that fires no rule names the fields it was given. Measured over 2,190 cases
+  (938 benchmark domain and check cases, every domain empty and with a wrong key, 89 packets given but missing
+  fields, the 765 stick seal steps): no verdict, step status, seal, shared law or certificate moved, and 482 of the
+  483 no-verdict steps now give their check's own reason. A decline's data is never bound: a bind reads a source
+  only once it is confirmed. `tests/test_no_verdict_reason.py` (6); the dispatch pin in
+  `tests/test_verifier_consistency.py` now names the fields.
 - The zeros give the primes: `number_theory.explicit_formula`, ported from concordance-2 (9735558). From the 10,000
   stored zeta zeros alone (data/zeta_zeros.jsonl) it reads the prime powers up to X two ways, the explicit formula's
   staircase (von Mangoldt 1895) and Landau's formula's spectrum (1912), each windowed against the Gibbs ringing, and

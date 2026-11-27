@@ -173,11 +173,24 @@ def _reduce_domain_results(results: List[Any]) -> Dict[str, str]:
     """Reduce a domain's list of VerifierResult to ONE moat status. A contradiction is the
     cardinal signal, so MISMATCH wins over ERROR wins over CONFIRMED; only an all-CONFIRMED
     applicable set is CONFIRMED. No applicable verifier -> NOT_APPLICABLE (an honest gap, an
-    INCOMPLETE composite — never a false HOLDS). Mirrors test_fp_gate._status exactly."""
+    INCOMPLETE composite — never a false HOLDS). Mirrors test_fp_gate._status exactly.
+
+    A no-verdict step keeps each check's own reason, named as a verdict's are, with its data and its refutations,
+    so a decline is actionable (Kind B): the explicit formula past 356 says the zeros cannot hear that far and to
+    lower X, and calc_chain's question and example reach the trail's guidance. Only a domain no check answered
+    at all reads the generic line. Its data is never bound: a bind reads a source only once it is confirmed."""
     applicable = [r for r in results if r.applicable]
     if not applicable:
+        if not results:
+            return {"status": "NOT_APPLICABLE",
+                    "detail": "no applicable secular verifier for this domain/artifact"}
+        declined: Dict[str, Any] = {}
+        for r in results:
+            if getattr(r, "data", None):
+                declined.update(r.data)
         return {"status": "NOT_APPLICABLE",
-                "detail": "no applicable secular verifier for this domain/artifact"}
+                "detail": "; ".join(f"{r.name}: {r.detail}" for r in results)[:300],
+                "data": declined, "refutations": refutations(results)}
     # merged verifier outputs, so another step can BIND to this result once it is confirmed (3b), wherever
     # either is listed. Only ever read for a CONFIRMED source (verify_derivation gates that), so merging all
     # applicable data is harmless.

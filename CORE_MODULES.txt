@@ -11,7 +11,7 @@ compute                                             263  <- audit
 config                                               38  <- receipts
 constraints                                         152  <- engine
 context                                             412  <- airlock
-derivation                                          948  <- <entry>
+derivation                                          961  <- <entry>
 discern                                              78  <- <entry>
 domain_resolver                                     513  <- discern
 domains                                               6  <- engine
@@ -42,7 +42,7 @@ verifiers                                           240  <- <entry>
 verifiers._boolean                                   96  <- verifiers.mathematics
 verifiers._integer                                   73  <- verifiers.mathematics
 verifiers.alpha_scale                               117  <- verifiers.periodic_table
-verifiers.base                                      368  <- audit
+verifiers.base                                      378  <- audit
 verifiers.bridges                                   118  <- derivation
 verifiers.chemistry                                 711  <- audit
 verifiers.log_scale                                  79  <- verifiers.chemistry
@@ -57,4 +57,4 @@ verifiers.si_units                                  190  <- audit
 verifiers.spec                                      379  <- verifiers
 verifiers.thermal_scale                              51  <- verifiers.chemistry
 verifiers.wordcraft                                 900  <- audit
-# 59 modules, 20196 lines (lazy imports)
+# 59 modules, 20219 lines (lazy imports)

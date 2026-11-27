@@ -71,12 +71,17 @@ def test_dispatch_driver_semantics():
     # only key-tuple fires
     r = dispatch({"K": {"a": 1, "b": 2}}, "K", rules, domain="d")
     assert [x.status for x in r] == ["CONFIRMED"]
-    # artifact present but nothing fires -> single NA
+    # artifact present but nothing fires -> single NA that names the fields it was given, never "absent"
     r = dispatch({"K": {"a": 1}}, "K", rules, domain="d", none_reason="nope")
-    assert len(r) == 1 and r[0].status == "NOT_APPLICABLE" and r[0].detail == "nope"
-    # absent artifact -> single NA
-    r = dispatch({}, "K", rules, domain="d")
     assert len(r) == 1 and r[0].status == "NOT_APPLICABLE"
+    assert r[0].detail == "K is given, but no check here has every field it needs (given: a)"
+    # absent artifact -> single NA with the domain's own reason
+    r = dispatch({}, "K", rules, domain="d", none_reason="nope")
+    assert len(r) == 1 and r[0].status == "NOT_APPLICABLE" and r[0].detail == "nope"
+    r = dispatch({"K": {}}, "K", rules, domain="d", none_reason="nope")
+    assert len(r) == 1 and r[0].detail == "nope"
+    r = dispatch({}, "K", rules, domain="d")
+    assert len(r) == 1 and r[0].status == "NOT_APPLICABLE" and r[0].detail == "no K artifacts present"
 
 
 if __name__ == "__main__":

@@ -356,7 +356,11 @@ def dispatch(packet: Dict[str, Any], artifact_key: str, rules: Iterable[Rule], *
 
     but declarative and consistent, so every verifier reports "nothing applicable" the same
     way and a new check is one line in a rules table. A requirement is a tuple of required
-    keys (ALL must be present) or a callable(artifact)->bool for or/is-not-None conditions."""
+    keys (ALL must be present) or a callable(artifact)->bool for or/is-not-None conditions.
+
+    The one decline says which it was. An absent artifact gives `none_reason`; an artifact that is given but fires
+    no rule names the fields it was given, since "no artifacts present" would be false of it and the step's
+    detail now carries this reason (derivation._reduce_domain_results)."""
     art = packet.get(artifact_key) or {}
     out: List["VerifierResult"] = []
     for req, fn in rules:
@@ -364,5 +368,11 @@ def dispatch(packet: Dict[str, Any], artifact_key: str, rules: Iterable[Rule], *
         if fires:
             out.append(fn(art))
     if not out:
-        out.append(na(domain, none_reason or f"no {artifact_key} artifacts present"))
+        if isinstance(art, dict) and art:
+            given = ", ".join(sorted(str(k) for k in art))
+            given = given if len(given) <= 160 else given[:159] + "…"
+            out.append(na(domain, f"{artifact_key} is given, but no check here has every field it needs "
+                                  f"(given: {given})"))
+        else:
+            out.append(na(domain, none_reason or f"no {artifact_key} artifacts present"))
     return out
